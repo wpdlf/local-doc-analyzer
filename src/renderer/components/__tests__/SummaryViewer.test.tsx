@@ -278,6 +278,50 @@ describe('SummaryViewer', () => {
     expect(screen.queryByTestId('resize-vertical')).toBeNull();
   });
 
+  /**
+   * QA33(H6): v1.5.0 의 "드래그로 조절 + 재시작 유지" 중 **비율이 실제 높이로 반영되는 배선**이
+   * 무보호였다 — 뮤테이션 실측에서 두 pane 의 flexBasis 를 `50%` 로 하드코딩해도 전량 그린이었다
+   * (핸들 컴포넌트 자체의 동작만 보호되고 있었다). 합이 100% 임을 함께 단언해 한쪽만 틀어지는
+   * 경우도 잡는다.
+   */
+  it('저장된 비율이 요약/채팅 pane 의 높이로 반영된다', () => {
+    setState({ stream: '본문', citation: false });
+    useAppStore.setState({ summarySplitRatio: 0.7 });
+    const { container } = render(<SummaryViewer />);
+    const summaryPane = container.querySelector('[data-testid="summary-pane"]') as HTMLElement;
+    const chatPane = screen.getByTestId('qachat').parentElement as HTMLElement;
+    expect(summaryPane.style.flexBasis).toBe('70%');
+    expect(chatPane.style.flexBasis).toBe('30%');
+    const sum = Number.parseFloat(summaryPane.style.flexBasis) + Number.parseFloat(chatPane.style.flexBasis);
+    expect(sum).toBe(100);
+  });
+
+  it('채팅이 없으면 요약이 남는 공간을 전부 쓴다 (비율 분할 없음)', () => {
+    setState({ stream: '', citation: false });
+    useAppStore.setState({ summarySplitRatio: 0.7 });
+    const { container } = render(<SummaryViewer />);
+    const summaryPane = container.querySelector('[data-testid="summary-pane"]') as HTMLElement;
+    expect(summaryPane.style.flexBasis).toBe('auto');
+    expect(summaryPane.style.flex).toBe('1 1 auto');
+  });
+
+  /**
+   * QA33(M3): 세로 핸들의 기준 컨테이너에 툴바·내보내기 줄이 함께 들어 있어, 드래그 거리보다
+   * 실제 이동이 작았다(700px 패널에서 ≈13%). 비율이 배분되는 영역만 감싸야 한다 — 그 컨테이너의
+   * 자식은 "요약 pane · 핸들 · 채팅 pane" 뿐이어야 한다.
+   */
+  it('세로 분할의 기준 컨테이너에는 비율을 받는 형제만 있다', () => {
+    setState({ stream: '본문', citation: false });
+    const { container } = render(<SummaryViewer />);
+    const summaryPane = container.querySelector('[data-testid="summary-pane"]') as HTMLElement;
+    const splitContainer = summaryPane.parentElement as HTMLElement;
+    const children = Array.from(splitContainer.children);
+    expect(children).toHaveLength(3);
+    expect(children[0]).toBe(summaryPane);
+    expect((children[1] as HTMLElement).dataset.testid).toBe('resize-vertical');
+    expect(children[2]).toBe(screen.getByTestId('qachat').parentElement);
+  });
+
   it('citationTarget 활성 → PdfViewer 패널 + 좌우 ResizeHandle 마운트', () => {
     setState({ stream: '본문', citation: true });
     render(<SummaryViewer />);

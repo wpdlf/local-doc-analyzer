@@ -182,4 +182,20 @@ describe('ResizeHandle — 세로 축(상하 분할)', () => {
     fireEvent.keyDown(sep, { key: 'Home' });
     expect(useAppStore.getState().summarySplitRatio).toBe(0.2);
   });
+
+  /**
+   * QA33(L): 이 컴포넌트의 설계 근거는 "축을 일반화해 복제하지 않는다" 인데, 정작 **축에 따라
+   * 갈리는 표현**(커서 모양·히트 영역의 방향)은 무검증이었다 — 세로 핸들이 `col-resize` +
+   * `w-1`(컬럼 flex 안에서는 4px 폭의 세로 막대)로 바뀌어도 전량 그린이었다. 축 분기가 한 곳에
+   * 모여 있으므로 한 번 뒤집히면 두 축이 함께 틀어진다.
+   */
+  it.each([
+    { axis: 'vertical', expect: ['h-1', 'cursor-row-resize'], forbid: ['w-1', 'cursor-col-resize'] },
+    { axis: 'horizontal', expect: ['w-1', 'cursor-col-resize'], forbid: ['h-1', 'cursor-row-resize'] },
+  ])('$axis 축의 커서·히트 영역이 축 방향과 맞는다', ({ axis, expect: want, forbid }) => {
+    if (axis === 'vertical') renderVertical(); else renderHandle();
+    const cls = screen.getByRole('separator').className;
+    for (const c of want) expect(cls.split(/\s+/)).toContain(c);
+    for (const c of forbid) expect(cls.split(/\s+/)).not.toContain(c);
+  });
 });

@@ -299,6 +299,66 @@ describe('pdfViewerZoom clamp + persist', () => {
   });
 });
 
+/**
+ * QA33(H6): v1.5.0 세로 분할이 **끝에서 끝까지 무보호**였다 — 뮤테이션 실측에서 복원·clamp·
+ * 영속화 3종이 전부 생존했다(`summarySplitRatio: 0.5` 상수로 박아도 전량 그린). 형제인
+ * `pdfViewerZoom` 은 같은 4종이 모두 검출되므로, v1.5.0→v1.6.0 사이의 형제 누락이다.
+ * `citationPanelWidth` 도 clamp·persist 만 있고 **복원** 단언이 없어 함께 채운다.
+ */
+describe('summarySplitRatio clamp + persist + 복원', () => {
+  beforeEach(() => { vi.useFakeTimers(); delete lsStore['summarySplitRatio']; });
+  afterEach(() => { vi.useRealTimers(); delete lsStore['summarySplitRatio']; });
+
+  it('기본값은 0.5(균등 분할)', () => {
+    expect(useAppStore.getState().summarySplitRatio).toBe(0.5);
+  });
+
+  it('0.2–0.8 범위로 clamp 된다 — 한쪽 pane 이 사라지지 않도록', () => {
+    const s = useAppStore.getState();
+    s.setSummarySplitRatio(0.05);
+    expect(useAppStore.getState().summarySplitRatio).toBe(0.2);
+    s.setSummarySplitRatio(0.95);
+    expect(useAppStore.getState().summarySplitRatio).toBe(0.8);
+    s.setSummarySplitRatio(0.7);
+    expect(useAppStore.getState().summarySplitRatio).toBe(0.7);
+  });
+
+  it('200ms 디바운스 후 저장되고, 미발화 상태의 flush 도 커밋한다', () => {
+    useAppStore.getState().setSummarySplitRatio(0.65);
+    expect(lsStore['summarySplitRatio']).toBeUndefined();
+    vi.advanceTimersByTime(200);
+    expect(lsStore['summarySplitRatio']).toBe('0.65');
+    useAppStore.getState().setSummarySplitRatio(0.35);
+    flushPendingWrites();
+    expect(lsStore['summarySplitRatio']).toBe('0.35');
+  });
+
+  it('모듈 초기화 시 저장된 비율을 복원한다 (재시작 후 유지)', async () => {
+    lsStore['summarySplitRatio'] = '0.7';
+    vi.resetModules();
+    const fresh = await import('../store');
+    expect(fresh.useAppStore.getState().summarySplitRatio).toBe(0.7);
+  });
+
+  it('저장값이 범위 밖이면 0.5 로 복원한다', async () => {
+    lsStore['summarySplitRatio'] = '0.95';
+    vi.resetModules();
+    const fresh = await import('../store');
+    expect(fresh.useAppStore.getState().summarySplitRatio).toBe(0.5);
+  });
+});
+
+describe('citationPanelWidth 복원', () => {
+  afterEach(() => { delete lsStore['citationPanelWidth']; });
+
+  it('모듈 초기화 시 저장된 비율을 복원한다', async () => {
+    lsStore['citationPanelWidth'] = '0.35';
+    vi.resetModules();
+    const fresh = await import('../store');
+    expect(fresh.useAppStore.getState().citationPanelWidth).toBe(0.35);
+  });
+});
+
 // v0.18.6 D1 — notice 채널이 error 와 분리되어 있어 setError(null) 이 notice 를 클리어하지 않음.
 describe('notice channel (D1)', () => {
   it('setError(null) 은 notice 를 건드리지 않는다', () => {

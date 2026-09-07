@@ -31,6 +31,16 @@ export function SummaryViewer({ onAbort }: SummaryViewerProps) {
   const splitContainerRef = useRef<HTMLDivElement>(null);
   // 세로 분할의 기준 컨테이너 — 좌측(요약) 패널 자신이다(우측 인용 패널은 무관).
   const leftPaneRef = useRef<HTMLDivElement>(null);
+  /**
+   * 세로 분할의 기준 컨테이너 (QA33 M3).
+   *
+   * 종전에는 `leftPaneRef`(패널 전체)를 넘겼는데, 그 안에는 툴바(≈37px)와 내보내기 버튼줄
+   * (≈50px)처럼 **비율 배분을 받지 않는 형제**가 함께 있다. 두 pane 의 basis 합(100%)이
+   * 컨테이너를 그만큼 초과해 비례 축소되므로, 드래그한 거리보다 실제 이동이 작았다(700px
+   * 패널에서 ≈13%). 좌우 축은 초과분이 핸들 4px 뿐이라 이 왜곡이 드러나지 않았다.
+   * 비율이 실제로 배분되는 영역만 감싸 두 축을 같은 조건으로 만든다.
+   */
+  const verticalSplitRef = useRef<HTMLDivElement>(null);
   const summarySplitRatio = useAppStore((s) => s.summarySplitRatio);
   const setSummarySplitRatio = useAppStore((s) => s.setSummarySplitRatio);
   const t = useT();
@@ -169,8 +179,14 @@ export function SummaryViewer({ onAbort }: SummaryViewerProps) {
 
   const showCitationPanel = citationTarget !== null;
   // DR-01: 동적 flex-basis — 좌측은 (1 - panelRatio), 우측은 panelRatio
-  const leftFlexBasis = showCitationPanel ? `${(1 - panelRatio) * 100}%` : '100%';
-  const rightFlexBasis = showCitationPanel ? `${panelRatio * 100}%` : '0%';
+  /**
+   * 비율 → CSS 퍼센트. QA33(H6 회귀 넷 작성 중 발견): `(1 - 0.7) * 100` 은
+   * **30.000000000000004** 이고 그 문자열이 그대로 style 에 박힌다. 값 자체는 렌더에 문제가
+   * 없지만 DOM 에 부동소수 잡음이 남고 대조도 어려워진다 — 소수 둘째 자리에서 정리한다.
+   */
+  const pct = (ratio: number): string => `${Math.round(ratio * 10000) / 100}%`;
+  const leftFlexBasis = showCitationPanel ? pct(1 - panelRatio) : '100%';
+  const rightFlexBasis = showCitationPanel ? pct(panelRatio) : '0%';
 
   // 요약이 끝나 채팅이 보이는 상태인가 — 세로 분할이 성립하는 조건이자 QaChat 렌더 조건.
   // 두 곳에서 각자 판정하면 한쪽만 바뀌어 비율이 어긋난다(형제 누락).
@@ -221,6 +237,18 @@ export function SummaryViewer({ onAbort }: SummaryViewerProps) {
         </div>
       </div>
 
+      {/* QA33(M3): 세로 비율이 실제로 배분되는 영역. 툴바는 이 밖에 있어야 드래그 거리와
+          실제 이동이 일치한다(좌우 축과 같은 조건). */}
+      <div ref={verticalSplitRef} className="flex-1 min-h-0 flex flex-col">
+      {/* 요약 pane — 본문 + (진행률/내보내기 줄). 비율은 pane 이 받고 본문은 그 안을 채운다. */}
+      <div
+        className="min-h-0 flex flex-col"
+        data-testid="summary-pane"
+        style={showQaChat
+          // 채팅이 있을 때만 비율 분할. 없으면 종전대로 남는 공간을 전부 쓴다.
+          ? { flexBasis: pct(summarySplitRatio), flexGrow: 0, flexShrink: 1 }
+          : { flex: '1 1 auto' }}
+      >
       {/* aria-live="polite": 스트리밍 중 스크린 리더에 내용 업데이트를 알림.
           aria-busy: AI 생성 중임을 명시. 스피너 SVG 는 aria-hidden 으로 중복 읽기 방지. */}
       <div
@@ -229,11 +257,7 @@ export function SummaryViewer({ onAbort }: SummaryViewerProps) {
         aria-live="polite"
         aria-busy={isGenerating}
         aria-label={t('viewer.resultAria')}
-        className="min-h-0 overflow-y-auto p-4 prose prose-sm dark:prose-invert max-w-none"
-        style={showQaChat
-          // 채팅이 있을 때만 비율 분할. 없으면 종전대로 남는 공간을 전부 쓴다.
-          ? { flexBasis: `${summarySplitRatio * 100}%`, flexGrow: 0, flexShrink: 1 }
-          : { flex: '1 1 auto' }}
+        className="flex-1 min-h-0 overflow-y-auto p-4 prose prose-sm dark:prose-invert max-w-none"
       >
         {isGenerating && !debouncedContent ? (
           <div className="flex flex-col items-center justify-center h-full gap-4">
@@ -298,6 +322,7 @@ export function SummaryViewer({ onAbort }: SummaryViewerProps) {
           </button>
         </div>
       )}
+      </div>
 
       {showQaChat && (
         <>
@@ -306,7 +331,7 @@ export function SummaryViewer({ onAbort }: SummaryViewerProps) {
               가장 긴 출력이 절반 공간에 갇혔다. 요약 접기 토글은 Q&A까지 함께 숨기므로 채팅을
               크게 볼 방법이 아예 없었다. 좌우 분할과 같은 핸들로 사용자가 직접 조절한다. */}
           <ResizeHandle
-            containerRef={leftPaneRef}
+            containerRef={verticalSplitRef}
             axis="vertical"
             ratio={summarySplitRatio}
             onChange={setSummarySplitRatio}
@@ -314,12 +339,13 @@ export function SummaryViewer({ onAbort }: SummaryViewerProps) {
           />
           <div
             className="min-h-0 flex flex-col overflow-hidden"
-            style={{ flexBasis: `${(1 - summarySplitRatio) * 100}%`, flexGrow: 0, flexShrink: 1 }}
+            style={{ flexBasis: pct(1 - summarySplitRatio), flexGrow: 0, flexShrink: 1 }}
           >
             <QaChat />
           </div>
         </>
       )}
+      </div>
       {/* 복사 확인 알림 — 소멸 타이머는 handleCopy 가 소유(copiedTimerRef).
           이 패널 안에 두는 이유는 위 `relative` 주석 참조. */}
       <Toast message={copied ? t('viewer.copied') : null} srMessage={t('viewer.copiedSr')} />
