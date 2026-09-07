@@ -455,3 +455,20 @@ describe('창 권한 정책 — 클립보드 쓰기만 허용', () => {
     }
   });
 });
+
+/**
+ * QA33(M): 이 앱은 메뉴를 정의한 적이 없어 Electron 기본 메뉴가 붙어 있었고, 거기에는
+ * View → Zoom In/Out/Actual Size 가 **CmdOrCtrl + '+'/'-'/'0'** 로 들어 있다. v1.6.0 이 같은
+ * 조합을 뷰어 배율에 배정하면서 한 키를 두 기능이 나눠 갖게 됐다 — 메뉴 액셀러레이터는 브라우저
+ * 프로세스가 먼저 처리하므로 렌더러의 preventDefault 로 막을 수 없다.
+ *
+ * E2E 로는 검증할 수 없다(Playwright 키 입력은 CDP 로 렌더러에 직행해 메뉴를 거치지 않는다).
+ * 그래서 **배선의 존재**를 소스에서 못박는다 — 주석은 걷고 본다.
+ */
+describe('앱 메뉴 — 뷰어 배율과 겹치는 기본 액셀러레이터 제거', () => {
+  it('darwin 이 아니면 기본 메뉴를 내린다', () => {
+    const src = stripJsComments(readFileSync(resolve(import.meta.dirname, '../index.ts'), 'utf8'));
+    expect(src, '기본 메뉴가 살아 있으면 Ctrl+0/-/= 가 앱 전체 줌으로도 발동한다')
+      .toMatch(/process\.platform !== 'darwin'\s*\)?\s*Menu\.setApplicationMenu\(null\)/);
+  });
+});

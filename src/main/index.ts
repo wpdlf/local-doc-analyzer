@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, safeStorage, shell, screen, session } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, safeStorage, shell, screen, session, Menu } from 'electron';
 // 자동 업데이트: electron-updater 는 main 전용(production dependency 로 asar 에 동봉된다 —
 // electron-builder 는 files 패턴과 무관하게 production 의존성을 수집한다).
 import { autoUpdater } from 'electron-updater';
@@ -387,6 +387,22 @@ if (!gotSingleInstanceLock) {
 }
 
 app.whenReady().then(async () => {
+  // QA33(M): 기본 메뉴를 내린다.
+  //
+  // 이 앱은 메뉴를 한 번도 정의한 적이 없어 Electron 의 기본 메뉴가 그대로 붙어 있었고, 거기에는
+  // View → Zoom In/Out/Actual Size 가 **CmdOrCtrl + '+'/'-'/'0'** 로 들어 있다. v1.6.0 이 같은
+  // 조합을 원문 뷰어 배율에 배정하면서 두 기능이 한 키를 두고 겹쳤다 — 특히 입력 요소에 포커스가
+  // 있을 때 렌더러 핸들러는 (입력 단축키를 가로채지 않으려고) 그대로 흘려보내므로 앱 전체 줌만
+  // 발동한다. 메뉴 액셀러레이터는 브라우저 프로세스가 먼저 처리해 렌더러의 preventDefault 로는
+  // 막을 수 없으므로, 겹침을 없애려면 메뉴 쪽을 내리는 것이 유일한 방법이다.
+  //
+  // 입력창의 복사·붙여넣기·전체선택은 Chromium 이 자체 처리하므로 메뉴 없이도 그대로 동작한다.
+  // darwin 은 앱 메뉴가 창 닫기·종료의 기본 경로라 제외한다(배포 대상도 Windows 다).
+  //
+  // ⚠️ E2E 로는 검증할 수 없다 — Playwright 의 키 입력은 CDP 로 렌더러에 직행해 메뉴
+  // 액셀러레이터를 거치지 않는다(v1.6.0 에서 확인). 실기기 확인 항목이다.
+  if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
+
   registerIpcHandlers();
   createWindow();
 
