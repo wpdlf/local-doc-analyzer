@@ -67,12 +67,20 @@ describe('a11y M1 — 동적 통지는 라이브 리전이다 (role="status")', 
    * 배너를 열거하지 않는다. 대신 **닫기 버튼이 달린 상단 배너**(= 사용자에게 무언가를 알리는
    * 블록)라는 형태로 도출한다. `mb-4 p-3 bg-...-50` 은 이 앱의 배너 관용구다.
    */
-  it('상단 배너는 전부 alert 또는 status 다', () => {
-    const banners = [...APP.src.matchAll(/<div[^>]*className="mb-4 p-3 bg-[^"]*"[^>]*>/g)].map((m) => m[0]);
+  it('상단 배너는 전부 alert 또는 status 다 (렌더러 전체)', () => {
+    // QA33(I3): 종전에는 `APP.src` **한 파일만** 봤다. "열거하지 않고 형태로 도출한다" 고
+    // 선언해 놓고 도출 범위가 App.tsx 뿐이라, 다른 컴포넌트의 같은 관용구 배너는 통지가 없어도
+    // 통과했다 — 가설이 아니라 **실제 위반이 저장소에 있었다**(SettingsPanel 의 aiBusy 안내).
+    const banners: { where: string; tag: string }[] = [];
+    for (const { path, src } of SOURCES) {
+      for (const m of src.matchAll(/<div[^>]*className="mb-4 p-3 bg-[^"]*"[^>]*>/g)) {
+        banners.push({ where: `${path}:${src.slice(0, m.index).split('\n').length}`, tag: m[0] });
+      }
+    }
     expect(banners.length, '배너를 한 건도 찾지 못했다 — 이 가드가 무력화된 상태다')
-      .toBeGreaterThanOrEqual(2);
-    const silent = banners.filter((b) => !/role="(alert|status)"/.test(b));
-    expect(silent, `라이브 리전이 아닌 배너:\n  ${silent.join('\n  ')}`).toEqual([]);
+      .toBeGreaterThanOrEqual(4);
+    const silent = banners.filter((b) => !/role="(alert|status)"/.test(b.tag));
+    expect(silent.map((b) => b.where), '라이브 리전이 아닌 배너').toEqual([]);
   });
 });
 
@@ -116,7 +124,9 @@ describe('a11y — 접근성 이름에 장식 기호가 섞이지 않는다', ()
     const offenders: string[] = [];
     for (const { path, src } of SOURCES) {
       src.split('\n').forEach((line, i) => {
-        const m = /aria-label=\{tr?\('([\w.]+)'\)\}/.exec(line);
+        // QA33(L): 종전 정규식은 **인자 없는** `t('key')` 만 봤다. 파라미터형
+        // `t('key', { ... })` 로 쓰면 같은 이모지 문구가 규칙 밖으로 빠져나간다.
+        const m = /aria-label=\{tr?\('([\w.]+)'\s*[,)]/.exec(line);
         if (m && emojiKeys.has(m[1]!)) offenders.push(`${path}:${i + 1} → ${m[1]}`);
       });
     }
@@ -146,6 +156,33 @@ describe('a11y — 장식 아이콘은 차폐된다', () => {
     expect(helper, 'StatusBar 의 아이콘 헬퍼를 찾지 못했다 — 이 가드가 무력화된 상태다').not.toBe('');
     expect(helper, '상태 아이콘이 차폐를 잃었다 — 리더가 "체크 표시" 를 먼저 읽는다')
       .toContain('aria-hidden');
+  });
+
+  /**
+   * QA33(L): 위 규칙(헬퍼 이름 앵커)은 **이름**에 걸려 있어, 다른 파일에서 다른 이름의 헬퍼로
+   * 같은 패턴을 쓰면 규칙 밖이었다. 문자열 안의 장식 기호를 전부 훑고, 그 줄이 직접 차폐하거나
+   * **차폐하는 헬퍼에 넘기는 것**임을 요구해 이름 의존을 없앤다. i18n 정의 파일은 대상이 아니다
+   * (거기 값이 aria-label 로 쓰이는지는 위의 별도 규칙이 본다).
+   */
+  it('문자열 안의 장식 기호도 차폐되거나 차폐하는 헬퍼를 거친다', () => {
+    const offenders: string[] = [];
+    for (const { path, src } of SOURCES) {
+      if (path.endsWith('lib/i18n.ts')) continue;
+      const lines = src.split('\n');
+      lines.forEach((line, i) => {
+        const literals = line.match(/'[^']*'|"[^"]*"|`[^`]*`/g) ?? [];
+        if (!literals.some((l) => DECOR.test(l))) return;
+        if (/aria-hidden/.test(line)) return;
+        // `icon('✅')` 처럼 헬퍼에 넘기는 형태 — 그 헬퍼가 같은 파일에서 차폐하면 통과.
+        const call = /(\w+)\(\s*['"`][^'"`]*['"`]\s*\)/.exec(line);
+        if (call) {
+          const def = new RegExp(`const ${call[1]} = [^;]+;`).exec(src)?.[0] ?? '';
+          if (/aria-hidden/.test(def)) return;
+        }
+        offenders.push(`${path}:${i + 1} → ${line.trim().slice(0, 80)}`);
+      });
+    }
+    expect(offenders, `차폐되지 않은 장식 기호(문자열):\n  ${offenders.join('\n  ')}`).toEqual([]);
   });
 
   it('JSX 본문의 상태 아이콘에는 aria-hidden 이 붙어 있다', () => {

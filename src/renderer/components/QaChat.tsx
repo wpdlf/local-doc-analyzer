@@ -36,7 +36,8 @@ const AssistantMessage = memo(function AssistantMessage({ id, content, degraded,
         aria-label={copied ? t('qa.copied') : t('qa.copyAnswer')}
         title={copied ? t('qa.copied') : t('qa.copyAnswer')}
       >
-        {copied ? '✓' : '📋'}
+        {/* 장식 기호 — 접근성 이름은 위 aria-label 이 준다(QA33: 문자열 안의 이모지도 차폐). */}
+        <span aria-hidden="true">{copied ? '✓' : '📋'}</span>
       </button>
     </>
   );

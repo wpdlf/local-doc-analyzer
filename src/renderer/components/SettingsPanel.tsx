@@ -572,7 +572,9 @@ export function SettingsPanel() {
 
       {/* M2(UX): 생성 중 안내 — 백엔드 정의 항목이 잠겨 있음을 알린다. */}
       {aiBusy && (
-        <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-700 dark:text-amber-400">
+        // QA33(I3): 조건부로 나타났다 사라지는 안내인데 role 이 없어 통지되지 않았다 —
+        // 감사 M1 이 App 의 배너에서 고친 것과 같은 클래스의 형제(가드가 App.tsx 만 봐서 남았다).
+        <div role="status" className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-700 dark:text-amber-400">
           {t('settings.aiBusyNotice')}
         </div>
       )}
