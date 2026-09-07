@@ -122,6 +122,26 @@ describe('App — 배너가 있어도 문서 뷰가 화면 밖으로 밀리지 �
     expect(main!.className, 'min-h-0 이 없으면 flex 자식이 축소되지 않아 넘친다')
       .toMatch(/(^|\s)min-h-0(\s|$)/);
   });
+
+  /**
+   * QA33: 위 단언은 main 쪽 **한 짝**만 봤다 — 뮤테이션 실측에서 뷰어 래퍼(`flex-1 min-h-0`)를
+   * 지워도 전량 그린이었다. SummaryViewer 가 `h-full` 이므로 래퍼가 빠지면 배너 높이만큼 그대로
+   * 넘쳐 수정 전 상태로 완전히 되돌아간다. 기제의 나머지 절반을 함께 못박는다.
+   */
+  it('뷰어 래퍼가 남는 공간만 차지한다 (h-full 이 배너 높이를 밀어내지 않도록)', async () => {
+    // 래퍼는 요약 뷰어가 떠 있을 때만 렌더된다 — 넘침이 실제로 문제가 되는 그 상태로 맞춘다.
+    useAppStore.setState({
+      document: { id: 'doc-1', fileName: 'a.pdf', pageCount: 3, extractedText: '본문', pageTexts: ['본문'] } as never,
+      summaryStream: '요약 본문',
+      summaryCollapsed: false,
+    });
+    await mountApp();
+    const viewer = document.querySelector('main [class*="flex-1"]');
+    expect(viewer, '뷰어 래퍼를 찾지 못했다 — 이 가드가 무력화된 상태다').not.toBeNull();
+    expect(viewer!.className, '래퍼가 남는 공간을 차지하지 않는다').toMatch(/(^|\s)flex-1(\s|$)/);
+    expect(viewer!.className, '래퍼에 min-h-0 이 없으면 자식이 축소되지 않아 넘친다')
+      .toMatch(/(^|\s)min-h-0(\s|$)/);
+  });
 });
 
 describe('App — 자동 업데이트 배너 배선 (QA25)', () => {

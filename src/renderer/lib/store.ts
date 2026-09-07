@@ -78,7 +78,7 @@ function persistRatio(key: string, value: number): void {
 
 /** 디바운스 미발화분을 즉시 커밋 — 종료(pagehide) 경로. */
 function flushPendingRatios(): void {
-  for (const [key, timer] of ratioSaveTimers) clearTimeout(timer);
+  for (const [, timer] of ratioSaveTimers) clearTimeout(timer);
   ratioSaveTimers.clear();
   for (const [key, value] of pendingRatios) {
     try { localStorage.setItem(key, String(value)); } catch { /* 무시 */ }

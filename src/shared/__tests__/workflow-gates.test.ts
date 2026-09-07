@@ -182,8 +182,48 @@ describe('test.yml 트리거는 좁아지지 않는다 (skip 은 required check 
  * 개별 스텝 이름을 열거하지 않고 **명령**을 본다 — 스텝을 재배치하거나 이름을 바꾸는 정상
  * 리팩터에는 걸리지 않고, 게이트가 실제로 사라질 때만 걸린다.
  */
-describe('test.yml 의 blocking 게이트 명령이 살아 있다', () => {
+/**
+ * QA33(H7·I4): 종전에는 이 명령들을 **파일 전체**에서 찾았다. 그런데 test.yml 에는 야간
+ * 스케줄 전용 잡(shuffle · package-smoke)이 있고 그쪽도 `npm test --`·`playwright test` 를
+ * 쓴다 — 실측: push/PR 의 `e2e` 잡을 통째로 지워도 package-smoke 의 명령이 대신 단언을
+ * 만족시켰고, `npm test --` 는 `continue-on-error: true` 인 야간 shuffle 잡이 대신했다.
+ * 즉 "push/PR 경로의 blocking 게이트" 를 지키려던 가드가 **비차단 야간 잡으로 충족**됐다.
+ *
+ * 더 나쁜 형제가 하나 더 있었다: 잡의 `if:` 조건 자체는 어떤 가드도 보지 않았다. `!=` 를 `==`
+ * 로 한 글자만 바꾸면 세 잡이 push/PR 에서 전부 skip 되는데, 명령 문자열은 파일에 그대로
+ * 남으므로 위 단언 6건이 전부 통과한다. GitHub 은 skip 된 required check 를 실패로 세지 않으니
+ * PR 은 초록으로 머지된다.
+ *
+ * 두 결함의 뿌리가 같으므로(어느 잡에서 도는지를 안 본다) 판정을 **잡 단위**로 바꾼다.
+ */
+describe('test.yml 의 blocking 게이트가 push/PR 잡에서 돈다', () => {
   const src = wf(TEST_WF);
+
+  /** 최상위 잡을 {이름, 본문} 으로 자른다. */
+  function jobsOf(text: string): { name: string; body: string }[] {
+    const jobsAt = text.indexOf('\njobs:');
+    expect(jobsAt, `${TEST_WF}: jobs 블록을 찾지 못했다 — 이 가드가 무력화된 상태다`).toBeGreaterThan(-1);
+    const region = text.slice(jobsAt);
+    const out: { name: string; body: string }[] = [];
+    const re = /\n {2}([a-z][\w-]*):\n/g;
+    const marks: { name: string; at: number }[] = [];
+    for (const m of region.matchAll(re)) marks.push({ name: m[1]!, at: m.index! + m[0].length });
+    marks.forEach((mk, i) => {
+      out.push({ name: mk.name, body: region.slice(mk.at, i + 1 < marks.length ? marks[i + 1]!.at : undefined) });
+    });
+    return out;
+  }
+
+  const jobs = jobsOf(src);
+  /** 야간 전용 잡 — `if:` 가 schedule 에서만 참인 잡. 여기 명령은 blocking 신호가 아니다. */
+  const isNightly = (body: string) => /if:[^\n]*event_name\s*==\s*'schedule'/.test(body);
+  const blocking = jobs.filter((j) => !isNightly(j.body));
+
+  it('잡을 도출했고, 차단성 잡과 야간 잡이 모두 존재한다', () => {
+    expect(jobs.length, '잡을 도출하지 못했다 — 이 가드가 무력화된 상태다').toBeGreaterThanOrEqual(4);
+    expect(blocking.length).toBeGreaterThanOrEqual(3);
+    expect(jobs.filter((j) => isNightly(j.body)).length).toBeGreaterThanOrEqual(1);
+  });
 
   it.each([
     ['타입 체크(src)', /npx tsc --noEmit/],
@@ -192,9 +232,52 @@ describe('test.yml 의 blocking 게이트 명령이 살아 있다', () => {
     ['커버리지 게이트', /npm run test:coverage/],
     ['lockfile 동기 검사', /package-lock\.json/],
     ['E2E', /playwright test/],
-  ])('%s 가 남아 있다', (_label, command) => {
-    expect(src, `${TEST_WF}: 게이트 명령이 사라졌다 — push/PR 경로가 그만큼 비어 있게 된다`)
-      .toMatch(command);
+  ])('%s 가 **차단성 잡** 안에서 돈다', (label, command) => {
+    const where = blocking.filter((j) => command.test(j.body)).map((j) => j.name);
+    expect(where, `${TEST_WF}: "${label}" 이 push/PR 잡에 없다 — 야간 전용 잡이 대신 만족시키거나 잡이 skip 되고 있다`)
+      .not.toEqual([]);
+  });
+
+  it('차단성 잡은 스케줄에서만 도는 조건을 갖지 않는다', () => {
+    // `!=` → `==` 한 글자 뒤집기가 이 단언에 걸린다.
+    for (const j of blocking) {
+      expect(isNightly(j.body), `${j.name} 잡이 야간 전용이 됐다`).toBe(false);
+    }
+  });
+});
+
+/**
+ * QA33(M): 야간 package-smoke 잡의 게이트는 무가드였다 — release.yml 쪽만 QA32(D-1)가 닫았다.
+ * 이 잡의 존재 이유가 "태그 전에 패키징 계약 깨짐을 잡는다" 인데, 그 잡 자신이 무증상으로
+ * 증발할 수 있으면 신호가 아니다. 열거하지 않고 **packaged-smoke 를 도는 잡**에서 도출한다.
+ */
+describe('packaged-smoke 를 도는 잡은 어디서든 같은 게이트를 건다', () => {
+  it.each([[TEST_WF], [RELEASE]])('%s', (path) => {
+    const src = wf(path);
+    const smokeSteps = steps(src).filter((s) => /playwright test e2e\/packaged-smoke\.spec\.ts/.test(s));
+    expect(smokeSteps.length, `${path}: packaged-smoke 스텝이 사라졌다`).toBeGreaterThanOrEqual(1);
+    for (const step of smokeSteps) {
+      expect(step, `${path}: PACKAGED_SMOKE_REQUIRED 가 빠지면 스펙이 skip 으로 초록이 된다`)
+        .toMatch(/PACKAGED_SMOKE_REQUIRED: '1'/);
+    }
+    expect(src, `${path}: auto-update 자산 검증 스텝이 사라졌다`)
+      .toMatch(/Verify auto-update metadata exists/);
+  });
+});
+
+/**
+ * QA33(I5): 자산 업로드 목록은 아무도 보지 않았다. `dist/latest.yml` 한 줄만 빠져도 빌드·검증
+ * 스텝은 전부 통과하고 릴리즈도 정상으로 보이지만, 자산이 없어 **전 사용자의 자동 업데이트가
+ * 조용히 정지**한다 — 바로 위 검증 스텝(디스크에 파일이 있는가)이 존재하는 이유와 같은 실패다.
+ */
+describe('릴리즈 자산 업로드 목록', () => {
+  it('인스톨러·체크섬·latest.yml·blockmap 이 모두 첨부된다', () => {
+    const src = wf(RELEASE);
+    const step = steps(src).find((s) => s.includes('softprops/action-gh-release@'));
+    expect(step, `${RELEASE}: 업로드 스텝이 사라졌다`).toBeDefined();
+    for (const asset of ['dist/*Setup*.exe', 'dist/SHA256SUMS-windows.txt', 'dist/latest.yml', 'dist/*Setup*.exe.blockmap']) {
+      expect(step!, `${RELEASE}: ${asset} 가 업로드 목록에서 빠졌다`).toContain(asset);
+    }
   });
 });
 
