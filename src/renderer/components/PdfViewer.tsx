@@ -10,7 +10,17 @@ import { extractOutline, type OutlineNode } from '../lib/pdf-outline';
 import {
   ZOOM_MIN, ZOOM_MAX, ZOOM_STEP_BUTTON, ZOOM_STEP_WHEEL,
   stepZoom, composeRenderScale, formatZoomPercent, findScrollAnchor, scrollTopForAnchor,
+  maxUsableZoom, scrollLeftForRatio,
 } from '../lib/viewer-zoom';
+
+/**
+ * 배율 변경이 무거운 재렌더로 이어지기까지의 대기 (QA33 H4). 폭 변경 경로의 200ms 와 같은
+ * 이유이고, 그보다 짧게 둔 것은 버튼 한 번 누름이 즉시 반영되는 느낌을 유지하기 위해서다.
+ */
+const ZOOM_RENDER_DEBOUNCE_MS = 150;
+
+/** 아직 그려지지 않은 슬롯의 placeholder 높이(min-h-[200px] 와 같은 값). */
+const PLACEHOLDER_SLOT_HEIGHT = 200;
 
 // pdfjs-dist 는 지연 로딩(성능): 정적 import 를 제거해 콜드스타트 eager 번들에서 제외하고,
 // 문서 로드 시 pdf-parser 의 loadPdfjs() 로 동적 로드한다(워커 설정 단일 출처). 로더가 워커를
@@ -135,7 +145,37 @@ export function PdfViewer({ pdfBytes, targetPage, jumpNonce = 0, onClose }: PdfV
   const setZoom = useAppStore((s) => s.setPdfViewerZoom);
   // 직전 렌더의 배율 — 배율 변경(비율≠1)과 폭 변경·문서 교체(비율 1)를 정리 단계에서 구분한다.
   const lastRenderedZoomRef = useRef<number>(zoom);
-  const zoomBy = (direction: 1 | -1, step: number) => setZoom(stepZoom(useAppStore.getState().pdfViewerZoom, direction, step));
+  /**
+   * QA33(I1·I2): 이 문서에서 **실제로 반영되는** 최대 배율. 큰 페이지(도면·A0)는 캔버스 면적
+   * 상한에 먼저 걸리는데, 종전에는 배율만 계속 올라가 툴바가 "300%" 라고 주장하는 동안 캔버스는
+   * 그대로였다(그리고 높이 보존은 걸리지 않은 비율로 슬롯을 부풀려 튀었다). 렌더가 실제로 쓴
+   * 페이지 크기에서 도달 가능한 값을 구해 배율 자체를 거기서 멈춘다 — 숫자가 늘 참이 되도록.
+   */
+  const [maxZoom, setMaxZoom] = useState(ZOOM_MAX);
+  /**
+   * QA33(H4): 렌더에 반영된 배율. `zoom` 은 즉시 바뀌어 툴바 숫자가 따라오지만, 무거운
+   * 재렌더(전 슬롯 teardown + pdfjs 재렌더)는 디바운스한다. Ctrl+휠 한 제스처는 초당 수십 건이
+   * 들어오는데, 그때마다 renderedPages 를 비우고 렌더를 취소·재시작하면 화면이 깜빡이고
+   * 렌더 태스크가 반복 취소된다(폭 변경 경로가 이미 200ms 디바운스를 쓰는 것과 같은 이유).
+   */
+  const [renderZoom, setRenderZoom] = useState(zoom);
+  useEffect(() => {
+    if (renderZoom === zoom) return;
+    const id = setTimeout(() => setRenderZoom(zoom), ZOOM_RENDER_DEBOUNCE_MS);
+    return () => clearTimeout(id);
+  }, [zoom, renderZoom]);
+  const zoomBy = (direction: 1 | -1, step: number) => {
+    const next = stepZoom(useAppStore.getState().pdfViewerZoom, direction, step);
+    // 도달 불가능한 값으로는 올리지 않는다 — 올려 봐야 렌더는 그대로이고 숫자만 거짓이 된다.
+    setZoom(Math.min(next, maxZoomRef.current));
+  };
+  // 이벤트 리스너(마운트 1회 등록)가 최신 상한을 보도록 ref 로도 들고 있는다.
+  const maxZoomRef = useRef(maxZoom);
+  useEffect(() => {
+    maxZoomRef.current = maxZoom;
+    // 저장된 배율이 이 문서에서 도달 불가능하면(큰 페이지) 즉시 내린다 — 화면과 숫자를 맞춘다.
+    if (useAppStore.getState().pdfViewerZoom > maxZoom) setZoom(maxZoom);
+  }, [maxZoom, setZoom]);
 
   // 1. pdfjs 로 문서 로드 (pdfBytes 가 바뀔 때마다 재실행)
   useEffect(() => {
@@ -278,21 +318,47 @@ export function PdfViewer({ pdfBytes, targetPage, jumpNonce = 0, onClose }: PdfV
     // 배가 되므로 — 정리 직전에 "뷰포트 중앙의 페이지 + 페이지 안 상대 위치" 를 잡고, 높이를
     // 비례 유지한 뒤 같은 지점으로 scrollTop 을 되돌린다. 폭 변경·문서 교체(비율 1)는 종전대로
     // 높이를 비운다(QA22: stale 높이 고착 방지).
-    const zoomRatio = zoom / lastRenderedZoomRef.current;
-    lastRenderedZoomRef.current = zoom;
-    const preserveScroll = zoomRatio !== 1 && renderedPagesRef.current.size > 0;
-    const slotRects = () => pageRefs.current.map((w) => ({ top: w?.offsetTop ?? 0, height: w?.offsetHeight ?? 0 }));
+    const zoomRatio = renderZoom / lastRenderedZoomRef.current;
+    lastRenderedZoomRef.current = renderZoom;
+    // QA33(H4): 게이트가 `renderedPagesRef.size > 0` 였다. 그런데 이 effect 자신이 그 Set 을
+    // 비우고 pdfjs 렌더를 await 로 시작하므로, 렌더가 끝나기 전에 다음 배율 변경이 오면 게이트가
+    // **false** 가 되어 모든 슬롯 높이가 지워지고 문서가 200px placeholder 로 붕괴한다(스크롤
+    // 총길이가 무너져 브라우저가 scrollTop 을 클램프 → 보던 페이지를 잃는다). 판정 근거를
+    // "렌더가 끝났는가" 가 아니라 **"지금 화면에 실제 높이가 박혀 있는가"** 로 바꾼다.
+    const measured = () => pageRefs.current.some((w) => w !== null && w.offsetHeight > PLACEHOLDER_SLOT_HEIGHT);
+    const preserveScroll = zoomRatio !== 1 && measured();
+    // QA33(H3): 슬롯 좌표를 **컨테이너 기준**으로 잰다. 종전에는 `offsetTop`(= offsetParent 기준)
+    // 을 쓰면서 `scrollTop`/`clientHeight` 와 섞었는데, 이 스크롤 컨테이너에는 positioned 조상이
+    // 없어 offsetParent 가 body 다 — 헤더·패딩·툴바만큼(실측 ≈114px)의 상수가 좌표에 섞여 배율을
+    // 바꿀 때마다 그만큼 어긋난 지점으로 복원됐고, 연타하면 누적됐다. rect 기반은 조상 구조가
+    // 바뀌어도 안전하다.
+    const slotRects = () => {
+      const cr = container.getBoundingClientRect();
+      return pageRefs.current.map((w) => {
+        if (!w) return { top: 0, height: 0 };
+        const r = w.getBoundingClientRect();
+        // happy-dom 등 레이아웃이 없는 환경에서는 rect 가 전부 0 이라 offset* 로 물러난다.
+        if (r.height === 0 && w.offsetHeight > 0) return { top: w.offsetTop, height: w.offsetHeight };
+        return { top: r.top - cr.top + container.scrollTop, height: r.height };
+      });
+    };
     const anchor = preserveScroll ? findScrollAnchor(container.scrollTop, container.clientHeight, slotRects()) : null;
+    // QA33(M): 가로 위치도 함께 지킨다 — 확대해서 오른쪽 절반을 보다가 한 단계 더 올리면 항상
+    // 왼쪽 끝으로 튀었다(정리 루프가 폭을 지워 scrollLeft 가 0 으로 클램프).
+    const prevScrollLeft = container.scrollLeft;
+    const prevScrollWidth = container.scrollWidth;
     for (const wrapper of pageRefs.current) {
       if (wrapper) {
         // 배율 변경이면 비운 자리의 높이를 비례 유지 — 옛 실높이(style.height) 또는 해제 시 보존한 minHeight.
         const prevHeight = preserveScroll ? Number.parseFloat(wrapper.style.height || wrapper.style.minHeight || '') : Number.NaN;
+        const prevWidth = preserveScroll ? Number.parseFloat(wrapper.style.width || '') : Number.NaN;
         // canvas 뿐 아니라 이전 렌더에서 박힌 "페이지 렌더링 실패" 에러 placeholder 까지 모두 제거.
         // (canvas 만 지우면 문서 교체 후에도 에러 div 가 새 문서 위에 잔존하던 문제 — 빨간 문구 고착)
         wrapper.replaceChildren();
         // 기존에 actual height 가 인라인으로 박혀 있다면 placeholder min-height 로 복귀.
         // 다음 렌더에서 새 scale 의 실제 높이로 다시 박힘.
-        wrapper.style.width = '';
+        // 폭도 비례 유지해야 가로 스크롤 총길이가 유지된다(높이와 같은 근거).
+        wrapper.style.width = Number.isFinite(prevWidth) ? `${prevWidth * zoomRatio}px` : '';
         wrapper.style.height = '';
         // QA22(백로그): evictPage 가 박아둔 minHeight 를 **여기서만 안 지웠다**. width/height 는
         // 지우면서 minHeight 를 남기면, 이 effect 가 도는 두 경우 모두 이전 상태의 높이가 고착된다:
@@ -307,6 +373,9 @@ export function PdfViewer({ pdfBytes, targetPage, jumpNonce = 0, onClose }: PdfV
     if (anchor) {
       const restored = scrollTopForAnchor(anchor, slotRects(), container.clientHeight);
       if (restored !== null) container.scrollTop = restored;
+      container.scrollLeft = scrollLeftForRatio(
+        prevScrollLeft, container.clientWidth, prevScrollWidth, container.scrollWidth,
+      );
     }
 
     // ─── 단일 렌더 큐 ───
@@ -369,7 +438,12 @@ export function PdfViewer({ pdfBytes, targetPage, jumpNonce = 0, onClose }: PdfV
             if (cancelled) { pumping = false; return; }
             const naturalViewport = page.getViewport({ scale: 1 });
             const fitScale = availableWidth / naturalViewport.width;
-            const scale = composeRenderScale(fitScale, zoom);
+            const natural = { width: naturalViewport.width, height: naturalViewport.height };
+            // QA33(I2): 면적 상한까지 함께 본다 — scale 상한만으로는 큰 페이지(A0 도면)가
+            // 100MB 짜리 캔버스를 만들고, Chromium 한도를 넘으면 **빈 캔버스로 조용히** 그려진다.
+            const scale = composeRenderScale(fitScale, renderZoom, natural);
+            // QA33(I1): 이 페이지에서 도달 가능한 배율로 상한을 좁힌다(가장 제한적인 페이지 기준).
+            setMaxZoom((prev) => Math.min(prev, maxUsableZoom(fitScale, natural)));
             const viewport = page.getViewport({ scale });
             const canvas = document.createElement('canvas');
             canvas.width = Math.round(viewport.width);
@@ -513,7 +587,7 @@ export function PdfViewer({ pdfBytes, targetPage, jumpNonce = 0, onClose }: PdfV
         currentTask = null;
       }
     };
-  }, [loadState, totalPages, renderVersion, zoom]);
+  }, [loadState, totalPages, renderVersion, renderZoom]);
 
   // v1.6.0 Ctrl+휠 배율. React 의 onWheel 은 passive 로 등록돼 preventDefault 가 먹지 않으므로
   // 네이티브 리스너(passive:false). preventDefault 는 Chromium 의 페이지 줌(앱 전체 확대)으로
@@ -658,7 +732,10 @@ export function PdfViewer({ pdfBytes, targetPage, jumpNonce = 0, onClose }: PdfV
           <button
             type="button"
             onClick={() => setZoom(1)}
-            aria-label={t('pdfviewer.zoomReset')}
+            // QA33(M): 접근성 이름에 **보이는 텍스트**(현재 배율)를 포함한다. 종전에는 화면에
+            // "160%" 가 보이는데 이름은 "화면 맞춤으로 되돌리기" 뿐이라, 음성 조작 사용자가 보이는
+            // 대로 부를 수 없었다(WCAG 2.5.3 Label in Name).
+            aria-label={`${formatZoomPercent(zoom)} — ${t('pdfviewer.zoomReset')}`}
             title={`${t('pdfviewer.zoomReset')} (Ctrl+0)`}
             className="min-w-[44px] min-h-[24px] text-xs tabular-nums rounded text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100"
           >
@@ -667,14 +744,17 @@ export function PdfViewer({ pdfBytes, targetPage, jumpNonce = 0, onClose }: PdfV
           <button
             type="button"
             onClick={() => zoomBy(1, ZOOM_STEP_BUTTON)}
-            disabled={zoom >= ZOOM_MAX}
+            // QA33(I1): 도달 가능한 상한에서 멈춘다 — 그 위로는 눌러도 렌더가 그대로다.
+            disabled={zoom >= maxZoom}
             aria-label={t('pdfviewer.zoomIn')}
-            title={`${t('pdfviewer.zoomIn')} (Ctrl++)`}
+            title={`${t('pdfviewer.zoomIn')} (Ctrl + '+')`}
             className="inline-flex items-center justify-center min-w-[24px] min-h-[24px] text-sm rounded text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-40 disabled:hover:text-gray-500"
           >
             +
           </button>
-          <span role="status" className="sr-only">{t('pdfviewer.zoomLevel', { percent: formatZoomPercent(zoom) })}</span>
+          {/* QA33(L): 통지는 **렌더에 반영된** 배율로 — `zoom` 에 묶으면 Ctrl+휠 한 제스처에
+              수십 번 발화한다. 디바운스된 값이라 스크린리더는 멈춘 뒤 한 번만 듣는다. */}
+          <span role="status" className="sr-only">{t('pdfviewer.zoomLevel', { percent: formatZoomPercent(renderZoom) })}</span>
           <button
             type="button"
             onClick={onClose}
@@ -699,7 +779,9 @@ export function PdfViewer({ pdfBytes, targetPage, jumpNonce = 0, onClose }: PdfV
       <div
         ref={containerRef}
         role="region"
-        aria-label={t('pdfviewer.title')}
+        // QA33(L): 바깥 패널과 **같은 이름**의 region 이 중첩돼 있어 보조기술에서 구분되지
+        // 않았고 E2E 는 `.first()` 로 우회하고 있었다. 스크롤 영역은 자기 이름을 갖는다.
+        aria-label={t('pdfviewer.pagesRegion')}
         aria-busy={loadState === 'loading'}
         data-testid="pdfviewer-scroll"
         // scrollbar-gutter: stable — fit scale 은 clientWidth 로 계산하는데, 첫 렌더(로딩 상태)엔 세로

@@ -14,6 +14,9 @@ import {
   formatZoomPercent,
   findScrollAnchor,
   scrollTopForAnchor,
+  maxUsableZoom,
+  scrollLeftForRatio,
+  MAX_CANVAS_PIXELS,
 } from '../viewer-zoom';
 
 describe('clampZoom', () => {
@@ -126,5 +129,88 @@ describe('스크롤 앵커 — 배율 변경 전후로 같은 페이지의 같�
 
   it('앵커 인덱스가 슬롯 범위를 벗어나면(문서 교체) null', () => {
     expect(scrollTopForAnchor({ index: 7, fraction: 0.5 }, slots, 400)).toBeNull();
+  });
+});
+
+// QA33(I2): 상한이 scale 하나뿐이면 **큰 페이지**를 막지 못한다. fit 에 하한 0.6 이 있어서 A0
+// 도면은 100% 에서 이미 패널보다 크게 그려지고, scale 4.0 에 닿기 전에 캔버스가 100MB 를 넘는다
+// (Chromium 한도를 넘으면 빈 캔버스로 조용히 렌더된다). 면적으로도 막는다.
+describe('캔버스 면적 상한', () => {
+  const A4 = { width: 595, height: 842 };
+  const A0 = { width: 2384, height: 3370 };
+
+  it('A4 는 종전과 같다 — 면적 상한이 개입하지 않는다', () => {
+    // fit 2.0(clamp 상한) × 300% = 6.0 → scale 상한 4.0 이 먼저 걸린다(면적은 걸리지 않음).
+    expect(composeRenderScale(2.0, 3, A4)).toBe(composeRenderScale(2.0, 3));
+  });
+
+  it('A0 는 면적 상한이 scale 상한보다 먼저 걸린다', () => {
+    const withArea = composeRenderScale(0.34, 3, A0);
+    const withoutArea = composeRenderScale(0.34, 3);
+    expect(withArea).toBeLessThan(withoutArea);
+    const px = (A0.width * withArea) * (A0.height * withArea);
+    expect(px).toBeLessThanOrEqual(MAX_CANVAS_PIXELS + 1);
+  });
+
+  it('비정상 페이지 크기(0·NaN)에서는 면적 상한이 개입하지 않는다', () => {
+    expect(composeRenderScale(1, 2, { width: 0, height: 0 })).toBe(composeRenderScale(1, 2));
+    expect(composeRenderScale(1, 2, { width: Number.NaN, height: 800 })).toBe(composeRenderScale(1, 2));
+  });
+});
+
+// QA33(I1): 상한에 걸린 뒤로는 배율을 올려도 렌더가 그대로인데 화면은 계속 큰 숫자를 표시했다
+// (그리고 높이 보존은 걸리지 않은 비율로 슬롯을 부풀렸다). 도달 가능한 값을 노출해 그 위로는
+// 올라가지 못하게 한다.
+describe('maxUsableZoom', () => {
+  it('작은 페이지·좁은 패널에서는 제한이 없다(=ZOOM_MAX)', () => {
+    expect(maxUsableZoom(0.5, { width: 595, height: 842 })).toBe(ZOOM_MAX);
+  });
+
+  it('넓은 패널(fit 이 큰 경우)에서는 scale 절대 상한이 배율을 제한한다', () => {
+    // fit 1.5 → 300% 면 4.5 로 상한 4.0 초과 → 사용 가능한 배율은 4.0/1.5 ≈ 2.66
+    const max = maxUsableZoom(1.5);
+    expect(max).toBeLessThan(ZOOM_MAX);
+    expect(composeRenderScale(1.5, max)).toBeCloseTo(composeRenderScale(1.5, ZOOM_MAX), 5);
+  });
+
+  it('큰 페이지에서는 면적 상한이 배율을 제한한다', () => {
+    const max = maxUsableZoom(0.34, { width: 2384, height: 3370 });
+    expect(max).toBeLessThan(ZOOM_MAX);
+    // 이 배율에서의 렌더 결과가 실제로 면적 상한 안이다 — 숫자와 렌더가 일치한다.
+    const scale = composeRenderScale(0.34, max, { width: 2384, height: 3370 });
+    expect((2384 * scale) * (3370 * scale)).toBeLessThanOrEqual(MAX_CANVAS_PIXELS + 1);
+  });
+
+  it('배율 하한 아래로는 내려가지 않는다', () => {
+    expect(maxUsableZoom(2.0, { width: 10000, height: 10000 })).toBeGreaterThanOrEqual(ZOOM_MIN);
+  });
+});
+
+// QA33(M): 확대해서 오른쪽 절반을 보다가 한 단계 더 올리면 항상 왼쪽 끝으로 튀었다.
+describe('scrollLeftForRatio', () => {
+  it('중앙의 상대 위치를 유지한다', () => {
+    // 중앙 = 100 + 200 = 300 → 총폭 1000 의 0.3 → 2000 폭에서 중앙 600, scrollLeft = 600 − 200 = 400
+    expect(scrollLeftForRatio(100, 400, 1000, 2000)).toBe(400);
+  });
+
+  it('스크롤할 것이 없으면 0', () => {
+    expect(scrollLeftForRatio(0, 400, 400, 400)).toBe(0);
+    expect(scrollLeftForRatio(0, 400, 300, 350)).toBe(0);
+  });
+
+  it('범위를 넘지 않는다', () => {
+    expect(scrollLeftForRatio(900, 400, 1000, 1000)).toBeLessThanOrEqual(600);
+    expect(scrollLeftForRatio(0, 400, 1000, 2000)).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// QA33(L): 높이 0 슬롯에서 center 가 정확히 slot.top 이면 0/0 = NaN 이 나오고, NaN 은 비교를
+// 전부 false 로 만들어 clamp 를 그대로 통과해 scrollTop 을 NaN 으로 만든다.
+describe('findScrollAnchor — 높이 0 슬롯', () => {
+  it('NaN 을 내보내지 않는다', () => {
+    const a = findScrollAnchor(0, 0, [{ top: 0, height: 0 }])!;
+    expect(a).toEqual({ index: 0, fraction: 0 });
+    expect(Number.isNaN(a.fraction)).toBe(false);
+    expect(scrollTopForAnchor(a, [{ top: 0, height: 0 }], 0)).toBe(0);
   });
 });

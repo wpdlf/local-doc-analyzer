@@ -25,6 +25,27 @@ const FIT_SCALE_MAX = 2.0;
  */
 const RENDER_SCALE_ABSOLUTE_MAX = 4.0;
 
+/**
+ * 캔버스 한 장의 픽셀 수 상한 (QA33 I2).
+ *
+ * 위 scale 상한의 근거 계산은 **A4 를 전제**한다. 그런데 fit 에는 하한 0.6 이 있어서 큰 페이지
+ * (도면·포스터·A0)는 100% 에서 이미 패널보다 크게 그려지고, scale 상한에 닿기 전에 캔버스가
+ * 폭발한다: A0(2384×3370pt)를 300% 로 보면 fit=0.34 → 하한 0.6 → scale 1.8(상한 4.0 미도달)
+ * 인데 캔버스는 4291×6066 ≈ **104MB/장**이다. LRU 가 여러 장을 상주시키므로 수백 MB 가 되고,
+ * Chromium 의 캔버스 한도를 넘으면 **빈 캔버스로 조용히** 렌더된다.
+ *
+ * 그래서 상한을 scale 이 아니라 **면적**으로도 건다 — 페이지 크기에 반응해야 하는 값이므로.
+ * 24M 픽셀 = RGBA 4바이트 기준 ≈ 96MB… 가 아니라 픽셀 자체는 24M 이고 백킹 스토어가 ≈96MB 다.
+ * A4 를 fit 2.0 × 300% 로 볼 때(3570×5050 ≈ 18M)는 걸리지 않는 선이라 종전 동작을 보존한다.
+ */
+export const MAX_CANVAS_PIXELS = 24_000_000;
+
+/** fit 은 항상 이 범위로 눌린 뒤 배율과 곱해진다 — 배율 계산의 분모도 이 값이어야 한다. */
+export function clampFit(fitScale: number): number {
+  if (!Number.isFinite(fitScale)) return FIT_SCALE_MIN;
+  return Math.min(FIT_SCALE_MAX, Math.max(FIT_SCALE_MIN, fitScale));
+}
+
 /** 범위 밖·비정상 값 방어. 숫자가 아니면 1(화면 맞춤) — localStorage 손상값이 여기로 온다. */
 export function clampZoom(zoom: number): number {
   if (!Number.isFinite(zoom)) return 1;
@@ -40,10 +61,39 @@ export function stepZoom(zoom: number, direction: 1 | -1, step: number): number 
 /**
  * 렌더 scale 합성. 배율은 fit 을 **clamp 한 뒤** 곱한다 — 그래야 100% 가 종전 동작과 동일하고,
  * 좁은 패널(fit 하한 0.6)에서 200% 가 1.2 로 예측 가능하다.
+ *
+ * `naturalSize` 를 주면 면적 상한(MAX_CANVAS_PIXELS)까지 함께 적용한다 — 생략하면 종전과 같다.
  */
-export function composeRenderScale(fitScale: number, zoom: number): number {
-  const fit = Math.min(FIT_SCALE_MAX, Math.max(FIT_SCALE_MIN, fitScale));
-  return Math.min(RENDER_SCALE_ABSOLUTE_MAX, fit * clampZoom(zoom));
+export function composeRenderScale(
+  fitScale: number,
+  zoom: number,
+  naturalSize?: { width: number; height: number },
+): number {
+  const scale = Math.min(RENDER_SCALE_ABSOLUTE_MAX, clampFit(fitScale) * clampZoom(zoom));
+  if (!naturalSize) return scale;
+  return Math.min(scale, areaCapScale(naturalSize));
+}
+
+/** 이 페이지를 MAX_CANVAS_PIXELS 안에 담을 수 있는 최대 scale. 크기가 비정상이면 상한 없음. */
+function areaCapScale(naturalSize: { width: number; height: number }): number {
+  const area = naturalSize.width * naturalSize.height;
+  if (!Number.isFinite(area) || area <= 0) return Number.POSITIVE_INFINITY;
+  return Math.sqrt(MAX_CANVAS_PIXELS / area);
+}
+
+/**
+ * 이 페이지에서 **실제로 반영되는** 최대 배율 (QA33 I1).
+ *
+ * 상한에 걸리면 화면의 숫자와 실제 렌더가 갈린다 — 275%→300% 로 올려도 캔버스는 그대로인데
+ * 툴바는 "300%" 라고 주장하고, 높이 보존은 걸리지 않은 비율로 슬롯을 부풀려 튄다(조용한 오답).
+ * 그래서 배율을 **도달 가능한 값으로 제한**해 숫자가 언제나 참이 되게 한다.
+ */
+export function maxUsableZoom(fitScale: number, naturalSize?: { width: number; height: number }): number {
+  const fit = clampFit(fitScale);
+  const scaleCap = naturalSize
+    ? Math.min(RENDER_SCALE_ABSOLUTE_MAX, areaCapScale(naturalSize))
+    : RENDER_SCALE_ABSOLUTE_MAX;
+  return clampZoom(Math.min(ZOOM_MAX, scaleCap / fit));
 }
 
 export function formatZoomPercent(zoom: number): string {
@@ -78,6 +128,27 @@ export function findScrollAnchor(scrollTop: number, viewportHeight: number, slot
   const raw = slot.height > 0 ? (center - slot.top) / slot.height : 0;
   const fraction = Math.min(1, Math.max(0, raw));
   return { index, fraction };
+}
+
+/**
+ * 가로 스크롤 복원 (QA33 M).
+ *
+ * 배율을 올려 페이지 오른쪽 절반을 보던 중 한 단계 더 올리면 항상 왼쪽 끝으로 튀었다 — 정리
+ * 루프가 폭을 지워 scrollLeft 가 0 으로 클램프되는데 복원은 세로만 했기 때문이다. 확대의 주
+ * 용도(도표·수식 들여다보기)에서 바로 걸린다. 세로와 같은 원리로 **중앙의 상대 위치**를 지킨다.
+ *
+ * 스크롤할 것이 없으면(내용이 뷰포트보다 좁음) 0.
+ */
+export function scrollLeftForRatio(
+  prevScrollLeft: number,
+  clientWidth: number,
+  prevScrollWidth: number,
+  nextScrollWidth: number,
+): number {
+  if (!(prevScrollWidth > clientWidth) || !(nextScrollWidth > clientWidth)) return 0;
+  const centerFraction = (prevScrollLeft + clientWidth / 2) / prevScrollWidth;
+  const target = centerFraction * nextScrollWidth - clientWidth / 2;
+  return Math.min(nextScrollWidth - clientWidth, Math.max(0, target));
 }
 
 /**

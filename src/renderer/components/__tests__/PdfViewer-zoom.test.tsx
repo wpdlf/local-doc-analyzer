@@ -9,7 +9,10 @@ import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 const P = vi.hoisted(() => {
-  const renderSpy = vi.fn((_opts: { viewport: { width: number } }) => ({ promise: Promise.resolve(), cancel: vi.fn() }));
+  // 렌더 완료를 테스트가 붙잡을 수 있게 한다 — "렌더가 아직 안 끝난 동안 배율이 또 바뀐다" 는
+  // 창을 결정적으로 재현하기 위해서다(QA33 H4). null 이면 종전대로 즉시 완료.
+  const holder = { gate: null as Promise<void> | null };
+  const renderSpy = vi.fn((_opts: { viewport: { width: number } }) => ({ promise: holder.gate ?? Promise.resolve(), cancel: vi.fn() }));
   const page = {
     getViewport: ({ scale = 1 }: { scale?: number } = {}) => ({ width: 600 * scale, height: 800 * scale }),
     render: renderSpy,
@@ -17,7 +20,7 @@ const P = vi.hoisted(() => {
   };
   const makeDoc = (numPages: number) => ({ numPages, getPage: vi.fn(() => Promise.resolve(page)), destroy: vi.fn(() => Promise.resolve()) });
   return {
-    page, makeDoc, renderSpy,
+    page, makeDoc, renderSpy, holder,
     getDocument: vi.fn(() => ({ promise: Promise.resolve(makeDoc(3)), destroy: vi.fn(() => Promise.resolve()) })),
   };
 });
@@ -49,6 +52,7 @@ beforeEach(() => {
   HTMLCanvasElement.prototype.getContext = (() => ({})) as unknown as HTMLCanvasElement['getContext'];
   P.getDocument.mockReturnValue({ promise: Promise.resolve(P.makeDoc(3)), destroy: vi.fn(() => Promise.resolve()) });
   useAppStore.setState({ pdfBytes: null, citationTarget: null, citationJumpNonce: 0, pdfViewerZoom: 1 });
+  P.holder.gate = null;
 });
 afterEach(() => {
   cleanup();
@@ -60,8 +64,12 @@ describe('PdfViewer 배율 툴바', () => {
     await renderLoaded();
     expect(screen.getByRole('button', { name: t('pdfviewer.zoomIn') })).toBeTruthy();
     expect(screen.getByRole('button', { name: t('pdfviewer.zoomOut') })).toBeTruthy();
-    const reset = screen.getByRole('button', { name: t('pdfviewer.zoomReset') });
+    // 이름이 "<현재 배율> — <동작>" 이므로 부분 일치로 찾는다(정규식은 라벨의 괄호를 먹는다).
+    const reset = screen.getByRole('button', { name: (n: string) => n.includes(t('pdfviewer.zoomReset')) });
     expect(reset.textContent).toBe('100%');
+    // QA33(M4): 보이는 텍스트("100%")가 접근성 이름 **안에** 있어야 음성 조작으로 부를 수 있다
+    // (WCAG 2.5.3 Label in Name). 종전 이름은 동작 설명뿐이라 화면의 숫자를 가리켰다.
+    expect(reset.getAttribute('aria-label')).toContain('100%');
   });
 
   it('확대 클릭 → store 배율 +25%, 축소 클릭 → −25%', async () => {
@@ -78,8 +86,10 @@ describe('PdfViewer 배율 툴바', () => {
     const user = userEvent.setup();
     useAppStore.setState({ pdfViewerZoom: 2 });
     await renderLoaded();
-    expect(screen.getByRole('button', { name: t('pdfviewer.zoomReset') }).textContent).toBe('200%');
-    await user.click(screen.getByRole('button', { name: t('pdfviewer.zoomReset') }));
+    const reset = screen.getByRole('button', { name: (n: string) => n.includes(t('pdfviewer.zoomReset')) });
+    expect(reset.textContent).toBe('200%');
+    expect(reset.getAttribute('aria-label')).toContain('200%');
+    await user.click(reset);
     expect(useAppStore.getState().pdfViewerZoom).toBe(1);
   });
 
@@ -93,12 +103,16 @@ describe('PdfViewer 배율 툴바', () => {
     expect((screen.getByRole('button', { name: t('pdfviewer.zoomIn') }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('배율 변경은 라이브 리전(status)으로 통지된다 — 버튼의 접근성 이름이 퍼센트를 가리므로', async () => {
+  // QA33(L): 통지는 **렌더에 반영된** 배율을 따른다 — `zoom` 에 묶으면 Ctrl+휠 한 제스처에
+  // 수십 번 발화한다. 그래서 즉시가 아니라 디바운스 뒤에 한 번 바뀐다.
+  it('배율 변경은 라이브 리전(status)으로 통지된다 (렌더 반영 시점)', async () => {
     await renderLoaded();
     const status = screen.getByRole('status');
     expect(status.textContent).toContain(t('pdfviewer.zoomLevel', { percent: '100%' }));
     act(() => { useAppStore.setState({ pdfViewerZoom: 1.5 }); });
-    expect(status.textContent).toContain(t('pdfviewer.zoomLevel', { percent: '150%' }));
+    await waitFor(() => {
+      expect(status.textContent).toContain(t('pdfviewer.zoomLevel', { percent: '150%' }));
+    });
   });
 });
 
@@ -208,28 +222,50 @@ describe('PdfViewer Ctrl+휠 / Ctrl+키', () => {
 });
 
 describe('PdfViewer 배율 변경 시 스크롤 위치 보존', () => {
-  // happy-dom 은 레이아웃이 없다 — offsetTop/offsetHeight 를 style 높이에서 도출하는 가짜 레이아웃.
-  // 슬롯 i 의 top = 앞 슬롯들의 (높이 + 12px gap) 합. 렌더된 슬롯은 style.height, 해제·정리된
-  // 슬롯은 style.minHeight, 둘 다 없으면 placeholder 200.
-  function installFakeLayout(scroller: HTMLElement, viewportHeight: number) {
+  // happy-dom 은 레이아웃이 없다 — 가짜 레이아웃을 깐다. 슬롯 i 의 **내용 좌표** top 은 앞
+  // 슬롯들의 (높이 + 12px gap) 합이고, 렌더된 슬롯은 style.height, 정리된 슬롯은 style.minHeight,
+  // 둘 다 없으면 placeholder 200 이다.
+  //
+  // QA33(H3): `offsetTop` 은 **offsetParent(= body) 기준**으로 준다 — 실제 브라우저가 그렇기
+  // 때문이다(이 스크롤 컨테이너에는 positioned 조상이 없다). 종전 가짜 레이아웃은 offsetTop 을
+  // 컨테이너 0 기준으로 정의해 **브라우저가 주지 않는 좌표계**를 못박고 통과시켰고, 그래서
+  // 헤더·툴바 높이만큼 어긋나던 실제 결함을 볼 수 없었다. rect 는 컨테이너 기준으로 환산 가능한
+  // 진짜 값을 준다 — 구현이 rect 를 쓰면 PAGE_OFFSET 과 무관하게 같은 결과가 나와야 한다.
+  const PAGE_OFFSET = 114;
+
+  function installFakeLayout(scroller: HTMLElement, viewportHeight: number, offset = PAGE_OFFSET) {
     const slotHeight = (el: HTMLElement) =>
       Number.parseFloat(el.style.height || el.style.minHeight || '200');
     const slots = () => Array.from(scroller.querySelectorAll('[data-page-index]')) as HTMLElement[];
+    const contentTop = (el: HTMLElement) => {
+      let top = 0;
+      for (const s of slots()) { if (s === el) break; top += slotHeight(s) + 12; }
+      return top;
+    };
+    let scrollTop = 0;
     for (const el of slots()) {
       Object.defineProperty(el, 'offsetHeight', { configurable: true, get: () => slotHeight(el) });
-      Object.defineProperty(el, 'offsetTop', {
-        configurable: true,
-        get: () => {
-          let top = 0;
-          for (const s of slots()) { if (s === el) break; top += slotHeight(s) + 12; }
-          return top;
-        },
-      });
+      // 브라우저와 같게 — 문서(body) 기준. 컨테이너 기준이 아니다.
+      Object.defineProperty(el, 'offsetTop', { configurable: true, get: () => offset + contentTop(el) });
+      el.getBoundingClientRect = () => ({
+        top: offset + contentTop(el) - scrollTop,
+        height: slotHeight(el),
+        bottom: offset + contentTop(el) - scrollTop + slotHeight(el),
+        left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}),
+      }) as DOMRect;
     }
     Object.defineProperty(scroller, 'clientHeight', { configurable: true, get: () => viewportHeight });
-    let scrollTop = 0;
     Object.defineProperty(scroller, 'scrollTop', { configurable: true, get: () => scrollTop, set: (v: number) => { scrollTop = v; } });
+    scroller.getBoundingClientRect = () => ({
+      top: offset, height: viewportHeight, bottom: offset + viewportHeight,
+      left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}),
+    }) as DOMRect;
   }
+
+  const slotsOf = (scroller: HTMLElement) =>
+    Array.from(scroller.querySelectorAll('[data-page-index]')) as HTMLElement[];
+  /** 슬롯이 차지하는 높이 — 정리 직후엔 minHeight, 렌더 완료 후엔 실높이(style.height)다. */
+  const slotBox = (el: HTMLElement) => el.style.height || el.style.minHeight;
 
   it('2페이지 중간을 보던 중 100%→200% 이면 같은 지점이 뷰포트 중앙에 오도록 scrollTop 을 옮긴다', async () => {
     const { container } = await renderLoaded();
@@ -240,9 +276,50 @@ describe('PdfViewer 배율 변경 시 스크롤 위치 보존', () => {
     act(() => { useAppStore.getState().setPdfViewerZoom(2); });
     // 정리 단계에서 placeholder 높이가 ×2(960) 로 비례 유지 → top 0 / 972 / 1944
     // 목표 = 972 + 0.4333×960 − 200 = 1188
-    expect(scroller.scrollTop).toBe(1188);
-    const slots = Array.from(scroller.querySelectorAll('[data-page-index]')) as HTMLElement[];
-    expect(slots[1]!.style.minHeight).toBe('960px');
+    await waitFor(() => expect(scroller.scrollTop).toBe(1188));
+    expect(slotBox(slotsOf(scroller)[1]!)).toBe('960px');
+  });
+
+  // QA33(H3) 회귀 넷: 레이아웃 전체를 상수만큼 밀어도(헤더 높이가 바뀌어도) 복원 지점은 같아야
+  // 한다. 구현이 offsetTop 같은 **문서 기준** 좌표를 스크롤 좌표와 섞으면 이 값이 달라진다.
+  it('페이지 상단 오프셋(헤더·툴바 높이)이 달라도 같은 지점으로 복원한다', async () => {
+    const restored: number[] = [];
+    for (const offset of [0, 114, 500]) {
+      useAppStore.setState({ pdfViewerZoom: 1 });
+      const { container, unmount } = await renderLoaded();
+      const scroller = container.querySelector('[data-testid="pdfviewer-scroll"]') as HTMLElement;
+      installFakeLayout(scroller, 400, offset);
+      scroller.scrollTop = 500;
+      act(() => { useAppStore.getState().setPdfViewerZoom(2); });
+      await waitFor(() => expect(scroller.scrollTop).not.toBe(500));
+      restored.push(scroller.scrollTop);
+      unmount();
+    }
+    expect(restored[0]).toBe(restored[1]);
+    expect(restored[1]).toBe(restored[2]);
+  });
+
+  // QA33(H4): 렌더가 끝나기 전에 다음 배율 변경이 오는 경우(Ctrl+휠 한 제스처는 초당 수십 건).
+  // 종전 게이트는 "렌더된 페이지가 있는가" 라 이 창에서 false 가 되고, 그러면 **모든 슬롯 높이가
+  // 지워져** 문서가 placeholder 로 붕괴하고 보던 페이지를 잃었다.
+  it('렌더가 끝나기 전에 배율이 또 바뀌어도 슬롯 높이가 지워지지 않는다', async () => {
+    const { container } = await renderLoaded();
+    const scroller = container.querySelector('[data-testid="pdfviewer-scroll"]') as HTMLElement;
+    installFakeLayout(scroller, 400);
+    scroller.scrollTop = 500;
+    act(() => { useAppStore.getState().setPdfViewerZoom(2); });
+    await waitFor(() => expect(slotBox(slotsOf(scroller)[1]!)).toBe('960px'));
+
+    // 여기서부터 pdfjs 렌더가 **끝나지 않는다** — Ctrl+휠 한 제스처 안에서 다음 변경이 들어오는
+    // 그 창이다. 이 상태에서 렌더 완료 여부를 게이트로 삼으면(종전 구현) 판정이 false 로 뒤집혀
+    // 모든 슬롯 높이가 지워지고 문서가 placeholder 로 무너진다.
+    P.holder.gate = new Promise<void>(() => {});
+    act(() => { useAppStore.getState().setPdfViewerZoom(2.5); });
+    await waitFor(() => expect(slotBox(slotsOf(scroller)[1]!)).toBe('1200px'));
+    act(() => { useAppStore.getState().setPdfViewerZoom(3); });
+    await waitFor(() => expect(slotBox(slotsOf(scroller)[1]!)).toBe('1440px'));
+    // 높이가 살아 있으므로 스크롤 총길이도 유지된다 — 보던 페이지를 잃지 않는다.
+    expect(scroller.scrollTop).toBeGreaterThan(1188);
   });
 
   it('배율이 그대로인 재렌더(패널 폭 변경)는 종전대로 높이를 비우고 scrollTop 을 건드리지 않는다', async () => {

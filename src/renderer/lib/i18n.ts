@@ -55,6 +55,7 @@ export const _translations = {
   'pdfviewer.zoomOut': { ko: '축소', en: 'Zoom out' },
   'pdfviewer.zoomReset': { ko: '화면 맞춤(100%)으로 되돌리기', en: 'Reset to fit (100%)' },
   'pdfviewer.zoomLevel': { ko: '배율 {percent}', en: 'Zoom {percent}' },
+  'pdfviewer.pagesRegion': { ko: '원문 페이지', en: 'Document pages' },
   'pdfviewer.jumpTimeout': { ko: '페이지 렌더링이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.', en: 'Page rendering is taking longer than expected. Please try again in a moment.' },
   'outline.title': { ko: '목차', en: 'Contents' },
   'outline.toggle': { ko: '목차 열기/닫기', en: 'Toggle contents' },

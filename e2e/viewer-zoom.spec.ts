@@ -83,7 +83,9 @@ test('원문 뷰어 확대·축소 — 버튼·Ctrl+휠·Ctrl+0 이 canvas 크�
     await expect(firstCanvas).toBeVisible({ timeout: 15000 });
     const widthAt = async () => (await firstCanvas.boundingBox())!.width;
     const width100 = await widthAt();
-    const reset = viewer.getByRole('button', { name: '화면 맞춤(100%)으로 되돌리기' });
+    // QA33(M4): 접근성 이름이 "<현재 배율> — <동작>" 이 됐다(WCAG 2.5.3 — 보이는 텍스트가
+    // 이름에 포함돼야 음성 조작으로 부를 수 있다). 부분 일치로 찾는다.
+    const reset = viewer.getByRole('button', { name: '화면 맞춤(100%)으로 되돌리기', exact: false });
     await expect(reset).toHaveText('100%');
     await shot('zoom-100');
 
