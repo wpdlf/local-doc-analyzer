@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { SessionManifestEntry, SessionStats, SessionSaveMeta, GlobalSearchResult, SemanticSearchResponse } from '../shared/session-types';
 import type { SavedCollection } from '../shared/collection-types';
 import type { UpdateState } from '../shared/update-types';
+import type { StreamDoneMeta } from '../shared/ai-stream-types';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   ollama: {
@@ -41,8 +42,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // 표식 `{truncated:true}`)를 **두 번째 인자로** 실어 보내는데, 이 브리지가 그것을 버리고
     // requestId 만 넘기고 있었다. 페이로드는 IPC 를 건넜지만 렌더러에는 도달할 경로가 없었다.
     // meta 는 선택 인자라 기존 1-인자 콜백은 그대로 동작한다(하위호환).
-    onDone: (callback: (requestId: string, meta?: { truncated?: true }) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, requestId: string, meta?: { truncated?: true }) =>
+    // QA33(H5): 타입은 main 과 **같은 정의**(shared/ai-stream-types)를 쓴다. 인라인으로 두면
+    // main 이 새 필드를 실어 보내도 이 브리지의 타입이 그것을 표현하지 못해 렌더러에 소비자가
+    // 생기지 않는다 — `inputTruncated` 가 정확히 그렇게 묻혀 있었다.
+    onDone: (callback: (requestId: string, meta?: StreamDoneMeta) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, requestId: string, meta?: StreamDoneMeta) =>
         callback(requestId, meta);
       ipcRenderer.on('ai:done', handler);
       return () => ipcRenderer.removeListener('ai:done', handler);
@@ -175,8 +179,8 @@ export type ElectronAPI = {
     checkEmbedModel: () => Promise<{ available: boolean; model?: string }>;
     checkAvailable: (provider: 'ollama' | 'claude' | 'openai' | 'gemini', ollamaBaseUrl: string) => Promise<boolean>;
     onToken: (callback: (requestId: string, token: string) => void) => () => void;
-    /** meta: main 의 StreamDoneMeta — 출력 상한 잘림 표식(`{truncated:true}`). 없으면 정상 완주. */
-    onDone: (callback: (requestId: string, meta?: { truncated?: true }) => void) => () => void;
+    /** meta: main 의 StreamDoneMeta — 출력/입력 절단 표식. 없으면 정상 완주. */
+    onDone: (callback: (requestId: string, meta?: StreamDoneMeta) => void) => () => void;
   };
   file: {
     save: (content: string, defaultName: string) => Promise<string | null>;

@@ -44,12 +44,38 @@
  * 선택 가능한 컨텍스트 창. 첫 값은 서버 기본값과 같아야 한다 — 짧은 프롬프트에서 종전과
  * 똑같이 동작해야 메모리·재로드 회귀가 없다.
  *
- * 값을 늘리면 그만큼 재로드 지점이 늘어난다. 세 단계로 두는 이유: 짧은 프롬프트(4096) ·
- * 기본 요약/Q&A/컬렉션(8192) · 청크 상한을 올린 사용자(16384) 가 실측상 이 셋에 나뉘어
- * 떨어진다. 기본 워크플로가 8192 하나에 모이는 것은 의도적이다 — 요약↔Q&A 를 오갈 때
- * 버킷이 바뀌면 그때마다 2.8초 재로드가 난다.
+ * ## QA33(H2) — 종전 사다리 `[4096, 8192, 16384]` 의 근거가 실측에서 거짓이었다
+ *
+ * 종전 주석은 "짧은 프롬프트(4096) · 기본 요약/Q&A/컬렉션(8192) · 청크 상한을 올린
+ * 사용자(16384) 가 실측상 이 셋에 나뉘어 떨어진다" 고 단언했다. 실제 `buildPrompt` +
+ * `chunker` 로 다시 재면 **기본 설정에서 그렇지 않다**(40쪽 문서, `maxChunkSize` 기본 4000):
+ *
+ *   문서   cpt   최장 청크    system+user 토큰   필요(=×1.15+2048)   종전 버킷
+ *   한국어 2.32   9,280자      793 + 5,644        9,450               16384  ← 8192 를 건너뛴다
+ *   영어   4.00  15,904자      793 + 4,544        8,186                8192  ← 경계까지 여유 6토큰
+ *   Q&A(한국어 8,000자)                                                16384
+ *
+ * 즉 (a) 한국어 기본 워크플로는 **항상 최상위 버킷**이었고 — 최대 메모리(llama3.2 기준
+ * 4096 대비 +2.00GB) + 최대 감시견 배율(4)이 기본값이 된다 —, (b) 영어는 경계에서 **6토큰**
+ * 차이라 문단 길이가 조금만 달라져도 뒤집히고 `stickyNumCtx` 가 그 상태를 고정한다.
+ *
+ * ## 왜 사다리를 늘리는가 (청크를 줄이지 않고)
+ *
+ * 반대 방향(청크 예산을 버킷에서 역산해 줄이기)도 검토했으나, 한국어 청크를 8192 에 맞추려면
+ * 9,280자 → 약 5,000자로 **절반 가까이** 줄여야 한다. LLM 호출 수가 그만큼 늘고(비용·시간)
+ * 요약 구성 자체가 달라지며, 그 대가는 Ollama 사용자만의 메모리 문제를 위해 **모든 프로바이더**
+ * 가 치른다. 사다리에 12288 을 넣으면 한국어 기본 경로가 여기 앉아 종전 대비 KV 를 25% 덜 쓰고,
+ * 감시견 배율도 4 → 3 으로 내려온다. 재로드는 sticky-max 가 상승 전환만 허용하므로
+ * 최대 (버킷 수 − 1) 회로 묶인다.
+ *
+ * ## 이 관계는 테스트가 지킨다
+ *
+ * 값의 근거가 다시 조용히 거짓이 되지 않도록, `ollama-context-budget.test.ts` 가 실제
+ * `buildPrompt` + `chunker` 로 기본 워크플로를 재서 **최상위 버킷에 닿지 않는지** 대조한다
+ * (최상위 = 메모리·배율 모두 최대인 상태이므로 기본값이어서는 안 된다). 종전에는 이 모듈의
+ * 테스트가 합성 문자열만 썼기 때문에 위 표의 어긋남을 한 번도 볼 수 없었다.
  */
-export const CONTEXT_BUCKETS = [4096, 8192, 16384] as const;
+export const CONTEXT_BUCKETS = [4096, 8192, 12288, 16384] as const;
 
 /** 메모리 방어선 — Ollama 는 모델 상한까지 그대로 늘려 주므로 막는 것은 이 값뿐이다. */
 const MAX_NUM_CTX: number = CONTEXT_BUCKETS[CONTEXT_BUCKETS.length - 1]!;
@@ -99,16 +125,26 @@ export function estimateTokens(text: string): number {
  * system 과 prompt 를 **함께** 센다 — Ollama 는 둘을 하나의 컨텍스트에 넣으므로 한쪽만 세면
  * 그 크기만큼이 그대로 절단분이 된다.
  */
-function requiredTokens(system: string, prompt: string): number {
+function requiredTokens(system: string, prompt: string, outputReserve = OUTPUT_RESERVE_TOKENS): number {
   return Math.ceil(
     estimateTokens(system) * SAFETY_FACTOR
     + estimateTokens(prompt) * SAFETY_FACTOR
-    + OUTPUT_RESERVE_TOKENS,
+    + outputReserve,
   );
 }
 
-export function resolveNumCtx(system: string, prompt: string): number {
-  const needed = requiredTokens(system, prompt);
+/**
+ * @param outputReserve 이 호출이 실제로 낼 수 있는 출력의 상한. 생략하면 요약 한 편 분량
+ *   (`OUTPUT_RESERVE_TOKENS`)을 잡는다.
+ *
+ *   QA33(M): Vision 경로는 `num_predict` 로 출력을 300(이미지 분석)·2000(OCR)토큰에 묶어 두고도
+ *   2048 을 예약하고 있었다. 예약이 실제 상한보다 크면 그만큼 버킷이 위로 밀려 **쓰지도 않을
+ *   메모리**를 잡는다(이미지 분석은 실측 4,740토큰 → 8192 였는데, 예약을 실제 상한으로 낮추면
+ *   4096 에 앉는다). 반대로 예약이 실제보다 작으면 답변이 창에 걸려 잘리므로, 이 인자는 호출부의
+ *   `num_predict` 와 **같은 값**이어야 한다.
+ */
+export function resolveNumCtx(system: string, prompt: string, outputReserve?: number): number {
+  const needed = requiredTokens(system, prompt, outputReserve);
   for (const bucket of CONTEXT_BUCKETS) {
     if (needed <= bucket) return bucket;
   }
@@ -145,9 +181,21 @@ export function stickyNumCtx(model: string, computed: number): number {
   return next;
 }
 
-/** 테스트 전용 — 모듈 스코프 상태를 비운다(스위트 간 누수 방지). */
-export function __resetStickyNumCtxForTest(): void {
+/**
+ * sticky 상태를 비운다.
+ *
+ * QA33(L): 종전에는 테스트 전용 리셋만 있어 프로세스 수명 내내 값이 남았다. 한 번 큰 창을 쓴
+ * 모델은 keep_alive 만료로 Ollama 가 이미 내려놓은 뒤에도 다음 **짧은** 요청을 최대 창으로
+ * 재로드하게 된다 — sticky 의 근거("이미 그 크기로 로드돼 있으니 내릴 이유가 없다")가 모델이
+ * 언로드된 시점에 사라지는데, 그 사실이 상태에 반영되지 않았다. 앱 정리 시점에 함께 비운다.
+ */
+export function resetStickyNumCtx(): void {
   stickyByModel.clear();
+}
+
+/** 테스트 전용 별칭 — 스위트 간 누수 방지용(동작은 위와 같다). */
+export function __resetStickyNumCtxForTest(): void {
+  resetStickyNumCtx();
 }
 
 /**
@@ -175,3 +223,11 @@ export function exceedsMaxContext(system: string, prompt: string): boolean {
 export function numCtxTimeoutScale(numCtx: number): number {
   return Math.max(1, numCtx / DEFAULT_NUM_CTX);
 }
+
+/**
+ * 이 배율이 가질 수 있는 최댓값 (QA33 H1).
+ *
+ * 렌더러 요약 감시견은 자기 run 이 실제로 어떤 창을 쓸지 알 수 없다 — 청크마다 다르고
+ * `stickyNumCtx` 로 올라간다. 그쪽은 main 의 **백업**이므로 상한을 써서 느슨한 쪽으로 튼다.
+ */
+export const MAX_NUM_CTX_TIMEOUT_SCALE = numCtxTimeoutScale(MAX_NUM_CTX);

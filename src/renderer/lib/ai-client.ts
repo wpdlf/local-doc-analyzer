@@ -6,6 +6,7 @@ export class AiClient {
   private settings: AppSettings;
   private _lastRequestId: string | null = null;
   private _lastTruncated = false;
+  private _lastInputTruncated = false;
 
   get lastRequestId(): string | null {
     return this._lastRequestId;
@@ -26,6 +27,20 @@ export class AiClient {
    */
   get lastTruncated(): boolean {
     return this._lastTruncated;
+  }
+
+  /**
+   * 직전 run 에서 **입력**이 컨텍스트 상한을 넘어 앞부분이 잘린 채 평가됐는지 (QA33 H5).
+   *
+   * main 은 이 사실을 `ai:done` 메타(`inputTruncated`)로 이미 보내고 있었는데 렌더러에 받는
+   * 자리가 없어 그대로 묻혔다. 출력 절단(`lastTruncated`)과 원인·회복 수단이 다르다 — 이쪽은
+   * 프롬프트의 **앞부분**(system = 인용 규칙)이 사라진 상태라, 사용자에게는 "인용이 안 붙는
+   * 요약" 으로만 보이고 `done_reason` 은 `stop` 이라 어떤 실패 신호도 나오지 않는다.
+   *
+   * `lastTruncated` 와 같은 **run 단위 sticky** — 청크 하나만 넘쳐도 그 요약은 온전하지 않다.
+   */
+  get lastInputTruncated(): boolean {
+    return this._lastInputTruncated;
   }
 
   constructor(settings: AppSettings) {
@@ -80,6 +95,7 @@ export class AiClient {
       unsubDone = window.electronAPI.ai.onDone((id, meta) => {
         if (id !== requestId) return;
         if (meta?.truncated) this._lastTruncated = true;
+        if (meta?.inputTruncated) this._lastInputTruncated = true;
         done = true;
         resolver?.();
       });

@@ -317,4 +317,38 @@ describe('AiClient', () => {
     // 새 run = 새 client 이므로 표식은 따라오지 않는다.
     expect(new AiClient(DEFAULT_SETTINGS).lastTruncated).toBe(false);
   });
+
+  // QA33(H5): main 은 `inputTruncated`(컨텍스트 상한 초과로 프롬프트 **앞부분**이 잘림)를
+  // QA32 부터 실어 보내고 있었는데, preload 타입에 필드가 없고 여기에 게터가 없어 렌더러에
+  // 소비자가 전무했다. 출력 절단과 달리 이쪽은 system 섹션(인용 규칙)이 사라진 상태이고
+  // `done_reason` 은 'stop' 이라 어떤 실패 신호도 나오지 않는다 — 무음 오답의 정의다.
+  it('summarize() 가 ai:done 의 inputTruncated 를 lastInputTruncated 로 노출한다 (run sticky)', async () => {
+    let tokenCallback: ((id: string, token: string) => void) | null = null;
+    let doneCallback: ((id: string, meta?: { truncated?: true; inputTruncated?: true }) => void) | null = null;
+    mockElectronAPI.ai.onToken.mockImplementation((cb) => { tokenCallback = cb; return vi.fn(); });
+    mockElectronAPI.ai.onDone.mockImplementation((cb) => { doneCallback = cb; return vi.fn(); });
+
+    const client = new AiClient(DEFAULT_SETTINGS);
+    const chunk = async (inputTruncated: boolean): Promise<void> => {
+      mockElectronAPI.ai.generate.mockImplementation(async (requestId: string) => {
+        setTimeout(() => {
+          tokenCallback?.(requestId, '본문');
+          doneCallback?.(requestId, inputTruncated ? { inputTruncated: true } : undefined);
+        }, 50);
+        return { success: true };
+      });
+      const requestId = client.prepareSummarize();
+      for await (const _ of client.summarize('chunk', 'full', requestId)) { /* consume */ }
+    };
+
+    await chunk(false);
+    expect(client.lastInputTruncated).toBe(false);
+    await chunk(true);
+    expect(client.lastInputTruncated).toBe(true);
+    await chunk(false);   // 뒤 청크가 정상이어도 그 요약은 온전하지 않다
+    expect(client.lastInputTruncated).toBe(true);
+    // 출력 절단과 **별개의** 축이다 — 한쪽이 다른 쪽을 켜서는 안 된다.
+    expect(client.lastTruncated).toBe(false);
+    expect(new AiClient(DEFAULT_SETTINGS).lastInputTruncated).toBe(false);
+  });
 });

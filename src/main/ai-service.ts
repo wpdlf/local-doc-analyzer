@@ -2,9 +2,10 @@ import http from 'http';
 import https from 'https';
 import { StringDecoder } from 'string_decoder';
 import { BrowserWindow } from 'electron';
-import { isLocalhostHost, MAX_AI_REQUEST_DURATION_MS } from '../shared/constants';
+import { isLocalhostHost, MAX_AI_REQUEST_DURATION_MS, STREAM_IDLE_TIMEOUT_MS } from '../shared/constants';
+import type { StreamDoneMeta } from '../shared/ai-stream-types';
 import {
-  resolveNumCtx, stickyNumCtx, exceedsMaxContext, numCtxTimeoutScale,
+  resolveNumCtx, stickyNumCtx, exceedsMaxContext, numCtxTimeoutScale, resetStickyNumCtx,
 } from '../shared/ollama-context';
 
 /**
@@ -267,6 +268,9 @@ export function __activeRequestCount(): number {
 /** 앱 종료 시 TTL 정리 타이머 해제 */
 export function cleanupAiService(): void {
   clearInterval(ttlCleanupInterval);
+  // QA33(L): sticky num_ctx 도 함께 비운다 — 모델이 언로드되면 "이미 크게 로드돼 있다" 는
+  // 전제가 사라지므로, 그 상태를 들고 다음 실행까지 넘기지 않는다.
+  resetStickyNumCtx();
   for (const [id, entry] of activeRequests) {
     entry.abort();
     activeRequests.delete(id);
@@ -731,16 +735,13 @@ interface StreamChunk {
   promptFeedback?: { blockReason?: string };
 }
 
-/** ai:done 과 함께 렌더러로 가는 완료 메타 — 지금은 출력 상한 잘림 표식만 싣는다. */
-export interface StreamDoneMeta {
-  /** 모델이 출력 상한(max_tokens/컨텍스트)에 걸려 **문장 중간에서** 끝났는가. */
-  truncated?: true;
-  /**
-   * QA32(A-5): **입력**이 컨텍스트 상한을 넘어 앞부분이 잘린 채 평가됐는가.
-   * `truncated`(출력)와 원인·회복 수단이 다르다 — 이쪽은 청크 크기를 낮춰야 한다.
-   */
-  inputTruncated?: true;
-}
+/**
+ * ai:done 과 함께 렌더러로 가는 완료 메타.
+ *
+ * QA33(H5): 정의는 `shared/ai-stream-types.ts` 단일 출처다 — preload 브리지와 AiClient 가
+ * 각자 인라인 타입을 들고 있어서 `inputTruncated` 가 실려만 가고 소비자가 없었다.
+ */
+export type { StreamDoneMeta };
 
 /**
  * API 에러 바디의 자격증명 마스킹 — httpPost / streamRequest 4xx 경로 공용.
@@ -955,7 +956,9 @@ function streamRequest(
         // QA32(A-2): 첫 토큰까지의 대기는 **프롬프트 평가 시간**이고 그것은 `num_ctx` 에 비례한다.
         // 수정 전에는 Ollama 가 4096 에서 프롬프트를 잘라 평가량이 하드캡돼 있었는데 이제 최대
         // 4배가 된다 — 상한을 그대로 두면 정상 스트림을 이 타이머가 죽인다.
-        const IDLE_TIMEOUT_MS = Math.round(60000 * (config.idleTimeoutScale ?? 1));
+        // QA33(H1): 기준선은 shared 단일 출처다 — 렌더러 요약 감시견이 여기서 파생되어야
+        // "백업이 원본보다 먼저 죽는" 역전이 재발하지 않는다.
+        const IDLE_TIMEOUT_MS = Math.round(STREAM_IDLE_TIMEOUT_MS * (config.idleTimeoutScale ?? 1));
         let totalBytes = 0;
 
         let buffer = '';
@@ -1331,9 +1334,14 @@ async function callVision(
       // 출력 무제한" 을 전제로 그 문자 상한을 유일한 방어선으로 선언했는데, num_ctx=4096 은 그
       // 전제를 깬다. 이미지 토큰(llava≈576, llama3.2-vision≈1600)까지 실리므로 프롬프트 기준
       // 산정에 그만큼을 더해 잡는다.
+      // QA33(M): sticky 키는 **모델 이름**이다. 종전에는 `vision:${model}` 로 갈라 놨는데,
+      // Ollama 의 로드 단위는 모델이므로 멀티모달 모델 하나를 요약·Vision 에 함께 쓰는 사용자
+      // (resolveVisionModel 은 settings.model 이 vision 모델이면 그대로 재사용한다)는 같은 모델에
+      // 두 값을 번갈아 보내게 된다 — sticky-max 가 없애려던 2.8초 재로드가 매 전환마다 되살아난다.
+      // QA33(M): 출력 예약은 실제 `num_predict` 와 같은 값으로 — 아래 body 의 num_predict 와 한 쌍.
       const visionNumCtx = stickyNumCtx(
-        `vision:${model || 'llava'}`,
-        resolveNumCtx('', config.prompt + 'x'.repeat(VISION_IMAGE_TOKEN_BUDGET * 4)),
+        model || 'llava',
+        resolveNumCtx('', config.prompt + 'x'.repeat(VISION_IMAGE_TOKEN_BUDGET * 4), config.maxTokens),
       );
       const body = JSON.stringify({
         model: model || 'llava',
@@ -1352,7 +1360,12 @@ async function callVision(
       const visionModel = model || 'llava';
       let result: string;
       try {
-        result = await httpPost(url.toString(), { 'Content-Type': 'application/json' }, body, config.timeoutMs, signal);
+        // QA33(M): `httpPost` 의 타임아웃은 **소켓 무활동** 타이머이고 이 호출은 스트리밍이
+        // 아니므로(stream:false) 사실상 호출 전체의 예산이다. 첫 바이트까지의 대기가 곧 프롬프트
+        // 평가 시간이고 그 작업량은 num_ctx 에 비례하는데(요약 경로가 idleTimeoutScale 로 이미
+        // 인정한 사실), Vision 만 고정값이라 창을 올린 만큼 정상 호출이 죽을 수 있다.
+        const visionTimeoutMs = Math.round(config.timeoutMs * numCtxTimeoutScale(visionNumCtx));
+        result = await httpPost(url.toString(), { 'Content-Type': 'application/json' }, body, visionTimeoutMs, signal);
       } catch (err) {
         const e = err as Error & { status?: number; detail?: string };
         const mapped = typeof e?.status === 'number'

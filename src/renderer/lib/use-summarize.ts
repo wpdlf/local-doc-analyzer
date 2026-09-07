@@ -7,7 +7,10 @@ import { chunkText, chunkChapters, estimateCharsPerToken } from './chunker';
 import { normalizeCitationPlacement, stripTrailingPartialCitation, CITATION_REGEX } from './citation';
 import { enrichDocumentWithImages } from './enrich-doc';
 import { slicePdfDocumentByPageRange, isFullRange } from './page-range';
-import { MAX_AI_REQUEST_DURATION_MS } from '../../shared/constants';
+import {
+  MAX_AI_REQUEST_DURATION_MS, STREAM_IDLE_TIMEOUT_MS, RENDERER_IDLE_BACKUP_FACTOR,
+} from '../../shared/constants';
+import { MAX_NUM_CTX_TIMEOUT_SCALE } from '../../shared/ollama-context';
 
 // QA19(B-MED): 요약 완주 타임아웃 판정(순수). 무진전(마지막 진전 이후 idleMs) 또는 절대 백스톱
 // (총 maxTotalMs) 중 하나라도 넘으면 중단한다. 인라인이 아니라 순수 함수로 둬 감시견(setTimeout
@@ -24,8 +27,20 @@ export function isSummaryTimedOut(
   return (now - lastProgressAt > idleMs) || (now - startTime > maxTotalMs);
 }
 
-/** 마지막 진전 이후 무진전 상한 — main 스트림 idle(60초)의 renderer 백업. */
-export const SUMMARY_IDLE_TIMEOUT_MS = 120000;
+/**
+ * 마지막 진전 이후 무진전 상한 — main 스트림 idle 의 renderer 백업.
+ *
+ * QA33(H1): 종전에는 `120000` 리터럴이었고, 그 근거는 "main 의 60초가 먼저 끊으므로 그보다
+ * 넉넉히" 였다. QA32 가 main 의 60초에 `num_ctx` 배율을 곱하면서 그 전제가 뒤집혔는데(배율 4 면
+ * main 240초 > 여기 120초) 값이 그대로여서, **백업이 원본보다 먼저 발화**해 정상 스트림을
+ * 죽이는 상태가 됐다. 기준선(main)과 배율 상한에서 파생해 관계를 구조로 못박는다.
+ *
+ * 배율은 이 run 이 실제로 쓸 창을 알 수 없으므로(청크마다 다르고 sticky 로 올라간다) **상한**을
+ * 쓴다. 여기는 백업이므로 느슨한 쪽으로 틀리는 것이 맞다 — 개별 청크의 응답 정지는 main 이
+ * 자기 배율로 이미 끊고, 그 실패는 에러로 올라온다.
+ */
+export const SUMMARY_IDLE_TIMEOUT_MS =
+  STREAM_IDLE_TIMEOUT_MS * RENDERER_IDLE_BACKUP_FACTOR * MAX_NUM_CTX_TIMEOUT_SCALE;
 
 /**
  * 요약 run 의 절대 백스톱. 정상 종료는 사용자 취소이고, 이 값은 폭주(무한 루프) 방어다.
@@ -1068,7 +1083,12 @@ export function useSummarize() {
           if (isPartialRange && pageRange) {
             markers.push(t('summary.pageRangeMarker', { range: `${pageRange.start}-${pageRange.end}` }));
           }
-          if (customInputTruncated) markers.push(t('summary.inputTruncatedMarker'));
+          // QA33(H5): main 이 보내는 `inputTruncated`(컨텍스트 상한 초과로 프롬프트 앞부분이
+          // 잘림)도 같은 표식을 단다. 종전에는 커스텀 템플릿의 문자 예산 초과만 여기 닿았고,
+          // 정작 **모든 요약 유형**에 걸리는 컨텍스트 초과는 소비자가 없어 무음이었다.
+          if (customInputTruncated || runClient.lastInputTruncated) {
+            markers.push(t('summary.inputTruncatedMarker'));
+          }
           const committed = markers.length > 0
             ? [finalContent.trimEnd(), '', ...markers].join('\n')
             : finalContent;

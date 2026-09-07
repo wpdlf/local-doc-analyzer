@@ -248,6 +248,11 @@ export function isBlankOcrPage(text: string | undefined | null): boolean {
  * 모델 미탑재 같은 지속 상태). 비용 상한도 함께 본다: Ollama BATCH_SIZE=3 × callVision
  * timeoutMs 90s 기준 최악 3×3×90s ≈ 13분에서 끊긴다(종전엔 300페이지 = 100배치 ≈ 2.5시간
  * 동안 isParsing 게이트가 요약·Q&A·컬렉션을 잠갔다).
+ *
+ * QA33(M) 갱신: Vision 호출의 타임아웃은 이제 `num_ctx` 배율을 받는다(창을 올린 만큼 프롬프트
+ * 평가가 길어지므로 고정값이면 정상 호출이 죽는다). OCR 경로의 창은 8192 → 배율 2 이므로 위
+ * 최악 상한도 **3×3×180s ≈ 27분**으로 함께 올라간다. 여전히 종전 2.5시간의 1/5 이고, 이 값은
+ * "모든 호출이 끝까지 매달리는" 극단이다 — 실제 고착은 첫 배치에서 드러난다.
  */
 export const OCR_BLANK_BATCH_STREAK_LIMIT = 3;
 

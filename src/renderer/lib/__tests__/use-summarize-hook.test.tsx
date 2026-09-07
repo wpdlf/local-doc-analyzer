@@ -18,6 +18,7 @@ const M = vi.hoisted(() => ({
   onAnalyzeImage: null as null | (() => void),
   reqCounter: 0,
   truncated: false,
+  inputTruncated: false,
   // Stop→재요약 race 테스트용: 첫 summarize 호출만 이 promise 에서 일시정지시켜
   // stale run 의 finally 가 새 run 보다 늦게 도달하는 상황을 결정적으로 재현.
   gate: null as Promise<void> | null,
@@ -41,6 +42,8 @@ vi.mock('../ai-client', () => ({
     constructor(_settings: unknown) { /* noop */ }
     // QA30(A-F5): 실제 AiClient 는 ai:done 의 잘림 표식을 run 단위 sticky 플래그로 노출한다.
     get lastTruncated() { return M.truncated; }
+    // QA33(H5): 입력(컨텍스트 상한) 절단은 출력 절단과 별개 축이다 — 실제 AiClient 와 같은 모양.
+    get lastInputTruncated() { return M.inputTruncated; }
     async isAvailable() { return M.available; }
     prepareSummarize() { return `req-${++M.reqCounter}`; }
     // 실제 시그니처: summarize(text, type, requestId?) — 계약 패리티를 위해 3번째 인자 포함.
@@ -72,7 +75,7 @@ vi.stubGlobal('window', Object.assign(window, {
 }));
 vi.stubGlobal('crypto', { randomUUID: () => `uuid-${Math.random()}` });
 
-import { useSummarize } from '../use-summarize';
+import { useSummarize, SUMMARY_IDLE_TIMEOUT_MS } from '../use-summarize';
 import { useAppStore } from '../store';
 import { t } from '../i18n';
 import { DEFAULT_SETTINGS } from '../../types';
@@ -100,6 +103,7 @@ beforeEach(() => {
   M.onAnalyzeImage = null;
   M.reqCounter = 0;
   M.truncated = false;
+  M.inputTruncated = false;
   M.gate = null;
   M.imageGate = null;
   M.onToken = null;
@@ -214,6 +218,26 @@ describe('useSummarize — 전체 요약', () => {
   it('정상 완주 → 잘림 마커가 붙지 않는다', async () => {
     await runSummarize();
     expect(useAppStore.getState().summary?.content).not.toContain(t('summary.outputLimitMarker'));
+  });
+
+  // QA33(H5): main 은 입력이 컨텍스트 상한을 넘겨 **앞부분이 잘린 채** 평가된 것을 ai:done 메타로
+  // 알려 왔지만 렌더러에 소비자가 없었다. 프롬프트의 앞은 system(인용 규칙)이라 증상은 "인용이
+  // 없는 요약" 이고 done_reason 은 'stop' 이라 절단 감지에도 안 걸린다 — 저장본에 표식이 남아야
+  // 재오픈했을 때도 온전하지 않은 요약임을 알 수 있다(출력 절단 표식과 같은 규약).
+  it('입력 절단(컨텍스트 초과) → 저장 본문 말미에 절단 마커가 붙는다', async () => {
+    M.inputTruncated = true;
+    await runSummarize();
+    const st = useAppStore.getState();
+    expect(st.summary?.content).toContain('핵심 요약');
+    expect(st.summary?.content).toContain(t('summary.inputTruncatedMarker'));
+    expect(st.summaryStream).toContain(t('summary.inputTruncatedMarker'));
+    // 출력 절단과 섞이지 않는다 — 회복 수단이 다르므로 표식도 갈려야 한다.
+    expect(st.summary?.content).not.toContain(t('summary.outputLimitMarker'));
+  });
+
+  it('정상 완주 → 입력 절단 마커가 붙지 않는다', async () => {
+    await runSummarize();
+    expect(useAppStore.getState().summary?.content).not.toContain(t('summary.inputTruncatedMarker'));
   });
 
   it('유의미한 텍스트 없음 → PDF_NO_TEXT', async () => {
@@ -488,7 +512,9 @@ describe('useSummarize — Stop→재요약 race (ownership 가드, QA post-v0.3
 // 둬서 이미지 분석 단계(토큰 0)가 무진전으로 오판되는" 회귀가 **2릴리즈 출시된 뒤에야** 발견됐다.
 // 그때 추가한 회귀 넷도 순수 함수 테스트라 재발을 막지 못한다 — 그래서 여기서 배선을 잡는다.
 describe('useSummarize — 무진전 워치독 배선 (QA25)', () => {
-  const IDLE_MS = 120_000; // use-summarize.ts 의 IDLE_TIMEOUT_MS
+  // QA33(H1): 리터럴을 두면 상한이 바뀔 때 이 넷이 조용히 무의미해진다(실제로 이 라운드에서
+  // 상한이 num_ctx 배율만큼 올라가며 120초 가정이 깨졌다). 구현과 같은 값을 가져다 쓴다.
+  const IDLE_MS = SUMMARY_IDLE_TIMEOUT_MS;
 
   afterEach(() => {
     vi.useRealTimers();

@@ -52,6 +52,30 @@ export const RAG_MIN_SCORE = 0.3;
 export const MAX_AI_REQUEST_DURATION_MS = 3 * 60 * 60 * 1000;
 
 /**
+ * 스트림 무진전(idle) 상한의 **기준선** — main 의 소켓 idle 타이머가 쓰는 값이고, 렌더러 요약
+ * 감시견은 여기서 파생된다.
+ *
+ * QA33(H1): QA32 가 감시견 상한에 `numCtxTimeoutScale` 을 곱할 때 **세 곳 중 둘에만** 적용했다
+ * (main 의 60초와 ai-client 의 IPC 120초는 곱했고, use-summarize 의 120초는 그대로 뒀다).
+ * 그 결과 배율 4 에서 실제 상한이 main 240초 · IPC 480초 · **요약 120초** 로 뒤집혀, 렌더러
+ * 감시견이 가장 먼저 발화하게 됐다 — 정상 스트림이 `GENERATE_TIMEOUT` 으로 죽는 QA20/QA30/QA32
+ * 와 같은 클래스의 4회차다. 게다가 use-summarize 의 주석은 그 120초를 정확히 "main 의 60초가
+ * 먼저 끊으므로 그보다 넉넉히" 로 정당화하고 있었다 — 전제가 뒤집혔는데 값만 남은 것이다.
+ *
+ * 두 값을 각자 리터럴로 두는 한 같은 역전이 재발하므로(주석은 드리프트한다) 기준선을 단일
+ * 출처로 만들고, 렌더러는 이 값에서 파생한다. 관계 자체는 테스트가 런타임으로 대조한다.
+ */
+export const STREAM_IDLE_TIMEOUT_MS = 60000;
+
+/**
+ * 렌더러 요약 감시견이 main 의 idle 상한보다 얼마나 넉넉해야 하는가.
+ *
+ * 렌더러 감시견은 main 의 **백업**이다(정상 경로에서는 main 이 먼저 끊고 그 실패가 에러로
+ * 올라온다). 백업이 원본보다 빨리 발화하면 백업이 아니라 새로운 실패 원인이 된다.
+ */
+export const RENDERER_IDLE_BACKUP_FACTOR = 2;
+
+/**
  * Ollama / 로컬 HTTP 엔드포인트 SSRF 방어용 허용 호스트.
  *
  * 4곳에 동일한 리터럴 배열 `['localhost', '127.0.0.1', '::1']` 이 중복 정의되어 있었고
