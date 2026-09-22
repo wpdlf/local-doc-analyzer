@@ -39,10 +39,19 @@ export function firstNamed(el: Element, name: string): Element | null {
   return null;
 }
 
-/** 프리픽스를 무시하고 로컬명으로 속성을 읽는다. */
+/**
+ * 프리픽스를 무시하고 로컬명으로 속성을 읽는다.
+ *
+ * a.localName 이 아니라 a.name(정규화된 전체 이름)에서 콜론 이후만 잘라 쓴다. happy-dom
+ * 은 요소의 네임스페이스는 제대로 분해하지만 속성의 네임스페이스는 분해하지 않아
+ * Attr.localName 이 프리픽스가 붙은 전체 이름을 그대로 돌려준다(예: w:pageBreakBefore).
+ * a.name 은 Chromium 과 happy-dom 양쪽에서 똑같이 "w:pageBreakBefore" 형태의 정규화된
+ * 전체 이름이라, 여기서 콜론 앞을 잘라내면 Chromium 에서도 동일한 결과이고 happy-dom
+ * 에서도 정확한 결과가 나온다 — 환경에 의존하는 DOM 기능 없이 문자열만으로 로컬명을 얻는다.
+ */
 export function attr(el: Element, name: string): string | null {
   for (const a of Array.from(el.attributes)) {
-    const ln = a.localName || a.name.replace(/^[^:]*:/, '');
+    const ln = a.name.replace(/^[^:]*:/, '');
     if (ln === name) return a.value;
   }
   return null;
