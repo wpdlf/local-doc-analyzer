@@ -284,6 +284,20 @@ function isTestPath(file: string): boolean {
   return /(^|[\\/])__tests__[\\/]/.test(file);
 }
 
+/**
+ * fix-round1(item1): 스캔 대상이 조용히 좁혀져도 두 신규 가드가 그린으로 남는 문제의 대책.
+ * `walkSourceFiles('src', …)` 를 `'src/shared'` 처럼 좁혀도 offender 목록은 여전히 빈 채라
+ * 통과한다 — 이 저장소에 이미 출시된 적 있는 실패 형태(스캔 범위 붕괴)다. 개수 하한만으로는
+ * "src/renderer 전체" 처럼 큰 단일 디렉터리로 좁혀져도 통과하므로, main·renderer 대표성을
+ * 함께 요구한다(§263 의 read-사이트 하한과 같은 모양).
+ */
+function assertScanIsWide(files: readonly string[]): void {
+  const rel = files.map((f) => f.replace(/\\/g, '/'));
+  expect(rel.length, '스캔 대상이 너무 적다 — walkSourceFiles 범위가 좁혀진 것은 아닌지 확인').toBeGreaterThan(50);
+  expect(rel.some((f) => f.startsWith('src/main/')), 'src/main 이 스캔 대상에 없다 — 범위가 좁혀졌다').toBe(true);
+  expect(rel.some((f) => f.startsWith('src/renderer/')), 'src/renderer 가 스캔 대상에 없다 — 범위가 좁혀졌다').toBe(true);
+}
+
 describe('확장자 리터럴은 document-formats.ts 밖에 두지 않는다', () => {
   /**
    * 진입 게이트가 흩어져 있으면 포맷이 늘 때 한 곳이 안 따라간다. 새 게이트가 생기는 순간
@@ -301,12 +315,27 @@ describe('확장자 리터럴은 document-formats.ts 밖에 두지 않는다', (
   // 내보내기 저장 다이얼로그(file:save / file:export-pdf)는 **출력** 확장자라 이 가드의 대상이
   // 아니다. 핸들러 단위로 스코프한다 — 이전엔 같은 줄에 키워드가 있어야 했는데, 필터 배열과
   // 확장자 비교가 다른 줄에 있는 file:export-pdf 핸들러(main/index.ts)에서 실패했다.
+  //
+  // fix-round1(item2): 스코프를 **닫아야** 한다. 이전 구현은 "다음 ipcMain.handle(" 이 나올
+  // 때만 currentHandler 를 해제해서, file:export-pdf 의 닫는 `});` 부터 다음 핸들러 선언
+  // 전까지의 **모듈 레벨 코드**(예: ALLOWED_EXTERNAL_HOSTS 상수)까지 면제 구간에 들어갔다.
+  // 더 심각하게는, 그 틈에 `ipcMain.on('file:import-path', …)` 처럼 `.handle` 이 아닌 형태의
+  // 새 게이트가 추가되면 HANDLER_DECL 에 안 걸려 **영원히 면제**된 채로 남는다 — 이 가드가
+  // 막으려는 여섯 번째 게이트가 정확히 이 구멍에 빠진다.
+  //
+  // 이 파일의 모든 `ipcMain.handle(` 은 2-스페이스 들여쓰기(레지스터 함수 최상위 문)로 시작해
+  // 콜백이 끝나는 지점의 `  });`(같은 2-스페이스)로 정확히 1:1 닫힌다(내부 중첩 블록은 전부
+  // 그보다 깊게 들여써진다 — 실측: 40개 핸들러 전부 이 규칙으로 정확히 짝지어졌다). 그
+  // 닫는 줄을 만나면 currentHandler 를 해제해 스코프를 닫는다.
   const OUTPUT_ONLY_HANDLERS = new Set(['file:save', 'file:export-pdf']);
-  const HANDLER_DECL = /ipcMain\.handle\(\s*['"]([\w:-]+)['"]/;
+  const HANDLER_DECL = /^ {2}ipcMain\.handle\(\s*['"]([\w:-]+)['"]/;
+  const HANDLER_CLOSE = /^ {2}\}\);\s*$/;
 
   it("'.pdf'/'.docx' 리터럴이 단일 출처 밖에 없다", () => {
+    const scanned = walkSourceFiles('src', /\.(ts|tsx)$/);
+    assertScanIsWide(scanned);
     const offenders: string[] = [];
-    for (const file of walkSourceFiles('src', /\.(ts|tsx)$/)) {
+    for (const file of scanned) {
       const rel = file.replace(/\\/g, '/');
       if (ALLOWED.has(rel) || isTestPath(file)) continue;
       const src = stripJsComments(readFileSync(file, 'utf-8'));
@@ -314,7 +343,9 @@ describe('확장자 리터럴은 document-formats.ts 밖에 두지 않는다', (
       for (const [i, line] of src.split('\n').entries()) {
         const handlerMatch = line.match(HANDLER_DECL);
         if (handlerMatch?.[1]) currentHandler = handlerMatch[1];
-        if (currentHandler && OUTPUT_ONLY_HANDLERS.has(currentHandler)) continue;
+        const isOutputOnly = currentHandler !== null && OUTPUT_ONLY_HANDLERS.has(currentHandler);
+        if (HANDLER_CLOSE.test(line)) currentHandler = null;
+        if (isOutputOnly) continue;
         if (/['"`]\.?(pdf|docx)['"`]/i.test(line)) offenders.push(`${file}:${i + 1}`);
       }
     }
@@ -339,8 +370,10 @@ describe('PDF 매직바이트는 document-formats.ts 밖에 두지 않는다', (
   const PDF_MAGIC_BYTES = /0x25\s*,\s*0x50\s*,\s*0x44\s*,\s*0x46/i;
 
   it('0x25,0x50,0x44,0x46 (%PDF) 바이트열이 단일 출처 밖에 없다', () => {
+    const scanned = walkSourceFiles('src', /\.(ts|tsx)$/);
+    assertScanIsWide(scanned);
     const offenders: string[] = [];
-    for (const file of walkSourceFiles('src', /\.(ts|tsx)$/)) {
+    for (const file of scanned) {
       const rel = file.replace(/\\/g, '/');
       if (ALLOWED.has(rel) || isTestPath(file)) continue;
       const src = stripJsComments(readFileSync(file, 'utf-8'));

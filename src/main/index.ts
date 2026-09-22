@@ -286,7 +286,13 @@ export function createWindow(): BrowserWindow {
   let dropAbortController: AbortController | null = null;
   win.webContents.on('will-navigate', (event, url) => {
     event.preventDefault();
-    if (url.startsWith('file://') && isSupportedExtension(decodeURIComponent(url))) {
+    // fix-round1(item5): decodeURIComponent 는 손상된 퍼센트 인코딩(예: `%.pdf`)에 URIError 를
+    // 던진다 — try 밖에 있으면 동기 Electron 리스너 밖으로 던져져 process 의 uncaughtException
+    // 이 삼키고, 드롭은 사용자 피드백 없이 조용히 무시된다. 손상돼 있으면 아래 게이트를
+    // 통과할 수 없도록 null 로 처리해 드롭을 무시한다.
+    let decodedUrl: string | null = null;
+    try { decodedUrl = decodeURIComponent(url); } catch { /* 손상된 이스케이프 — 드롭 무시 */ }
+    if (decodedUrl !== null && url.startsWith('file://') && isSupportedExtension(decodedUrl)) {
       // UNC 경로 차단: file://remote-server/share/file.pdf 등 네트워크 읽기 방지
       try { if (new URL(url).hostname !== '') return; } catch { return; }
       const filePath = fileURLToPath(url);
@@ -1675,6 +1681,12 @@ export function registerIpcHandlers(): void {
       const filePath = filePaths[0];
       // noUncheckedIndexedAccess: length 검사 후에도 좁힘 안됨. 명시적 가드.
       if (!filePath) return null;
+      // fix-round1(item4): 다이얼로그 filters 는 사용자 선택을 안내할 뿐 강제하지 않는다 —
+      // "파일 형식" 드롭다운을 "모든 파일"로 바꾸거나 경로를 직접 타이핑하면 임의 확장자가
+      // 그대로 넘어온다. file:open-path 가 이미 하는 서버측 확장자 재검증을 여기도 건다.
+      if (!isSupportedExtension(filePath)) {
+        return { error: 'PDF 파일만 열 수 있습니다.' };
+      }
       // drop 핸들러와 동일한 방어 — 심볼릭 링크/비정규 파일 거부.
       const lstat = await fsp.lstat(filePath);
       if (lstat.isSymbolicLink()) {

@@ -45,9 +45,18 @@ export const DIALOG_FILTERS: readonly { name: string; extensions: string[] }[] =
   ...SUPPORTED_FORMATS.map((f) => ({ name: f.label, extensions: [f.ext.slice(1)] })),
 ];
 
+/**
+ * 확장자 판정 — 다이얼로그 필터·초기 게이트용(내용 판별은 sniff/매직바이트가 한다).
+ *
+ * fix-round1(item6): 파일명 전체가 확장자뿐인 경우(`C:\x\.pdf`)는 거부한다. 옛 게이트가
+ * `path.extname()` 을 썼는데, `path.extname('.pdf')` 는 점 파일(dotfile)로 취급해 `''` 를
+ * 반환하므로 그 경로는 항상 거부됐다 — `endsWith` 로 옮기며 조용히 통과 대상이 넓어지지
+ * 않도록 "확장자를 뺀 나머지(stem)가 비어 있지 않다" 를 함께 요구한다.
+ */
 export function isSupportedExtension(filePath: string): boolean {
   const lower = filePath.toLowerCase();
-  return SUPPORTED_EXTENSIONS.some((ext) => lower.endsWith(ext));
+  const base = lower.split(/[\\/]/).pop() ?? lower;
+  return SUPPORTED_EXTENSIONS.some((ext) => lower.endsWith(ext) && base.length > ext.length);
 }
 
 /** zip 로컬 파일 헤더 `PK\x03\x04`. 암호가 걸린 OOXML 은 CFB 라 여기서 갈린다. */

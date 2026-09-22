@@ -17,6 +17,14 @@ describe('document-formats — 지원 포맷 단일 출처', () => {
     expect(isSupportedExtension('/tmp/확장자없음')).toBe(false);
   });
 
+  // fix-round1(item6): 옛 게이트(`path.extname`)는 점 파일을 확장자 없음으로 보고 거부했다.
+  // `endsWith` 로 옮기며 이 경계가 조용히 넓어지지 않도록 고정한다.
+  it('파일명 전체가 확장자뿐이면 거부한다 (옛 path.extname 동작과 동일)', () => {
+    expect(isSupportedExtension('C:/x/.pdf')).toBe(false);
+    expect(isSupportedExtension('C:\\x\\.docx')).toBe(false);
+    expect(isSupportedExtension('.pdf')).toBe(false);
+  });
+
   it('다이얼로그 필터는 "모든 지원 문서" 를 먼저 둔다', () => {
     expect(DIALOG_FILTERS[0]?.extensions).toEqual(['pdf', 'docx']);
     // 필터의 extensions 는 점 없는 형태여야 한다 (Electron 규약)
