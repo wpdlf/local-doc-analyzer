@@ -17,3 +17,6 @@ coverage/
 # Playwright E2E artifacts
 test-results/
 playwright-report/
+
+# superpowers SDD 작업 공간(원장·브리프·리뷰 패키지) — 산출물이 아니라 스크래치다
+.superpowers/
