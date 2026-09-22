@@ -48,6 +48,10 @@ export function firstNamed(el: Element, name: string): Element | null {
  * a.name 은 Chromium 과 happy-dom 양쪽에서 똑같이 "w:pageBreakBefore" 형태의 정규화된
  * 전체 이름이라, 여기서 콜론 앞을 잘라내면 Chromium 에서도 동일한 결과이고 happy-dom
  * 에서도 정확한 결과가 나온다 — 환경에 의존하는 DOM 기능 없이 문자열만으로 로컬명을 얻는다.
+ *
+ * 서로 다른 프리픽스가 같은 로컬명을 가진 속성이 한 요소에 같이 있으면(예: w:val 과
+ * a:val) el.attributes 순서상 먼저 나오는 쪽이 이긴다. 호출부는 그 순서가 어느 프리픽스인지
+ * 기대해서는 안 된다 — 그런 충돌이 실제로 의미 있는 포맷이 나오면 그때 명시적으로 다룬다.
  */
 export function attr(el: Element, name: string): string | null {
   for (const a of Array.from(el.attributes)) {

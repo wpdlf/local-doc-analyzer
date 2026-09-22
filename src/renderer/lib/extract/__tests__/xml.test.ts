@@ -34,6 +34,16 @@ describe('xml 순회 — 프리픽스에 의존하지 않는다', () => {
     expect(texts).toEqual(['첫째', '둘째', '다른ns']);
   });
 
+  it('walk 는 자기 자신을 첫 항목으로 포함하고, 문서 순서대로(깊이 우선) 훑는다', () => {
+    const root = parseXml(DOC).documentElement;
+    const nodes = [...walk(root)];
+    // yield el 이 빠지거나 순서가 밀리면 여기서 잡힌다 — 멤버십이 아니라 자리(첫 항목)와
+    // 정체성(root 그 자체인지)을 본다.
+    expect(nodes[0]).toBe(root);
+    // 중첩 구조 전체에 걸친 문서 순서: body → p → r → t → p → r → t → t
+    expect(nodes.map(localName)).toEqual(['body', 'p', 'r', 't', 'p', 'r', 't', 't']);
+  });
+
   it('attr 은 없는 속성이면 null 이다', () => {
     const root = parseXml(DOC).documentElement;
     const first = childrenNamed(root, 'p')[0]!;
@@ -60,5 +70,20 @@ describe('xml 순회 — 프리픽스에 의존하지 않는다', () => {
     const root = parseXml(DOC).documentElement;
     expect(firstNamed(root, 'p')).not.toBeNull();
     expect(firstNamed(root, 'tbl')).toBeNull();
+  });
+
+  it('firstNamed 는 자기 자신은 후보에서 뺀다', () => {
+    const root = parseXml(DOC).documentElement;
+    const p = childrenNamed(root, 'p')[0]!;
+    // p 자신의 로컬명이 'p' 이지만, 자손 중에는 'p' 가 없으므로 null 이어야 한다.
+    // e !== el 가드가 빠지면 p 자신이 잡혀 이 테스트가 깨진다.
+    expect(firstNamed(p, 'p')).toBeNull();
+  });
+
+  it('attr 은 서로 다른 프리픽스가 같은 로컬명을 가지면 속성 순서상 먼저 나오는 쪽을 준다', () => {
+    const root = parseXml(
+      `<el xmlns:w="urn:w" xmlns:a="urn:a" w:val="1" a:val="2"/>`,
+    ).documentElement;
+    expect(attr(root, 'val')).toBe('1');
   });
 });
