@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 // RecentDocuments 행위 (session-persistence module-4) — 영속화 OFF 숨김 / 빈 목록 안내 /
-// 목록 표시(페이지·인덱스) / 열기(openPath→handlePdfData) / 열기 실패 배너 /
+// 목록 표시(페이지·인덱스) / 열기(openPath→openDocumentData) / 열기 실패 배너 /
 // 삭제(성공 시 refresh, 실패 시 배너) / StrictMode 더블 마운트 가드.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -14,10 +14,10 @@ const M = vi.hoisted(() => ({
   list: vi.fn(),
   del: vi.fn(() => Promise.resolve({ ok: true })),
   openPath: vi.fn(),
-  handlePdfData: vi.fn(() => Promise.resolve()),
+  openDocumentData: vi.fn(() => Promise.resolve()),
   restoreFromSession: vi.fn(() => Promise.resolve(false)),
 }));
-vi.mock('../../lib/pdf-parser', () => ({ handlePdfData: M.handlePdfData }));
+vi.mock('../../lib/document-open', () => ({ openDocumentData: M.openDocumentData }));
 vi.mock('../../lib/tabs', () => ({ openFromSessionOnly: M.restoreFromSession }));
 
 vi.stubGlobal('window', Object.assign(window, {
@@ -81,23 +81,23 @@ describe('RecentDocuments', () => {
     expect(screen.queryByText(/청크/)).toBeNull();
   });
 
-  it('열기 → openPath(filePath) → handlePdfData(data,name,path)', async () => {
+  it('열기 → openPath(filePath) → openDocumentData(data,name,path)', async () => {
     const user = userEvent.setup();
     render(<RecentDocuments />);
     await waitFor(() => expect(screen.getByText(/강의1\.pdf/)).toBeTruthy());
     await user.click(screen.getByRole('button', { name: '열기' }));
     expect(M.openPath).toHaveBeenCalledWith('/docs/강의1.pdf');
-    await waitFor(() => expect(M.handlePdfData).toHaveBeenCalledWith(expect.anything(), '강의1.pdf', '/docs/강의1.pdf'));
+    await waitFor(() => expect(M.openDocumentData).toHaveBeenCalledWith(expect.anything(), '강의1.pdf', '/docs/강의1.pdf'));
   });
 
-  it('열기 실패(openPath error) → PDF_PARSE_FAIL 배너 + handlePdfData 미호출', async () => {
+  it('열기 실패(openPath error) → PDF_PARSE_FAIL 배너 + openDocumentData 미호출', async () => {
     M.openPath.mockResolvedValue({ error: 'ENOENT' });
     const user = userEvent.setup();
     render(<RecentDocuments />);
     await waitFor(() => expect(screen.getByText(/강의1\.pdf/)).toBeTruthy());
     await user.click(screen.getByRole('button', { name: '열기' }));
     await waitFor(() => expect(useAppStore.getState().error?.code).toBe('PDF_PARSE_FAIL'));
-    expect(M.handlePdfData).not.toHaveBeenCalled();
+    expect(M.openDocumentData).not.toHaveBeenCalled();
   });
 
   it('삭제 → delete(docHash) 호출 + 목록 갱신(refresh 재조회)', async () => {
@@ -164,7 +164,7 @@ describe('RecentDocuments — 원본 파일 부재 시 세션 폴백 (QA26)', ()
     );
     expect(useAppStore.getState().error).toBeNull();
     expect(useAppStore.getState().notice?.message).toBeTruthy();
-    expect(M.handlePdfData).not.toHaveBeenCalled();
+    expect(M.openDocumentData).not.toHaveBeenCalled();
   });
 
   it('파일도 세션도 없으면 그때 에러 배너를 띄운다', async () => {
@@ -186,7 +186,7 @@ describe('RecentDocuments — 원본 파일 부재 시 세션 폴백 (QA26)', ()
     render(<RecentDocuments />);
     await userEvent.click(await screen.findByRole('button', { name: /강의1\.pdf/ }));
 
-    await waitFor(() => expect(M.handlePdfData).toHaveBeenCalled());
+    await waitFor(() => expect(M.openDocumentData).toHaveBeenCalled());
     expect(M.restoreFromSession).not.toHaveBeenCalled();
   });
 });

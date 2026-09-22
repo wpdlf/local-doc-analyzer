@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../lib/store';
 import { useT } from '../lib/i18n';
-import { handlePdfData, cancelPdfParse } from '../lib/pdf-parser';
+import { openDocumentData, cancelDocumentParse } from '../lib/document-open';
 
 export function PdfUploader() {
   const setError = useAppStore((s) => s.setError);
@@ -37,7 +37,7 @@ export function PdfUploader() {
         setError({ code: 'PDF_PARSE_FAIL', message: (result as { error: string }).error });
         return;
       }
-      await handlePdfData(result.data, result.name, result.path);
+      await openDocumentData(result.data, result.name, result.path);
     } catch (err) {
       const error = err as Error & { code?: string };
       setError({ code: (error.code as 'PDF_PARSE_FAIL') || 'PDF_PARSE_FAIL', message: error.message || t('uploader.cannotRead') });
@@ -120,7 +120,7 @@ export function PdfUploader() {
           )}
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); cancelPdfParse(); }}
+            onClick={(e) => { e.stopPropagation(); cancelDocumentParse(); }}
             className="mt-2 px-4 py-1.5 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
             aria-label={t('uploader.cancelParse')}
           >

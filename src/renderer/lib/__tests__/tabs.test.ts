@@ -17,7 +17,8 @@ const M = vi.hoisted(() => ({
 }));
 
 // QA23: 세션 복원도 "빈 페이지 다수" 를 다시 통지한다(1회성 파싱 통지가 세션에 안 남던 결함).
-vi.mock('../pdf-parser', () => ({ handlePdfData: M.handlePdfData, notifyEmptyPages: M.notifyEmptyPages }));
+vi.mock('../pdf-parser', () => ({ notifyEmptyPages: M.notifyEmptyPages }));
+vi.mock('../document-open', () => ({ openDocumentData: M.handlePdfData }));
 vi.mock('../use-session', () => ({
   persistCurrentSession: M.persistCurrentSession,
   restoreSessionForDocument: M.restoreSessionForDocument,

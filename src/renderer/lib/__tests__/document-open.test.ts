@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-// pdf-parser 보강 — handlePdfData 오케스트레이션(가드/성공/에러 매핑)과 cancelPdfParse,
+// pdf-parser 보강 — openDocumentData 오케스트레이션(가드/성공/에러 매핑)과 cancelDocumentParse,
 // parsePdf 의 pageCount 가드·OCR fallback 경로. parsePdf 의 텍스트 추출/이미지 캡/args 가드는
 // pdf-parser.test.ts(node-env) 가 별도 커버. pdfjs-dist/worker/use-session 은 목 격리.
 
@@ -49,7 +49,8 @@ vi.stubGlobal('window', Object.assign(window, {
 }));
 vi.stubGlobal('crypto', { randomUUID: () => 'doc-uuid' });
 
-import { handlePdfData, cancelPdfParse, MAX_PAGE_COUNT } from '../pdf-parser';
+import { openDocumentData, cancelDocumentParse } from '../document-open';
+import { MAX_PAGE_COUNT } from '../pdf-parser';
 import { useAppStore } from '../store';
 import { DEFAULT_SETTINGS } from '../../types';
 import { MAX_PDF_SIZE_BYTES } from '../../../shared/constants';
@@ -74,19 +75,19 @@ beforeEach(() => {
     error: null, summary: null, summaryStream: '', qaMessages: [], pdfBytes: null,
   });
 });
-afterEach(() => { cancelPdfParse(); });
+afterEach(() => { cancelDocumentParse(); });
 
-describe('handlePdfData — 가드', () => {
+describe('openDocumentData — 가드', () => {
   it('요약 생성 중이면 거부 + parse 미시도', async () => {
     useAppStore.setState({ isGenerating: true });
-    await handlePdfData(pdfBuf(), 'a.pdf', '/d/a.pdf');
+    await openDocumentData(pdfBuf(), 'a.pdf', '/d/a.pdf');
     expect(useAppStore.getState().error?.code).toBe('PDF_PARSE_FAIL');
     expect(P.getDocument).not.toHaveBeenCalled();
   });
 
   it('Q&A 생성 중이면 거부', async () => {
     useAppStore.setState({ isQaGenerating: true });
-    await handlePdfData(pdfBuf(), 'a.pdf', '/d/a.pdf');
+    await openDocumentData(pdfBuf(), 'a.pdf', '/d/a.pdf');
     expect(useAppStore.getState().error?.code).toBe('PDF_PARSE_FAIL');
     expect(P.getDocument).not.toHaveBeenCalled();
   });
@@ -95,7 +96,7 @@ describe('handlePdfData — 가드', () => {
   // 새 파일 열기를 차단 — isTabSwitchBlocked 와 대칭(누락 시 in-flight 멤버 요약 토큰 낭비).
   it('컬렉션 요약 gather 중(isCollectionBusy)이면 거부', async () => {
     useAppStore.setState({ isGenerating: false, isQaGenerating: false, isCollectionBusy: true });
-    await handlePdfData(pdfBuf(), 'a.pdf', '/d/a.pdf');
+    await openDocumentData(pdfBuf(), 'a.pdf', '/d/a.pdf');
     expect(useAppStore.getState().error?.code).toBe('PDF_PARSE_FAIL');
     expect(P.getDocument).not.toHaveBeenCalled();
   });
@@ -104,7 +105,7 @@ describe('handlePdfData — 가드', () => {
   // 문서/전역검색/Ctrl+O 는 isTabSwitchBlocked 를 안 거치므로 여기 진입 가드가 유일한 방어선.
   it('컬렉션 열기 중(collectionOpenInFlight)이면 거부', async () => {
     useAppStore.setState({ isGenerating: false, isQaGenerating: false, isCollectionBusy: false, collectionOpenInFlight: true });
-    await handlePdfData(pdfBuf(), 'a.pdf', '/d/a.pdf');
+    await openDocumentData(pdfBuf(), 'a.pdf', '/d/a.pdf');
     expect(useAppStore.getState().error?.code).toBe('PDF_PARSE_FAIL');
     expect(P.getDocument).not.toHaveBeenCalled();
     useAppStore.setState({ collectionOpenInFlight: false });
@@ -114,26 +115,32 @@ describe('handlePdfData — 가드', () => {
   // en 로케일에서 영문으로 표시되어야 한다(이전엔 영어 UI 에도 한글 노출).
   it('en 로케일: 가드/검증 메시지가 i18n 영문으로 표시된다', async () => {
     useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, provider: 'ollama', uiLanguage: 'en' }, isGenerating: true });
-    await handlePdfData(pdfBuf(), 'a.pdf', '/d/a.pdf');
+    await openDocumentData(pdfBuf(), 'a.pdf', '/d/a.pdf');
     expect(useAppStore.getState().error?.message).toMatch(/Cannot open a new file while summarizing/);
 
-    // 매직바이트 실패 메시지도 영문(위장 바이너리)
+    // 매직바이트 실패 메시지도 영문(위장 바이너리). Task10 후속 판정: `.pdf` 로 드롭된 파일은
+    // 진입 게이트가 확장자를 이미 확인했으므로, 내용이 PDF/zip 매직과 안 맞으면 "지원하지
+    // 않는 형식"이 아니라 "손상/형식 불일치"(DOC_CORRUPT)가 정확하다.
     useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, provider: 'ollama', uiLanguage: 'en' }, isGenerating: false });
-    await handlePdfData(new Uint8Array([1, 2, 3, 4, 5, 6]).buffer, 'fake.pdf', '/d/fake.pdf');
-    expect(useAppStore.getState().error?.message).toMatch(/Not a valid PDF file/);
+    await openDocumentData(new Uint8Array([1, 2, 3, 4, 5, 6]).buffer, 'fake.pdf', '/d/fake.pdf');
+    expect(useAppStore.getState().error?.message).toMatch(/may be corrupted or in a different format/);
   });
 
   it('용량 초과 → PDF_PARSE_FAIL', async () => {
     const big = new ArrayBuffer(MAX_PDF_SIZE_BYTES + 1);
-    await handlePdfData(big, 'big.pdf', '/d/big.pdf');
+    await openDocumentData(big, 'big.pdf', '/d/big.pdf');
     expect(useAppStore.getState().error?.message).toMatch(/너무 큽니다/);
     expect(P.getDocument).not.toHaveBeenCalled();
   });
 
-  it('매직바이트 불일치(위장 바이너리) → 거부', async () => {
+  // Task10 후속 판정: `fake.pdf` 는 확장자가 지원 목록(진입 게이트가 이미 확인) 안이라, 내용이
+  // PDF/zip 매직과 안 맞으면 "지원하지 않는 형식"(존재하지 않는 문제)이 아니라 "손상/형식
+  // 불일치"(DOC_CORRUPT)로 안내해야 한다 — 사용자는 "내 건 .pdf 인데?" 가 되면 안 된다.
+  it('매직바이트 불일치(위장 바이너리) → DOC_CORRUPT 로 거부', async () => {
     const u = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
-    await handlePdfData(u.buffer, 'fake.pdf', '/d/fake.pdf');
-    expect(useAppStore.getState().error?.message).toMatch(/유효한 PDF/);
+    await openDocumentData(u.buffer, 'fake.pdf', '/d/fake.pdf');
+    expect(useAppStore.getState().error?.code).toBe('DOC_CORRUPT');
+    expect(useAppStore.getState().error?.message).toMatch(/손상되었거나 다른 형식/);
     expect(P.getDocument).not.toHaveBeenCalled();
   });
 
@@ -143,15 +150,15 @@ describe('handlePdfData — 가드', () => {
     const body = new Uint8Array(3 + 5 + 200);
     body.set([0xef, 0xbb, 0xbf], 0);            // UTF-8 BOM
     body.set([0x25, 0x50, 0x44, 0x46, 0x2d], 3); // %PDF-
-    await handlePdfData(body.buffer, 'bom.pdf', '/d/bom.pdf');
+    await openDocumentData(body.buffer, 'bom.pdf', '/d/bom.pdf');
     expect(P.getDocument).toHaveBeenCalledTimes(1);
     expect(useAppStore.getState().error).toBeNull();
   });
 });
 
-describe('handlePdfData — 성공 오케스트레이션', () => {
+describe('openDocumentData — 성공 오케스트레이션', () => {
   it('유효 PDF(실경로) → 문서 설정 + 세션 복원 트리거, pdfBytes 는 비상주(lazy)', async () => {
-    await handlePdfData(pdfBuf(), 'lecture.pdf', '/d/lecture.pdf');
+    await openDocumentData(pdfBuf(), 'lecture.pdf', '/d/lecture.pdf');
     const s = useAppStore.getState();
     expect(P.getDocument).toHaveBeenCalledTimes(1);
     expect(s.document?.fileName).toBe('lecture.pdf');
@@ -165,7 +172,7 @@ describe('handlePdfData — 성공 오케스트레이션', () => {
   });
 
   it('합성경로(경로 구분자 없음) 드롭 → 재읽기 불가라 pdfBytes 상주(fallback)', async () => {
-    await handlePdfData(pdfBuf(), 'lecture.pdf', 'lecture.pdf'); // getPathForFile 실패 시 파일명 fallback
+    await openDocumentData(pdfBuf(), 'lecture.pdf', 'lecture.pdf'); // getPathForFile 실패 시 파일명 fallback
     const s = useAppStore.getState();
     expect(s.document?.fileName).toBe('lecture.pdf');
     expect(s.pdfBytes).not.toBeNull(); // 재읽기 불가 → 상주 유지
@@ -174,13 +181,13 @@ describe('handlePdfData — 성공 오케스트레이션', () => {
   // perf(A1): 이미지 분석 OFF면 parsePdf 가 이미지 추출(getOperatorList=pdfjs 최고비용)을 스킵.
   it('enableImageAnalysis=true → getOperatorList 호출(이미지 경로 실행)', async () => {
     useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, provider: 'ollama', enableOcrFallback: false, enableImageAnalysis: true } });
-    await handlePdfData(pdfBuf(), 'a.pdf', '/d/a.pdf');
+    await openDocumentData(pdfBuf(), 'a.pdf', '/d/a.pdf');
     expect(P.getOperatorList).toHaveBeenCalled();
   });
 
   it('enableImageAnalysis=false → getOperatorList 미호출(추출 스킵) + images 비어있음', async () => {
     useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, provider: 'ollama', enableOcrFallback: false, enableImageAnalysis: false } });
-    await handlePdfData(pdfBuf(), 'b.pdf', '/d/b.pdf');
+    await openDocumentData(pdfBuf(), 'b.pdf', '/d/b.pdf');
     expect(P.getOperatorList).not.toHaveBeenCalled();
     expect(useAppStore.getState().document?.images).toEqual([]);
   });
@@ -198,7 +205,7 @@ describe('handlePdfData — 성공 오케스트레이션', () => {
       { str: seg('라'), transform: [10, 0, 0, 10, 360, 680], width: 300 }, // 넓은 간격 → 공백
     ];
     P.getDocument.mockReturnValue({ promise: Promise.resolve(P.fakePdf(1, items)) });
-    await handlePdfData(pdfBuf(), 'pos.pdf', '/d/pos.pdf');
+    await openDocumentData(pdfBuf(), 'pos.pdf', '/d/pos.pdf');
     expect(useAppStore.getState().document?.pageTexts[0])
       .toBe(`${seg('가')}${seg('나')}\n${seg('다')} ${seg('라')}`);
   });
@@ -226,7 +233,7 @@ describe('handlePdfData — 성공 오케스트레이션', () => {
     });
     useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, provider: 'ollama', enableOcrFallback: false, enableImageAnalysis: true } });
 
-    await handlePdfData(pdfBuf(), 'scan.pdf', '/d/scan.pdf');
+    await openDocumentData(pdfBuf(), 'scan.pdf', '/d/scan.pdf');
 
     // 예산(400 검사)이 페이지당 40장이면 10페이지에서 소진 — 60페이지 전부를 열지 않아야 한다.
     expect(getOperatorList.mock.calls.length).toBeLessThan(60);
@@ -272,7 +279,7 @@ describe('handlePdfData — 성공 오케스트레이션', () => {
       });
       useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, provider: 'ollama', enableOcrFallback: false, enableImageAnalysis: true, uiLanguage: 'ko' }, notice: null });
 
-      await handlePdfData(pdfBuf(), 'many.pdf', '/d/many.pdf');
+      await openDocumentData(pdfBuf(), 'many.pdf', '/d/many.pdf');
 
       expect(useAppStore.getState().document?.images.length).toBe(50);
       const { t } = await import('../i18n');
@@ -307,7 +314,7 @@ describe('handlePdfData — 성공 오케스트레이션', () => {
       const confirmSpy = vi.fn(() => false);
       vi.stubGlobal('confirm', confirmSpy);
       try {
-        await handlePdfData(pdfBuf(), 'new.pdf', '/d/new.pdf');
+        await openDocumentData(pdfBuf(), 'new.pdf', '/d/new.pdf');
         expect(confirmSpy).toHaveBeenCalledTimes(1);
         expect(P.getDocument, '취소했는데 파싱이 돌면 안 된다').not.toHaveBeenCalled();
         expect(useAppStore.getState().document?.fileName, '기존 문서가 유지돼야 한다').toBe('old.pdf');
@@ -321,7 +328,7 @@ describe('handlePdfData — 성공 오케스트레이션', () => {
       seedWorkWithPersistOff();
       vi.stubGlobal('confirm', vi.fn(() => true));
       try {
-        await handlePdfData(pdfBuf(), 'new.pdf', '/d/new.pdf');
+        await openDocumentData(pdfBuf(), 'new.pdf', '/d/new.pdf');
         expect(useAppStore.getState().document?.fileName).toBe('new.pdf');
       } finally {
         vi.unstubAllGlobals();
@@ -337,7 +344,7 @@ describe('handlePdfData — 성공 오케스트레이션', () => {
       const confirmSpy = vi.fn(() => true);
       vi.stubGlobal('confirm', confirmSpy);
       try {
-        await handlePdfData(pdfBuf(), 'first.pdf', '/d/first.pdf');
+        await openDocumentData(pdfBuf(), 'first.pdf', '/d/first.pdf');
         expect(confirmSpy).not.toHaveBeenCalled();
       } finally {
         vi.unstubAllGlobals();
@@ -349,7 +356,7 @@ describe('handlePdfData — 성공 오케스트레이션', () => {
       const confirmSpy = vi.fn(() => true);
       vi.stubGlobal('confirm', confirmSpy);
       try {
-        await handlePdfData(pdfBuf(), 'new.pdf', '/d/new.pdf', { skipDiscardConfirm: true });
+        await openDocumentData(pdfBuf(), 'new.pdf', '/d/new.pdf', { skipDiscardConfirm: true });
         expect(confirmSpy).not.toHaveBeenCalled();
       } finally {
         vi.unstubAllGlobals();
@@ -359,48 +366,48 @@ describe('handlePdfData — 성공 오케스트레이션', () => {
 
   it('기존 문서가 있으면 새 문서 반영 전에 persist flush', async () => {
     useAppStore.setState({ document: { id: 'old', fileName: 'old.pdf', filePath: '/d/old.pdf', pageCount: 1, extractedText: 'x', pageTexts: ['x'], chapters: [], images: [], createdAt: new Date() } });
-    await handlePdfData(pdfBuf(), 'new.pdf', '/d/new.pdf');
+    await openDocumentData(pdfBuf(), 'new.pdf', '/d/new.pdf');
     expect(P.persist).toHaveBeenCalled();
     expect(useAppStore.getState().document?.fileName).toBe('new.pdf');
   });
 });
 
-describe('handlePdfData — parsePdf 경로/에러 매핑', () => {
+describe('openDocumentData — parsePdf 경로/에러 매핑', () => {
   it('페이지 0 → PDF_NO_TEXT', async () => {
     P.getDocument.mockReturnValue({ promise: Promise.resolve(P.fakePdf(0, GOOD_ITEMS)) });
-    await handlePdfData(pdfBuf(), 'empty.pdf', '/d/empty.pdf');
+    await openDocumentData(pdfBuf(), 'empty.pdf', '/d/empty.pdf');
     expect(useAppStore.getState().error?.code).toBe('PDF_NO_TEXT');
   });
 
   it('페이지 수 초과 → PDF_TOO_MANY_PAGES', async () => {
     P.getDocument.mockReturnValue({ promise: Promise.resolve(P.fakePdf(MAX_PAGE_COUNT + 1, GOOD_ITEMS)) });
-    await handlePdfData(pdfBuf(), 'huge.pdf', '/d/huge.pdf');
+    await openDocumentData(pdfBuf(), 'huge.pdf', '/d/huge.pdf');
     expect(useAppStore.getState().error?.code).toBe('PDF_TOO_MANY_PAGES');
   });
 
   it('텍스트 거의 없음 + OCR 비활성 → PDF_NO_TEXT', async () => {
     P.getDocument.mockReturnValue({ promise: Promise.resolve(P.fakePdf(2, SHORT_ITEMS)) });
-    await handlePdfData(pdfBuf(), 'scan.pdf', '/d/scan.pdf');
+    await openDocumentData(pdfBuf(), 'scan.pdf', '/d/scan.pdf');
     expect(useAppStore.getState().error?.code).toBe('PDF_NO_TEXT');
   });
 
   it('텍스트 거의 없음 + OCR 활성 → OCR 시도 후 OCR_FAIL', async () => {
     useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, provider: 'ollama', enableOcrFallback: true } });
     P.getDocument.mockReturnValue({ promise: Promise.resolve(P.fakePdf(2, SHORT_ITEMS)) });
-    await handlePdfData(pdfBuf(), 'scan.pdf', '/d/scan.pdf');
+    await openDocumentData(pdfBuf(), 'scan.pdf', '/d/scan.pdf');
     expect(useAppStore.getState().error?.code).toBe('OCR_FAIL');
   });
 
   it('getDocument 가 ABORTED → 에러 배너 미표시(의도적 취소)', async () => {
     P.getDocument.mockReturnValue({ promise: Promise.reject(Object.assign(new Error('취소'), { code: 'ABORTED' })) });
-    await handlePdfData(pdfBuf(), 'x.pdf', '/d/x.pdf');
+    await openDocumentData(pdfBuf(), 'x.pdf', '/d/x.pdf');
     expect(useAppStore.getState().error).toBeNull();
     expect(useAppStore.getState().isParsing).toBe(false);
   });
 
   it('getDocument 일반 에러 → PDF_PARSE_FAIL 로 매핑', async () => {
     P.getDocument.mockReturnValue({ promise: Promise.reject(new Error('손상된 스트림')) });
-    await handlePdfData(pdfBuf(), 'x.pdf', '/d/x.pdf');
+    await openDocumentData(pdfBuf(), 'x.pdf', '/d/x.pdf');
     expect(useAppStore.getState().error?.code).toBe('PDF_PARSE_FAIL');
     expect(useAppStore.getState().error?.message).toMatch(/손상된 스트림/);
   });
@@ -414,14 +421,14 @@ describe('handlePdfData — parsePdf 경로/에러 매핑', () => {
       promise: Promise.reject(Object.assign(new Error('No password given'), { name: 'PasswordException' })),
       destroy,
     });
-    await handlePdfData(pdfBuf(), 'locked.pdf', '/d/locked.pdf');
+    await openDocumentData(pdfBuf(), 'locked.pdf', '/d/locked.pdf');
     expect(useAppStore.getState().error?.code).toBe('PDF_ENCRYPTED');
     expect(destroy).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('cancelPdfParse', () => {
+describe('cancelDocumentParse', () => {
   it('진행 중 파싱이 없으면 안전하게 no-op', () => {
-    expect(() => cancelPdfParse()).not.toThrow();
+    expect(() => cancelDocumentParse()).not.toThrow();
   });
 });

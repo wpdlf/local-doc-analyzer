@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { useT } from '../lib/i18n';
 import { useAppStore } from '../lib/store';
-import { handlePdfData } from '../lib/pdf-parser';
+import { openDocumentData } from '../lib/document-open';
 import { searchSessionsSemantic } from '../lib/semantic-search';
 import type { GlobalSearchResult } from '../../shared/session-types';
 import { openFromSessionOnly } from '../lib/tabs';
@@ -9,7 +9,7 @@ import { openFromSessionOnly } from '../lib/tabs';
 /**
  * 전체 문서 검색 (cross-session search) — 저장된 모든 세션을 가로질러 검색.
  * 두 모드: 키워드(정확한 문자열, main 의 session:search)와 의미(임베딩 코사인, searchSessionsSemantic).
- * 결과 클릭 시 RecentDocuments 와 동일하게 openPath → handlePdfData(세션 복원)로 연다.
+ * 결과 클릭 시 RecentDocuments 와 동일하게 openPath → openDocumentData(세션 복원)로 연다.
  * persistSessions OFF 면 검색 대상이 없으므로 숨김.
  */
 
@@ -111,7 +111,7 @@ export function GlobalSearch() {
         useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: tr('recent.openFail') });
         return;
       }
-      await handlePdfData(result.data, result.name, result.path);
+      await openDocumentData(result.data, result.name, result.path);
     } catch {
       useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: tr('recent.openFail') });
     } finally {

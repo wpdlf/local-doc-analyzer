@@ -359,13 +359,11 @@ describe('PDF 매직바이트는 document-formats.ts 밖에 두지 않는다', (
    * 이라 위 문자열 리터럴 가드에 안 걸린다. 같은 시퀀스가 또 다른 진입 게이트를 단일 출처
    * 밖에 만드는 것을 막는다(App.tsx 의 DOM 드롭 매직바이트 검사가 실제로 이 형태였다 — Task9).
    *
-   * pdf-parser.ts 자신은 한시적으로 허용한다 — 이 파일의 매직 검사는 Task10 에서 sniff() 기반
-   * 다중 포맷 판별로 옮겨진다. **Task10 Step 6 에서 이 항목을 반드시 뺀다.**
+   * Task10: 매직 검사가 document-open.ts 로 옮겨지며 hasPdfMagic() 기반 sniff 로 대체됐다 —
+   * pdf-parser.ts 의 한시적 허용을 제거한다.
    */
   const ALLOWED = new Set([
     'src/shared/document-formats.ts',
-    // TODO(Task10): sniff() 기반 판별로 옮기면서 제거.
-    'src/renderer/lib/pdf-parser.ts',
   ]);
   const PDF_MAGIC_BYTES = /0x25\s*,\s*0x50\s*,\s*0x44\s*,\s*0x46/i;
 

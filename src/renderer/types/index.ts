@@ -274,7 +274,14 @@ export type AppErrorCode =
   | 'COLLECTION_OPEN_FAIL'
   | 'COLLECTION_SAVE_FAIL'
   | 'COLLECTION_DELETE_FAIL'
-  | 'COLLECTION_SUMMARY_FAIL';
+  | 'COLLECTION_SUMMARY_FAIL'
+  // Task10: 비-PDF 문서(DOCX 등) 진입 경로의 전용 코드. PDF_* 재사용은 의미를 오도한다
+  // (예: DOC_ENCRYPTED 는 CFB 컨테이너 판별이지 PDF PasswordException 이 아니다).
+  | 'DOC_UNSUPPORTED'
+  | 'DOC_CORRUPT'
+  | 'DOC_ENCRYPTED'
+  | 'DOC_TOO_LARGE'
+  | 'DOC_NO_TEXT';
 
 export interface AppError {
   code: AppErrorCode;

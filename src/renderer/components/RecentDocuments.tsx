@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useT } from '../lib/i18n';
 import { useAppStore } from '../lib/store';
-import { handlePdfData } from '../lib/pdf-parser';
+import { openDocumentData } from '../lib/document-open';
 import type { SessionManifestEntry } from '../../shared/session-types';
 import { openFromSessionOnly } from '../lib/tabs';
 
@@ -64,7 +64,7 @@ export function RecentDocuments() {
         return;
       }
       // handlePdfData 가 파싱 후 setDocument → restoreSessionForDocument 로 세션 복원
-      await handlePdfData(result.data, result.name, result.path);
+      await openDocumentData(result.data, result.name, result.path);
     } catch {
       useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: tr('recent.openFail') });
     } finally {

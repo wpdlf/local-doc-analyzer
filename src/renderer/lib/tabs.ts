@@ -1,5 +1,6 @@
 import { useAppStore } from './store';
-import { handlePdfData, notifyEmptyPages } from './pdf-parser';
+import { notifyEmptyPages } from './pdf-parser';
+import { openDocumentData } from './document-open';
 import { persistCurrentSession, restoreSessionForDocument } from './use-session';
 import { confirmDiscardIfNotPersisted } from './discard-policy';
 import { t } from './i18n';
@@ -77,7 +78,7 @@ function safeId(): string {
  * 탭 대상 문서 열기 — ① 영속 세션 우선 복원(재파싱 0, 즉시 전환) → ② 세션 없을 때만 전체 파싱.
  * 성공 시 true. 둘 다 불가하면 false (호출자가 에러 표시/정리 담당).
  *
- * ★ 핵심: 탭 전환마다 handlePdfData(parsePdf) 로 PDF 를 통째로 재파싱하면 대용량/이미지
+ * ★ 핵심: 탭 전환마다 openDocumentData(parsePdf) 로 PDF 를 통째로 재파싱하면 대용량/이미지
  * PDF 에서 이미지 추출·OCR 에 수십 초가 걸려 "전환이 안 되는" 것처럼 보인다(parsePdf 가
  * 끝날 때까지 isParsing=true 로 후속 클릭까지 차단). 파싱 결과는 이미 세션에 영속화돼 있으므로
  * 재사용해 즉시 전환한다. 뷰어용 원본 바이트는 상주시키지 않고(pdfBytes 비상주, 메모리 M1)
@@ -94,7 +95,7 @@ async function openTabTarget(tab: OpenTab): Promise<boolean> {
   const result = await window.electronAPI.file.openPath(tab.filePath).catch(() => ({ error: 'ipc' as const }));
   if (!('error' in result)) {
     // 파기 확인은 이 함수의 호출자(switchToTab·closeTab)가 이미 마쳤다 — 중복 질문 방지.
-    await handlePdfData(result.data, result.name, result.path, { skipDiscardConfirm: true });
+    await openDocumentData(result.data, result.name, result.path, { skipDiscardConfirm: true });
     return true;
   }
   console.warn('[tabs] 전환 실패: 세션 없음 + 파일 재읽기 불가', tab.filePath, result.error);

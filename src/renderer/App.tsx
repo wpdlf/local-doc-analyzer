@@ -13,7 +13,7 @@ import { SummaryTypeSelector } from './components/SummaryTypeSelector';
 import { StatusBar } from './components/StatusBar';
 import { SettingsPanel } from './components/SettingsPanel';
 import { OllamaSetupWizard } from './components/OllamaSetupWizard';
-import { handlePdfData, cancelPdfParse } from './lib/pdf-parser';
+import { openDocumentData, cancelDocumentParse } from './lib/document-open';
 import { applyTheme } from './lib/theme';
 import { useSummarize } from './lib/use-summarize';
 import { useRagBuilder } from './lib/use-qa';
@@ -105,7 +105,7 @@ export default function App() {
         useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: result.error });
         return;
       }
-      await handlePdfData(result.data, result.name, result.path);
+      await openDocumentData(result.data, result.name, result.path);
       // QA18(D-LOW): 설정/설치 화면에서 열어도 문서가 보이지 않아 "먹통"으로 오인됐다
       // (파싱은 수행되지만 화면은 그대로 → 사용자가 재드롭 → abort-replace 재파싱).
       useAppStore.getState().setView('main');
@@ -255,7 +255,7 @@ export default function App() {
       // 거부가 unhandledrejection 이 되어 ErrorBoundary 도 못 잡고 배너도 안 뜬다.
       // 글로벌 drop / Ctrl+O 와 동일하게 setError 로 수렴.
       try {
-        await handlePdfData(file.data, file.name, file.path);
+        await openDocumentData(file.data, file.name, file.path);
         // QA18(D-LOW): 설정/설치 화면에서 열어도 문서가 보이지 않아 "먹통"으로 오인됐다
         // (파싱은 수행되지만 화면은 그대로 → 사용자가 재드롭 → abort-replace 재파싱).
         useAppStore.getState().setView('main');
@@ -355,7 +355,7 @@ export default function App() {
         if (realPath === file.name) {
           console.warn('[tabs] 드롭 파일의 실경로 획득 실패 — 파일명 fallback (전환 시 세션 복원 의존)', file.name);
         }
-        await handlePdfData(buffer, file.name, realPath);
+        await openDocumentData(buffer, file.name, realPath);
         // QA18(D-LOW): 설정/설치 화면에서 열어도 문서가 보이지 않아 "먹통"으로 오인됐다
         // (파싱은 수행되지만 화면은 그대로 → 사용자가 재드롭 → abort-replace 재파싱).
         useAppStore.getState().setView('main');
@@ -635,7 +635,7 @@ export default function App() {
           </span>
           <button
             type="button"
-            onClick={() => cancelPdfParse()}
+            onClick={() => cancelDocumentParse()}
             className="shrink-0 px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
             aria-label={t('uploader.cancelParse')}
           >

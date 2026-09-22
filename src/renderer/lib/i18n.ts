@@ -140,8 +140,21 @@ export const _translations = {
   'pdf.busyQa': { ko: 'Q&A 답변 생성 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while answering Q&A.' },
   'pdf.busyCollection': { ko: '컬렉션 요약 진행 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while summarizing a collection.' },
   'pdf.busyCollectionOpen': { ko: '컬렉션을 여는 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while opening a collection.' },
-  'pdf.invalidFile': { ko: '유효한 PDF 파일이 아닙니다.', en: 'Not a valid PDF file.' },
   'pdf.encrypted': { ko: '암호로 보호된 PDF입니다. 암호를 해제한 후 다시 시도해주세요.', en: 'This PDF is password-protected. Please remove the password and try again.' },
+  // Task10: document-open.ts 의 포맷 dispatch 가 쓰는 코드. `doc.unsupported` 는 이 지점에
+  // 도달했을 때 실제로 "우리가 모르는 컨테이너"인 경우(zip 이지만 sniff 가 매칭하는 추출기가
+  // 없음)에만 쓴다 — 확장자는 진입 게이트 5곳이 이미 걸렀으므로 도달 시점엔 항상 지원 목록
+  // 안이다. list 는 SUPPORTED_FORMATS 라벨 조합("PDF · Word")을 주입한다.
+  'doc.unsupported': {
+    ko: '지원하지 않는 파일 형식입니다. 지원 형식: {list}',
+    en: 'Unsupported file format. Supported formats: {list}',
+  },
+  // 확장자는 지원 포맷인데(진입 게이트가 이미 확인) 내용이 zip/pdf 매직과 맞지 않거나(위장·손상)
+  // zip 자체가 깨진 경우. "지원 형식: PDF" 라고 답하면 `.pdf` 로 드롭한 사용자가 "내 건 .pdf 인데?"
+  // 가 된다 — 손상/형식 불일치로 정확히 안내한다.
+  'doc.corrupt': { ko: '파일이 손상되었거나 다른 형식일 수 있습니다.', en: 'The file may be corrupted or in a different format.' },
+  'doc.encrypted': { ko: '암호로 보호된 문서입니다. 암호를 해제한 후 다시 시도해주세요.', en: 'This document is password-protected. Please remove the password and try again.' },
+  'doc.tooLarge': { ko: '압축을 해제하면 너무 커지는 파일입니다. 더 작은 파일로 다시 시도해주세요.', en: 'This file expands to an excessive size when decompressed. Please try a smaller file.' },
   // QA22(B-LOW): 챕터 감지 실패 시 페이지 분할 제목. 한국어 하드코딩이라 영어 UI 에서도
   // 요약 헤딩(`## 1~10 페이지`)과 진행률에 그대로 노출됐다.
   'pdf.pageRangeChapter': { ko: '{start}~{end} 페이지', en: 'Pages {start}–{end}' },
