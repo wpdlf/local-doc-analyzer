@@ -135,7 +135,7 @@ export const _translations = {
   'uploader.cannotRead': { ko: 'PDF를 읽을 수 없습니다.', en: 'Cannot read PDF.' },
   'uploader.multipleFiles': { ko: '한 번에 하나의 PDF만 처리할 수 있습니다. 첫 번째 파일({name})만 열었습니다.', en: 'Only one PDF can be processed at a time. Opening the first file ({name}) only.' },
   'uploader.notPdf': { ko: 'PDF 파일만 지원됩니다.', en: 'Only PDF files are supported.' },
-  // ─── handlePdfData 진입 가드(모든 파일 열기 경로 공통) ───
+  // ─── openDocumentData 진입 가드(모든 파일 열기 경로 공통) ───
   'pdf.busyGenerating': { ko: '요약 진행 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while summarizing.' },
   'pdf.busyQa': { ko: 'Q&A 답변 생성 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while answering Q&A.' },
   'pdf.busyCollection': { ko: '컬렉션 요약 진행 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while summarizing a collection.' },
@@ -152,9 +152,22 @@ export const _translations = {
   // 확장자는 지원 포맷인데(진입 게이트가 이미 확인) 내용이 zip/pdf 매직과 맞지 않거나(위장·손상)
   // zip 자체가 깨진 경우. "지원 형식: PDF" 라고 답하면 `.pdf` 로 드롭한 사용자가 "내 건 .pdf 인데?"
   // 가 된다 — 손상/형식 불일치로 정확히 안내한다.
-  'doc.corrupt': { ko: '파일이 손상되었거나 다른 형식일 수 있습니다.', en: 'The file may be corrupted or in a different format.' },
+  // Task10 fix round1(Minor 6): 형제 3종(unsupported/encrypted/tooLarge)은 전부 다음 행동을
+  // 알려주는데 이것만 상태만 말하고 끝났다 — 다른 파일로 재시도하라고 맺는다.
+  'doc.corrupt': {
+    ko: '파일이 손상되었거나 다른 형식일 수 있습니다. 다른 파일로 다시 시도해주세요.',
+    en: 'The file may be corrupted or in a different format. Please try a different file.',
+  },
   'doc.encrypted': { ko: '암호로 보호된 문서입니다. 암호를 해제한 후 다시 시도해주세요.', en: 'This document is password-protected. Please remove the password and try again.' },
   'doc.tooLarge': { ko: '압축을 해제하면 너무 커지는 파일입니다. 더 작은 파일로 다시 시도해주세요.', en: 'This file expands to an excessive size when decompressed. Please try a smaller file.' },
+  // Task10 fix round1(Important 3): docx.ts 의 DOC_NO_TEXT(문서에 추출할 텍스트가 없음)를
+  // 사용자에게 안내하는 문구. 추출기 내부 throw 는 개발자용 영어('no text in document')라
+  // document-open.ts 의 catch 가 이 키로 덮어쓴다(uploader.noText 는 OCR 안내가 섞여 있어
+  // OCR 이 없는 비-PDF 포맷에는 맞지 않는다).
+  'doc.noText': {
+    ko: '문서에서 텍스트를 추출할 수 없습니다. 파일 내용을 확인해주세요.',
+    en: 'No text could be extracted from the document. Please check the file contents.',
+  },
   // QA22(B-LOW): 챕터 감지 실패 시 페이지 분할 제목. 한국어 하드코딩이라 영어 UI 에서도
   // 요약 헤딩(`## 1~10 페이지`)과 진행률에 그대로 노출됐다.
   'pdf.pageRangeChapter': { ko: '{start}~{end} 페이지', en: 'Pages {start}–{end}' },

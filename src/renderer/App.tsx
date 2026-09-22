@@ -21,7 +21,7 @@ import { useSessionPersistence } from './lib/use-session';
 import { prefetchMarkdownRenderer } from './lib/safe-markdown';
 import { MAX_PDF_SIZE_BYTES } from '../shared/constants';
 // Task 9: 확장자·매직바이트 판별을 document-formats.ts 단일 출처로 모은다.
-import { isSupportedExtension, hasPdfMagic } from '../shared/document-formats';
+import { isSupportedExtension, hasPdfMagic, hasZipMagic } from '../shared/document-formats';
 import { selectUpdateBanner, shouldResetDismiss, type UpdateBanner } from './lib/update-banner';
 import type { UpdateState } from '../shared/update-types';
 import logoImg from './assets/logo.png';
@@ -324,11 +324,17 @@ export default function App() {
         return;
       }
       try {
-        const headerBuf = await file.slice(0, 5).arrayBuffer();
+        // Task10 fix round1(Critical 1): 이 검사가 hasPdfMagic 만 봐서, 확장자 검사(:311)를
+        // 통과한 .docx 가 여기서 죽어 openDocumentData 에 도달하지 못했다 — "DOCX 개통"이
+        // 드래그드롭 경로에서는 거짓이었다. zip 매직도 받아들여 실제 포맷 판별(CFB 포함,
+        // 추출기 sniff 포함)은 openDocumentData 의 단일 dispatch 에 맡긴다 — 여긴 순수 쓰레기
+        // 바이너리를 전체 materialize 전에 조기 거부하는 것만 목적이다. 8바이트를 읽어
+        // (CFB 매직은 앞 8바이트) 나중에 CFB 조기 거부를 추가해도 슬라이스 크기를 또 안 건드려도
+        // 되게 한다 — 지금은 CFB 판별을 추가하지 않는다(그 분기는 document-open.ts 가 갖는다).
+        const headerBuf = await file.slice(0, 8).arrayBuffer();
         const header = new Uint8Array(headerBuf);
-        // Task9: 매직바이트 판정도 document-formats.ts 단일 출처(hasPdfMagic)를 쓴다.
-        // 5바이트 창이라 스캔 범위는 오프셋 0 한 곳뿐 — 이전 동작과 동일.
-        if (!hasPdfMagic(header)) {
+        // Task9/10: 매직바이트 판정도 document-formats.ts 단일 출처(hasPdfMagic/hasZipMagic)를 쓴다.
+        if (!hasPdfMagic(header) && !hasZipMagic(header)) {
           useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: t('uploader.notPdf') });
           return;
         }

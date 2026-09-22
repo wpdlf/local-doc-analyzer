@@ -76,3 +76,14 @@ export function hasPdfMagic(head: Uint8Array): boolean {
   }
   return false;
 }
+
+/**
+ * OLE CFB(Compound File Binary) 컨테이너 매직 `D0 CF 11 E0 A1 B1 1A E1`(오프셋 0 고정 — zip 과
+ * 달리 앞에 관용적 접두가 붙지 않는다). 암호가 걸린 OOXML(Word/Excel/PowerPoint 를 MS-OFFCRYPTO
+ * 로 암호화하면 zip 이 아니라 이 컨테이너가 된다)이 이 시그니처를 쓴다 — document-open.ts 가
+ * DOC_ENCRYPTED 판별에 사용한다.
+ */
+export function hasCfbMagic(head: Uint8Array): boolean {
+  const sig = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+  return head.length >= sig.length && sig.every((b, i) => head[i] === b);
+}

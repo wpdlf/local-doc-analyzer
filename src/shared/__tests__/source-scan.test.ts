@@ -353,7 +353,7 @@ describe('확장자 리터럴은 document-formats.ts 밖에 두지 않는다', (
   });
 });
 
-describe('PDF 매직바이트는 document-formats.ts 밖에 두지 않는다', () => {
+describe('PDF/CFB 매직바이트는 document-formats.ts 밖에 두지 않는다', () => {
   /**
    * Task8 이 찾은 사각: pdf-parser.ts 의 `%PDF-` 검사가 16진 배열([0x25, 0x50, 0x44, 0x46, ...])
    * 이라 위 문자열 리터럴 가드에 안 걸린다. 같은 시퀀스가 또 다른 진입 게이트를 단일 출처
@@ -361,13 +361,19 @@ describe('PDF 매직바이트는 document-formats.ts 밖에 두지 않는다', (
    *
    * Task10: 매직 검사가 document-open.ts 로 옮겨지며 hasPdfMagic() 기반 sniff 로 대체됐다 —
    * pdf-parser.ts 의 한시적 허용을 제거한다.
+   *
+   * Task10 fix round1(Important 4): CFB 컨테이너 매직([0xd0, 0xcf, 0x11, 0xe0, ...])도 같은
+   * 사각이 있었다 — document-open.ts 가 이 시퀀스를 인라인 배열로 갖고 있었는데(암호 걸린
+   * OOXML 판별용) 위 정규식이 %PDF 시퀀스만 봐서 걸리지 않았다. hasCfbMagic() 신설과 함께
+   * 가드도 두 시퀀스 모두를 본다.
    */
   const ALLOWED = new Set([
     'src/shared/document-formats.ts',
   ]);
   const PDF_MAGIC_BYTES = /0x25\s*,\s*0x50\s*,\s*0x44\s*,\s*0x46/i;
+  const CFB_MAGIC_BYTES = /0xd0\s*,\s*0xcf\s*,\s*0x11\s*,\s*0xe0/i;
 
-  it('0x25,0x50,0x44,0x46 (%PDF) 바이트열이 단일 출처 밖에 없다', () => {
+  it('0x25,0x50,0x44,0x46 (%PDF) · 0xd0,0xcf,0x11,0xe0 (CFB) 바이트열이 단일 출처 밖에 없다', () => {
     const scanned = walkSourceFiles('src', /\.(ts|tsx)$/);
     assertScanIsWide(scanned);
     const offenders: string[] = [];
@@ -376,9 +382,9 @@ describe('PDF 매직바이트는 document-formats.ts 밖에 두지 않는다', (
       if (ALLOWED.has(rel) || isTestPath(file)) continue;
       const src = stripJsComments(readFileSync(file, 'utf-8'));
       for (const [i, line] of src.split('\n').entries()) {
-        if (PDF_MAGIC_BYTES.test(line)) offenders.push(`${file}:${i + 1}`);
+        if (PDF_MAGIC_BYTES.test(line) || CFB_MAGIC_BYTES.test(line)) offenders.push(`${file}:${i + 1}`);
       }
     }
-    expect(offenders, 'PDF 매직바이트는 document-formats.ts 에서만 안다').toEqual([]);
+    expect(offenders, 'PDF/CFB 매직바이트는 document-formats.ts 에서만 안다').toEqual([]);
   });
 });

@@ -4,12 +4,13 @@ import { t } from './i18n';
 import { restoreSessionForDocument, persistCurrentSession } from './use-session';
 import { confirmDiscardIfNotPersisted } from './discard-policy';
 import { MAX_PDF_SIZE_BYTES } from '../../shared/constants';
-import { hasPdfMagic, hasZipMagic, SUPPORTED_FORMATS } from '../../shared/document-formats';
+import { hasPdfMagic, hasZipMagic, hasCfbMagic, SUPPORTED_FORMATS } from '../../shared/document-formats';
 import { openZip } from './extract/zip';
 import { resolveExtractor } from './extract/registry';
 import { toPdfDocument } from './extract/normalize';
 import type { Extractor, ZipIndex } from './extract/types';
 import { parsePdf, isReReadablePath, MAX_TOTAL_IMAGES } from './pdf-parser';
+import type { TranslationKey } from './i18n';
 
 const SUPPORTED_LABEL = SUPPORTED_FORMATS.map((f) => f.label).join(' · ');
 
@@ -101,8 +102,10 @@ export async function openDocumentData(
 
   if (!isPdf) {
     // 암호가 걸린 OOXML 은 zip 이 아니라 CFB 컨테이너다 — 여기서 전용 안내로 갈라낸다.
-    const CFB = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
-    if (CFB.every((b, i) => head[i] === b)) {
+    // Task10 fix round1(Important 4): 인라인 바이트 배열 대신 document-formats.ts 의 단일 출처
+    // 함수를 쓴다 — hasPdfMagic/hasZipMagic 과 같은 파일에 두지 않으면 source-scan 가드가
+    // 놓치는 사각(형제 누락)이 재현된다.
+    if (hasCfbMagic(head)) {
       store.setError({ code: 'DOC_ENCRYPTED', message: t('doc.encrypted') } as AppError);
       return;
     }
@@ -235,9 +238,21 @@ export async function openDocumentData(
       'DOC_UNSUPPORTED', 'DOC_CORRUPT', 'DOC_ENCRYPTED', 'DOC_TOO_LARGE', 'DOC_NO_TEXT',
     ]);
     const code = (error.code && validCodes.has(error.code) ? error.code : 'PDF_PARSE_FAIL') as AppError['code'];
+    // Task10 fix round1(Important 3): docx.ts/zip.ts 는 개발자용 영어 메시지로 throw 한다
+    // (예: 'word/document.xml missing', 'unzipped size exceeded') — `error.message ||`가
+    // 그걸 먼저 집어 한국어 UI 에도 원문 영어가 그대로 노출됐다(AI 에러가 i18n 을 우회했던
+    // 과거 결함과 같은 클래스). 알려진 DOC_* 코드는 전용 i18n 문구로 덮어쓰고, 원문은
+    // details 에만 남겨 화면에는 노출하지 않는다.
+    const DOC_ERROR_MESSAGE_KEYS: Partial<Record<string, TranslationKey>> = {
+      DOC_NO_TEXT: 'doc.noText',
+      DOC_CORRUPT: 'doc.corrupt',
+      DOC_TOO_LARGE: 'doc.tooLarge',
+    };
+    const overrideKey = DOC_ERROR_MESSAGE_KEYS[code];
     store.setError({
       code,
-      message: error.message || t('uploader.cannotRead'),
+      message: overrideKey ? t(overrideKey) : (error.message || t('uploader.cannotRead')),
+      ...(overrideKey && error.message ? { details: error.message } : {}),
     });
   } finally {
     // 새 파싱이 abort-replace 로 우리를 덮어쓴 경우, 전역 상태(isParsing, ocrProgress)를

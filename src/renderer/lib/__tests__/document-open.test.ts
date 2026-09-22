@@ -427,6 +427,325 @@ describe('openDocumentData — parsePdf 경로/에러 매핑', () => {
   });
 });
 
+// Task10 리뷰 라운드1(Critical 2): brief Step1 은 "이동 전 동작 고정"과 "신규 분기 테스트" 둘을
+// 요구했는데, 앞쪽만 하고 뒤쪽을 취소한 것이 결함이었다. resolveExtractor·zip→DOC_UNSUPPORTED·
+// CFB→DOC_ENCRYPTED·openZip 의 DOC_TOO_LARGE/DOC_CORRUPT 매핑·DOCX 성공경로(toPdfDocument 배선)·
+// pdfBytesCopy 게이트의 `!isPdf` 절반 — 이 여섯 곳을 아래에서 채운다.
+describe('openDocumentData — 포맷 dispatch (Task10 리뷰 라운드1)', () => {
+  async function docxZip(bodyXml: string): Promise<ArrayBuffer> {
+    const { zipSync, strToU8 } = await import('fflate');
+    const xml = `<?xml version="1.0"?><w:document xmlns:w="urn:w"><w:body>${bodyXml}</w:body></w:document>`;
+    const out = zipSync({ 'word/document.xml': strToU8(xml) });
+    return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+  }
+  function para(text: string): string {
+    return `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`;
+  }
+
+  it('DOCX 성공 경로 — toPdfDocument 를 거쳐 문서가 채워지고, 재읽기 불가 경로여도 pdfBytes 는 null 이다', async () => {
+    const zip = await docxZip(para('첫째 쪽') + para('둘째 쪽'));
+    // 경로 구분자가 없는 합성 경로 — PDF 였다면 isReReadablePath 가 false 라 pdfBytes 가 상주해야
+    // 하지만, DOCX(`!isPdf`)는 그 판정보다 먼저 항상 null 이어야 한다(리뷰 항목: !isPdf 절반).
+    await openDocumentData(zip, 'report.docx', 'report.docx');
+    const s = useAppStore.getState();
+    expect(s.error).toBeNull();
+    expect(s.document?.fileName).toBe('report.docx');
+    expect(s.document?.unitKind).toBe('page');
+    expect(s.document?.pageTexts).toEqual(['첫째 쪽\n\n둘째 쪽']);
+    expect(s.pdfBytes).toBeNull();
+    expect(P.getDocument).not.toHaveBeenCalled(); // pdfjs 를 거치지 않는다
+  });
+
+  it('zip 이지만 아는 추출기가 없으면 DOC_UNSUPPORTED 다', async () => {
+    const { zipSync, strToU8 } = await import('fflate');
+    const out = zipSync({ 'ppt/presentation.xml': strToU8('<p:presentation/>') });
+    const buf = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+    await openDocumentData(buf, 'deck.docx', '/d/deck.docx');
+    const s = useAppStore.getState();
+    expect(s.error?.code).toBe('DOC_UNSUPPORTED');
+    expect(s.error?.message).toMatch(/PDF/); // SUPPORTED_LABEL 이 실려 있다
+  });
+
+  it('CFB 컨테이너(암호화된 OOXML)는 DOC_ENCRYPTED 다', async () => {
+    const cfb = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0]);
+    await openDocumentData(cfb.buffer, 'locked.docx', '/d/locked.docx');
+    expect(useAppStore.getState().error?.code).toBe('DOC_ENCRYPTED');
+  });
+
+  it('zip 매직은 맞지만 해제가 안 되는 손상 파일은 DOC_CORRUPT 다 — openZip 매핑이 document-open 을 거쳐도 살아있다', async () => {
+    // PK 로컬 파일 헤더 시그니처만 있고 나머지는 쓰레기 — hasZipMagic 은 통과, unzipSync 는 실패.
+    const bogus = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    await openDocumentData(bogus.buffer, 'bad.docx', '/d/bad.docx');
+    const s = useAppStore.getState();
+    expect(s.error?.code).toBe('DOC_CORRUPT');
+    expect(s.error?.message).toBe('파일이 손상되었거나 다른 형식일 수 있습니다. 다른 파일로 다시 시도해주세요.');
+  });
+
+  it('엔트리 수 상한을 넘는 zip 은 DOC_TOO_LARGE 다 — openZip 매핑이 document-open 을 거쳐도 살아있다', async () => {
+    const { zipSync, strToU8 } = await import('fflate');
+    const files: Record<string, Uint8Array> = {};
+    for (let i = 0; i <= 2000; i++) files[`f${i}.txt`] = strToU8('x');
+    const out = zipSync(files);
+    const buf = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+    await openDocumentData(buf, 'huge.docx', '/d/huge.docx');
+    expect(useAppStore.getState().error?.code).toBe('DOC_TOO_LARGE');
+  }, 20000);
+
+  // Task10 리뷰 라운드1(Important 3): docx.ts 내부 throw 는 영어 원문이다. document-open 의
+  // 바깥 catch 가 알려진 DOC_* 코드를 t() 로 덮어써야 한다 — 원문은 details 로만 남는다.
+  it('word/document.xml 에 w:body 가 없으면 DOC_CORRUPT + 로컬라이즈 메시지(details 에 원문)', async () => {
+    const { zipSync, strToU8 } = await import('fflate');
+    const xml = '<?xml version="1.0"?><w:document xmlns:w="urn:w"></w:document>';
+    const out = zipSync({ 'word/document.xml': strToU8(xml) });
+    const buf = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+    await openDocumentData(buf, 'nobody.docx', '/d/nobody.docx');
+    const s = useAppStore.getState();
+    expect(s.error?.code).toBe('DOC_CORRUPT');
+    expect(s.error?.message).toBe('파일이 손상되었거나 다른 형식일 수 있습니다. 다른 파일로 다시 시도해주세요.');
+    expect(s.error?.message).not.toMatch(/w:body/); // 개발자용 영어 원문이 화면에 그대로 노출되지 않는다
+    expect(s.error?.details).toBe('w:body missing');
+  });
+
+  // Task10 리뷰 라운드1(항목5 — validCodes 핀): DOC_NO_TEXT 가 validCodes 에 없으면 모든 DOCX
+  // 실패가 PDF_PARSE_FAIL 로 뭉개진다. 동시에 i18n 매핑(항목3)도 함께 확인한다.
+  it('본문에 텍스트가 없는 DOCX 는 DOC_NO_TEXT 다 (PDF_PARSE_FAIL 로 뭉개지지 않는다) + 로컬라이즈 메시지', async () => {
+    const zip = await docxZip('');
+    await openDocumentData(zip, 'empty.docx', '/d/empty.docx');
+    const s = useAppStore.getState();
+    expect(s.error?.code).toBe('DOC_NO_TEXT');
+    expect(s.error?.message).toBe('문서에서 텍스트를 추출할 수 없습니다. 파일 내용을 확인해주세요.');
+    expect(s.error?.details).toBe('no text in document');
+  });
+});
+
+// Task10 리뷰 라운드1(Critical 2 + mutation 킬): 동시 두 건이 겹칠 때 이전(추월당한) 파싱이
+// 최신 파싱의 상태를 절대 건드리지 않아야 한다는 계약 전체 — abort-replace, 성공 후 supersede
+// 재확인, flush 대기 중 재확인, 실패 후 supersede 재확인, 조건부 finally.
+describe('openDocumentData — 동시성 (Task10 리뷰 라운드1)', () => {
+  function slowPdf(numPages: number, gate: Promise<unknown>) {
+    return {
+      numPages,
+      getPage: vi.fn(() => gate),
+      destroy: vi.fn(() => Promise.resolve()),
+    };
+  }
+  function page(items: unknown[]) {
+    return {
+      getTextContent: () => Promise.resolve({ items }),
+      getOperatorList: () => Promise.resolve({ fnArray: [], argsArray: [] }),
+      objs: { get: () => {} },
+      getViewport: () => ({ width: 600, height: 800 }),
+      render: () => ({ promise: Promise.resolve() }),
+      cleanup: () => {},
+    };
+  }
+
+  // Task10 리뷰 라운드1(mutation 킬 — abort-replace 의 실제 abort() 호출): 위 supersede 가드들은
+  // 전부 `activeParseController !== controller`(참조 비교) 만으로 성립해, `.abort()` 호출 자체를
+  // 지우는 뮤테이션은 이 스위트의 다른 어떤 테스트도 죽이지 못한다(직접 확인함 — .abort() 를
+  // 주석 처리하고 돌려도 전부 통과했다). 그 호출의 유일한 관측 가능 효과는 진행 중이던 신호를
+  // 실제로 aborted 로 만들어 in-flight OCR IPC 의 abort 리스너를 발화시키는 것이다(비용 절감 —
+  // 상단 주석 "진행 중 8건의 토큰 청구도 함께 차단"). 그 발화를 직접 관측한다.
+  it('새 파일이 이전 파싱을 실제로 abort 한다 — in-flight OCR IPC 가 취소된다', async () => {
+    // renderPageToImage 가 OffscreenCanvas 를 쓴다 — happy-dom 엔 없으므로 최소 스텁이 필요하다
+    // (imageBudgetNotice 테스트와 동일 패턴). 없으면 canvas 생성 시점에서 조용히 실패해 ocrPage
+    // 호출 자체에 도달하지 못하고, 이 테스트가 의도와 다른 이유로 무의미하게 통과/실패한다.
+    class FakeOffscreenCanvas {
+      width: number; height: number;
+      constructor(w: number, h: number) { this.width = w; this.height = h; }
+      getContext() { return { drawImage() {} }; }
+      async convertToBlob() { return { async arrayBuffer() { return new Uint8Array([1, 2, 3, 4]).buffer; } }; }
+    }
+    const g = globalThis as unknown as Record<string, unknown>;
+    const origOC = g.OffscreenCanvas;
+    g.OffscreenCanvas = FakeOffscreenCanvas;
+    try {
+      useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, provider: 'ollama', enableOcrFallback: true } });
+      P.getDocument.mockReturnValueOnce({ promise: Promise.resolve(P.fakePdf(1, SHORT_ITEMS)) });
+      const ocrGate = new Promise<{ success: boolean; text: string }>(() => {}); // 응답 안 옴 — 취소만 관측
+      const ocrPageMock = window.electronAPI.ai.ocrPage as unknown as ReturnType<typeof vi.fn>;
+      ocrPageMock.mockImplementationOnce(() => ocrGate);
+      const abortMock = window.electronAPI.ai.abort as unknown as ReturnType<typeof vi.fn>;
+
+      openDocumentData(pdfBuf(), 'first.pdf', '/d/first.pdf');
+      // 첫 호출이 ocrPage IPC 대기 지점까지 진행하도록 여러 틱 양보한다(본문 추출 배치 →
+      // OCR 폴백 진입 → renderPageToImage → ocrPage 순으로 여러 await 를 거친다).
+      for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r));
+      expect(ocrPageMock).toHaveBeenCalled();
+      expect(abortMock).not.toHaveBeenCalled();
+
+      // 두 번째 파일이 abort-replace 로 첫 파싱을 밀어낸다 — `.abort()` 를 지우는 뮤테이션이면
+      // 아래 단언이 실패한다(신호가 aborted 되지 않아 리스너가 발화하지 않는다).
+      await openDocumentData(pdfBuf(), 'second.pdf', '/d/second.pdf');
+      expect(abortMock).toHaveBeenCalled();
+    } finally {
+      g.OffscreenCanvas = origOC;
+    }
+  });
+
+  // Task10 리뷰 라운드1(mutation 킬 — ownedProgress 소유권 체크, :146): OCR 폴백의 매 IPC 뒤에
+  // throwIfAborted 가 있어서, abort() 가 **먼저** 일어나면 그 IPC 의 결과가 언제 오든 ABORTED 로
+  // 삼켜져 onProgress 자체가 호출되지 않는다 — 그래서 "그냥 두 번째를 겹쳐 연다" 로는 이 체크에
+  // 절대 도달하지 못한다(직접 확인함: 위 abort 테스트들의 타이밍으로는 이 뮤테이션이 하나도
+  // 안 죽는다). 이 체크가 실제로 막는 경쟁은 훨씬 좁다 — "그 페이지의 throwIfAborted 는 이미
+  // 통과했는데, batch 전체가 아직 안 끝난" 마이크로태스크 틈이다. queueMicrotask 로 그 틈에
+  // 정확히 abort 를 끼워 넣어 재현한다.
+  it('ownedProgress 소유권: throwIfAborted 통과 직후 ~ batch 완료 사이에 추월당하면 그 진행률을 반영하지 않는다', async () => {
+    class FakeOffscreenCanvas {
+      width: number; height: number;
+      constructor(w: number, h: number) { this.width = w; this.height = h; }
+      getContext() { return { drawImage() {} }; }
+      async convertToBlob() { return { async arrayBuffer() { return new Uint8Array([1, 2, 3, 4]).buffer; } }; }
+    }
+    const g = globalThis as unknown as Record<string, unknown>;
+    const origOC = g.OffscreenCanvas;
+    g.OffscreenCanvas = FakeOffscreenCanvas;
+    try {
+      useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, provider: 'ollama', enableOcrFallback: true } });
+      // 페이지 1장 · 단일 배치 — batch 안의 유일한 페이지라 그 페이지의 throwIfAborted 통과가
+      // 곧 "배치 전체가 통과" 를 뜻한다(경쟁을 재현하기 가장 좁고 확실한 모양).
+      P.getDocument.mockReturnValueOnce({ promise: Promise.resolve(P.fakePdf(1, SHORT_ITEMS)) });
+      let resolveOcr!: (v: { success: boolean; text: string }) => void;
+      const ocrGate = new Promise<{ success: boolean; text: string }>((resolve) => { resolveOcr = resolve; });
+      const ocrPageMock = window.electronAPI.ai.ocrPage as unknown as ReturnType<typeof vi.fn>;
+      ocrPageMock.mockImplementationOnce(() => ocrGate);
+
+      const setOcrProgressSpy = vi.spyOn(useAppStore.getState(), 'setOcrProgress');
+      const firstPromise = openDocumentData(pdfBuf(), 'first.pdf', '/d/first.pdf');
+      for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r));
+      expect(ocrPageMock).toHaveBeenCalled();
+
+      // ocrPage 응답을 흘려보낸 것과 "같은 턴에" — 그러나 그 응답의 throwIfAborted 통과
+      // 마이크로태스크보다는 뒤에, batch(Promise.all) 완료보다는 앞에 — 두 번째 파일을 큐잉한다.
+      resolveOcr({ success: false, text: '' });
+      queueMicrotask(() => { void openDocumentData(pdfBuf(), 'second.pdf', '/d/second.pdf'); });
+
+      await firstPromise;
+      await new Promise((r) => setTimeout(r));
+      await new Promise((r) => setTimeout(r));
+
+      // 두 번째(활성) 파싱은 OCR 을 쓰지 않으므로(GOOD_ITEMS, 기본 mock) 정당한 ocrProgress 값을
+      // 절대 만들지 않는다 — {current:1,total:1} 이 **호출 이력에 단 한 번이라도** 보이면 그것은
+      // 오직 추월당한 첫 파싱의 onProgress(1,1) 뿐이다(소유권 체크가 없으면 이 호출이 일어난다).
+      // 최종 상태(store.ocrProgress)만 보면 second 의 null 호출이 나중에 덮어써 뮤테이션을
+      // 가려버린다 — 반드시 호출 이력 전체를 봐야 한다.
+      const calls = setOcrProgressSpy.mock.calls.map((c) => c[0]);
+      expect(calls).not.toContainEqual({ current: 1, total: 1 });
+    } finally {
+      g.OffscreenCanvas = origOC;
+    }
+  });
+
+  it('늦게 성공한 이전 파싱은 최신 문서를 덮어쓰지 않는다 (post-parse supersede)', async () => {
+    // 주의: store 에 이미 문서가 있으면(예: 두 번째 호출이 먼저 완주해 문서를 세팅) 아래 flush
+    // 재확인(post-flush recheck, :194)이 이 시나리오도 함께 방어해 버려 :188 하나만 지우는
+    // 뮤테이션이 안 죽는다(직접 확인함). :188 을 단독으로 겨누려면 **아직 아무 문서도 없는
+    // (store.document===null) 상태에서 첫 파싱이 성공**해야 한다 — 그래야 flush 분기 자체를
+    // 타지 않고 :188 하나에만 의존한다. 그래서 두 번째 호출도 아직 진행 중(미완료)으로 둔다.
+    useAppStore.setState({ document: null });
+    let resolveGate!: (p: unknown) => void;
+    const gate = new Promise((resolve) => { resolveGate = resolve; });
+    P.getDocument.mockReturnValueOnce({ promise: Promise.resolve(slowPdf(2, gate)) });
+
+    const firstPromise = openDocumentData(pdfBuf(), 'first.pdf', '/d/first.pdf');
+    await new Promise((r) => setTimeout(r)); // 첫 호출이 getPage() 대기 지점까지 진행하도록 양보
+
+    // 두 번째 파일이 abort-replace 로 첫 파싱을 밀어내지만, 아직 완주하지 않는다(별도 gate).
+    let resolveGate2!: (p: unknown) => void;
+    const gate2 = new Promise((resolve) => { resolveGate2 = resolve; });
+    P.getDocument.mockReturnValueOnce({ promise: Promise.resolve(slowPdf(2, gate2)) });
+    const secondPromise = openDocumentData(pdfBuf(), 'second.pdf', '/d/second.pdf');
+    await new Promise((r) => setTimeout(r));
+
+    // 첫 파싱을 뒤늦게 성공시킨다 — 이미 추월당했고, 아직 어떤 문서도 store 에 없으므로
+    // flush 분기(:192)를 타지 않는다. :188 이 유일한 방어선이다.
+    resolveGate(page(GOOD_ITEMS));
+    await firstPromise;
+    expect(useAppStore.getState().document).toBeNull(); // 아직 second 도 안 끝났다
+
+    // 두 번째도 완주시켜 정리한다.
+    resolveGate2(page(GOOD_ITEMS));
+    await secondPromise;
+    expect(useAppStore.getState().document?.fileName).toBe('second.pdf');
+  });
+
+  it('활성 문서 flush 대기 중 새 파싱이 승자가 되면, flush 가 끝난 이전 파싱이 그 문서를 덮어쓰지 않는다 (post-flush recheck)', async () => {
+    useAppStore.setState({
+      document: { id: 'old', fileName: 'old.pdf', filePath: '/d/old.pdf', pageCount: 1, extractedText: 'x', pageTexts: ['x'], chapters: [], images: [], createdAt: new Date() },
+    });
+    let resolvePersist!: () => void;
+    const persistGate = new Promise<void>((resolve) => { resolvePersist = resolve; });
+    P.persist.mockReturnValueOnce(persistGate);
+
+    // 첫 호출은 빠르게 파싱을 마치고, 기존 문서가 있어 persistCurrentSession() 대기에 들어간다.
+    const firstPromise = openDocumentData(pdfBuf(), 'first.pdf', '/d/first.pdf');
+    await new Promise((r) => setTimeout(r)); // 첫 호출이 flush 대기 지점까지 진행하도록 양보
+    expect(P.persist).toHaveBeenCalledTimes(1);
+
+    // 두 번째 파일이 abort-replace 로 첫 파싱을 밀어내고 즉시 완주한다.
+    await openDocumentData(pdfBuf(), 'second.pdf', '/d/second.pdf');
+    expect(useAppStore.getState().document?.fileName).toBe('second.pdf');
+
+    // 첫 파싱의 flush 를 뒤늦게 끝낸다 — 이미 추월당했으므로 store 를 덮어써선 안 된다.
+    resolvePersist();
+    await firstPromise;
+    expect(useAppStore.getState().document?.fileName).toBe('second.pdf');
+  });
+
+  it('추월당한 뒤 늦게 실패한 파싱은 에러 배너·isParsing 을 건드리지 않는다 (catch-block supersede + 조건부 finally)', async () => {
+    // enableOcrFallback:false + 짧은 텍스트 → throwIfAborted 를 거치지 않는 PDF_NO_TEXT 로 실패한다
+    // (OCR 경로였다면 매 IPC 뒤 throwIfAborted 가 먼저 ABORTED 로 삼켜 이 두 가드를 가리게 된다).
+    useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, provider: 'ollama', enableOcrFallback: false } });
+    let resolveGate!: (p: unknown) => void;
+    const gate = new Promise((resolve) => { resolveGate = resolve; });
+    P.getDocument.mockReturnValueOnce({ promise: Promise.resolve(slowPdf(2, gate)) });
+
+    const firstPromise = openDocumentData(pdfBuf(), 'first.pdf', '/d/first.pdf');
+    await new Promise((r) => setTimeout(r));
+
+    // 두 번째 파일이 abort-replace 로 첫 파싱을 밀어내지만, 아직 완주하지 않는다(별도 gate) —
+    // "조건부 finally" 를 제거하는 뮤테이션은 이 시점에 활성(active) 상태를 건드려야 드러난다.
+    let resolveGate2!: (p: unknown) => void;
+    const gate2 = new Promise((resolve) => { resolveGate2 = resolve; });
+    P.getDocument.mockReturnValueOnce({ promise: Promise.resolve(slowPdf(2, gate2)) });
+    const secondPromise = openDocumentData(pdfBuf(), 'second.pdf', '/d/second.pdf');
+    await new Promise((r) => setTimeout(r));
+    expect(useAppStore.getState().isParsing).toBe(true); // 두 번째가 아직 진행 중
+
+    // 첫 파싱을 뒤늦게 완주시킨다 — 짧은 텍스트라 PDF_NO_TEXT 로 실패한다(ABORTED 가 아니다).
+    resolveGate(page(SHORT_ITEMS));
+    await firstPromise;
+
+    // 추월당한 실패이므로 에러 배너를 세우지 않고(catch-block supersede), 아직 진행 중인 두 번째의
+    // isParsing/ocrProgress 도 건드리지 않는다(조건부 finally) — 제거 뮤테이션이면 여기서 false 가 된다.
+    expect(useAppStore.getState().error).toBeNull();
+    expect(useAppStore.getState().isParsing).toBe(true);
+
+    // 정리: 두 번째도 완주시켜 매달린 프로미스 없이 테스트를 마친다.
+    resolveGate2(page(GOOD_ITEMS));
+    await secondPromise;
+    expect(useAppStore.getState().document?.fileName).toBe('second.pdf');
+  });
+});
+
+// Task10 리뷰 라운드1(항목: pdfBytesCopy 의 try 배치 가드). 브리프가 명시적으로 지목한 자리 —
+// setIsParsing(true) 이후 try 진입 전까지 무보호 구간에 이 할당을 두면, 경로 없는 드롭에서
+// OOM(RangeError)이 나는 순간 finally 를 못 타 isParsing 이 영구 고착된다.
+describe('openDocumentData — pdfBytesCopy 할당 실패 (Task10 리뷰 라운드1)', () => {
+  it('원본 바이트 복사가 던져도(OOM 시뮬레이션) isParsing 이 고착되지 않고 PDF_PARSE_FAIL 로 복구한다', async () => {
+    const data = pdfBuf();
+    // 재읽기 불가 합성 경로에서만 복사가 발생하는 분기를 taps — slice 를 오버라이드해 실패를 흉내낸다.
+    Object.defineProperty(data, 'slice', {
+      value: () => { throw new RangeError('array buffer allocation failed'); },
+    });
+    await openDocumentData(data, 'synthetic.pdf', 'synthetic.pdf'); // 경로 구분자 없음 → 복사 분기
+    const s = useAppStore.getState();
+    expect(s.error?.code).toBe('PDF_PARSE_FAIL');
+    expect(s.isParsing).toBe(false); // try 안에 있어야 finally 가 반드시 돈다 — 고착되지 않는다
+    expect(P.getDocument).not.toHaveBeenCalled(); // parsePdf 진입 전에 이미 실패했다
+  });
+});
+
 describe('cancelDocumentParse', () => {
   it('진행 중 파싱이 없으면 안전하게 no-op', () => {
     expect(() => cancelDocumentParse()).not.toThrow();
