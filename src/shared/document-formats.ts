@@ -25,6 +25,20 @@ export const SUPPORTED_FORMATS: readonly DocumentFormat[] = [
 
 export const SUPPORTED_EXTENSIONS: readonly string[] = SUPPORTED_FORMATS.map((f) => f.ext);
 
+/**
+ * docx 추출기(`extract/docx.ts`)의 판별 값. 포맷 id 리터럴은 이 파일 한 곳에서만 쓴다 —
+ * `Extractor.id`(extract/types.ts)가 이 상수의 타입을 derive 해서 쓰므로 그쪽엔 리터럴이
+ * 남지 않는다(소스 스캔 가드 대상 — Task9).
+ */
+export const DOCX_FORMAT_ID = 'docx' as const satisfies DocumentFormat['id'];
+
+/**
+ * pdf 를 제외한 나머지 포맷 id. pdf 는 pdf-parser.ts 전용 파이프라인이 처리하고, zip 기반
+ * 추출기(`Extractor`, extract/types.ts)는 그 나머지만 다룬다 — 그쪽 타입이 이걸 derive 해서
+ * 'pdf' 리터럴을 다시 쓰지 않게 한다.
+ */
+export type NonPdfFormatId = Exclude<DocumentFormat['id'], 'pdf'>;
+
 /** Electron dialog 의 filters — extensions 는 점 없는 형태여야 한다. */
 export const DIALOG_FILTERS: readonly { name: string; extensions: string[] }[] = [
   { name: '문서', extensions: SUPPORTED_FORMATS.map((f) => f.ext.slice(1)) },

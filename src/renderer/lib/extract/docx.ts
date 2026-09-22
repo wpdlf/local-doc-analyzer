@@ -4,6 +4,7 @@ import { toGfmTable } from './table';
 import { paginate, type Block } from './paginate';
 import { MAX_EXAMINED_IMAGES, MAX_PAGE_COUNT, MAX_TOTAL_IMAGES } from '../pdf-parser';
 import type { Extractor, ExtractedDoc, ExtractedHeading, ExtractedImage, ExtractOptions, ZipIndex } from './types';
+import { DOCX_FORMAT_ID } from '../../../shared/document-formats';
 
 const DOCUMENT_PART = 'word/document.xml';
 
@@ -105,8 +106,7 @@ function blipsIn(el: Element): string[] {
 }
 
 export const docxExtractor: Extractor = {
-  id: 'docx',
-  extensions: ['.docx'],
+  id: DOCX_FORMAT_ID,
 
   sniff: (zip: ZipIndex): boolean => zip.has(DOCUMENT_PART),
 

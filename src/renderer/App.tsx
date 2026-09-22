@@ -20,6 +20,8 @@ import { useRagBuilder } from './lib/use-qa';
 import { useSessionPersistence } from './lib/use-session';
 import { prefetchMarkdownRenderer } from './lib/safe-markdown';
 import { MAX_PDF_SIZE_BYTES } from '../shared/constants';
+// Task 9: 확장자·매직바이트 판별을 document-formats.ts 단일 출처로 모은다.
+import { isSupportedExtension, hasPdfMagic } from '../shared/document-formats';
 import { selectUpdateBanner, shouldResetDismiss, type UpdateBanner } from './lib/update-banner';
 import type { UpdateState } from '../shared/update-types';
 import logoImg from './assets/logo.png';
@@ -303,8 +305,11 @@ export default function App() {
       const file = files[0];
       // noUncheckedIndexedAccess: files[0] 은 length 검사 후에도 T|undefined 로 좁혀지지 않음.
       if (!file) return;
-      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-      if (!isPdf) {
+      // QA33/Task9: MIME(file.type) 검사는 뺐다 — 드롭된 DOCX 는 브라우저·OS 에 따라 file.type
+      // 이 빈 문자열이 되기도 해 오탐 소지가 있다. 내용 기반 판별(§Task 10 sniff)이 진짜
+      // 게이트이고, 여기서는 확장자만 본다.
+      const isSupported = isSupportedExtension(file.name);
+      if (!isSupported) {
         useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: t('uploader.notPdf') });
         return;
       }
@@ -321,11 +326,9 @@ export default function App() {
       try {
         const headerBuf = await file.slice(0, 5).arrayBuffer();
         const header = new Uint8Array(headerBuf);
-        const isPdfMagic = header.length >= 5
-          && header[0] === 0x25 && header[1] === 0x50
-          && header[2] === 0x44 && header[3] === 0x46
-          && header[4] === 0x2D;
-        if (!isPdfMagic) {
+        // Task9: 매직바이트 판정도 document-formats.ts 단일 출처(hasPdfMagic)를 쓴다.
+        // 5바이트 창이라 스캔 범위는 오프셋 0 한 곳뿐 — 이전 동작과 동일.
+        if (!hasPdfMagic(header)) {
           useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: t('uploader.notPdf') });
           return;
         }

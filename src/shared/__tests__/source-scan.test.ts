@@ -279,29 +279,75 @@ describe('readGeneratedText — 소스가 아님을 확장자로 증명한 읽�
   });
 });
 
-describe.skip('확장자 리터럴은 document-formats.ts 밖에 두지 않는다', () => {
+/** 경로에 `__tests__` 세그먼트가 있는가 — 테스트 픽스처는 파일명·바이트를 값으로 다뤄도 된다. */
+function isTestPath(file: string): boolean {
+  return /(^|[\\/])__tests__[\\/]/.test(file);
+}
+
+describe('확장자 리터럴은 document-formats.ts 밖에 두지 않는다', () => {
   /**
    * 진입 게이트가 흩어져 있으면 포맷이 늘 때 한 곳이 안 따라간다. 새 게이트가 생기는 순간
    * 여기서 실패하게 만들어 지점을 **도출**한다(열거하면 사각이 생긴다 — QA33 I3).
+   *
+   * Task9(controller ruling 2): `__tests__` 는 스캔에서 뺀다. 테스트는 파일명을 값으로
+   * 구성해도 정당하다(예: 긴 파일명 회귀 픽스처 `'x'.repeat(200) + '.pdf'`) — 프로덕션
+   * 경로는 여전히 전수 스캔한다.
    */
   const ALLOWED = new Set([
     'src/shared/document-formats.ts',
     'src/shared/__tests__/document-formats.test.ts',
     'src/shared/__tests__/source-scan.test.ts',
   ]);
-  // 내보내기 저장 다이얼로그(file:save / file:export-pdf)는 **출력** 확장자라 이 가드의 대상이 아니다.
-  const OUTPUT_ONLY = /export-pdf|showSaveDialog|MAX_EXPORT_SIZE/;
+  // 내보내기 저장 다이얼로그(file:save / file:export-pdf)는 **출력** 확장자라 이 가드의 대상이
+  // 아니다. 핸들러 단위로 스코프한다 — 이전엔 같은 줄에 키워드가 있어야 했는데, 필터 배열과
+  // 확장자 비교가 다른 줄에 있는 file:export-pdf 핸들러(main/index.ts)에서 실패했다.
+  const OUTPUT_ONLY_HANDLERS = new Set(['file:save', 'file:export-pdf']);
+  const HANDLER_DECL = /ipcMain\.handle\(\s*['"]([\w:-]+)['"]/;
 
   it("'.pdf'/'.docx' 리터럴이 단일 출처 밖에 없다", () => {
     const offenders: string[] = [];
     for (const file of walkSourceFiles('src', /\.(ts|tsx)$/)) {
-      if (ALLOWED.has(file.replace(/\\/g, '/'))) continue;
+      const rel = file.replace(/\\/g, '/');
+      if (ALLOWED.has(rel) || isTestPath(file)) continue;
       const src = stripJsComments(readFileSync(file, 'utf-8'));
+      let currentHandler: string | null = null;
       for (const [i, line] of src.split('\n').entries()) {
-        if (OUTPUT_ONLY.test(line)) continue;
+        const handlerMatch = line.match(HANDLER_DECL);
+        if (handlerMatch?.[1]) currentHandler = handlerMatch[1];
+        if (currentHandler && OUTPUT_ONLY_HANDLERS.has(currentHandler)) continue;
         if (/['"`]\.?(pdf|docx)['"`]/i.test(line)) offenders.push(`${file}:${i + 1}`);
       }
     }
     expect(offenders, '확장자는 document-formats.ts 에서만 안다').toEqual([]);
+  });
+});
+
+describe('PDF 매직바이트는 document-formats.ts 밖에 두지 않는다', () => {
+  /**
+   * Task8 이 찾은 사각: pdf-parser.ts 의 `%PDF-` 검사가 16진 배열([0x25, 0x50, 0x44, 0x46, ...])
+   * 이라 위 문자열 리터럴 가드에 안 걸린다. 같은 시퀀스가 또 다른 진입 게이트를 단일 출처
+   * 밖에 만드는 것을 막는다(App.tsx 의 DOM 드롭 매직바이트 검사가 실제로 이 형태였다 — Task9).
+   *
+   * pdf-parser.ts 자신은 한시적으로 허용한다 — 이 파일의 매직 검사는 Task10 에서 sniff() 기반
+   * 다중 포맷 판별로 옮겨진다. **Task10 Step 6 에서 이 항목을 반드시 뺀다.**
+   */
+  const ALLOWED = new Set([
+    'src/shared/document-formats.ts',
+    // TODO(Task10): sniff() 기반 판별로 옮기면서 제거.
+    'src/renderer/lib/pdf-parser.ts',
+  ]);
+  const PDF_MAGIC_BYTES = /0x25\s*,\s*0x50\s*,\s*0x44\s*,\s*0x46/i;
+
+  it('0x25,0x50,0x44,0x46 (%PDF) 바이트열이 단일 출처 밖에 없다', () => {
+    const offenders: string[] = [];
+    for (const file of walkSourceFiles('src', /\.(ts|tsx)$/)) {
+      const rel = file.replace(/\\/g, '/');
+      if (ALLOWED.has(rel) || isTestPath(file)) continue;
+      const src = stripJsComments(readFileSync(file, 'utf-8'));
+      for (const [i, line] of src.split('\n').entries()) {
+        if (PDF_MAGIC_BYTES.test(line)) offenders.push(`${file}:${i + 1}`);
+      }
+    }
+    expect(offenders, 'PDF 매직바이트는 document-formats.ts 에서만 안다').toEqual([]);
   });
 });

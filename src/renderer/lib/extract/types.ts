@@ -5,6 +5,7 @@
  * 한 곳이 PdfDocument 로 옮긴다. 추출기가 직접 조립하면 포맷이 늘 때마다 "한 포맷만 새 필드를
  * 안 채움"(형제 누락)이 재현된다 — QA26/QA27/QA32/QA33 에서 반복된 형태다.
  */
+import type { NonPdfFormatId } from '../../../shared/document-formats';
 
 /** 단위의 성격. 표시 라벨만 갈리고 내부 표현(정수 N)은 동일하다. */
 export type UnitKind = 'page' | 'slide' | 'chapter';
@@ -52,9 +53,12 @@ export interface ExtractOptions {
 }
 
 export interface Extractor {
-  id: 'docx' | 'pptx' | 'hwpx' | 'epub';
-  /** 다이얼로그 필터용 힌트. 판별의 근거로 쓰지 않는다(위장 파일). */
-  extensions: readonly string[];
+  /**
+   * pdf 는 별도 파이프라인(pdf-parser.ts)이 전담하므로 여기 나타나지 않는다 —
+   * document-formats.ts 의 NonPdfFormatId 를 derive 한다. 나머지(pptx/hwpx/epub)는 아직
+   * 그 파일에 등록되지 않은 P4 예정 포맷이라 여기서만 안다.
+   */
+  id: NonPdfFormatId | 'pptx' | 'hwpx' | 'epub';
   /** zip 내부 엔트리로 판별한다. 확장자를 믿지 않는다. */
   sniff(zip: ZipIndex): boolean;
   extract(zip: ZipIndex, opts: ExtractOptions): Promise<ExtractedDoc>;

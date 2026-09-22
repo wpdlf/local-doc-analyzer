@@ -20,6 +20,9 @@ import { probeInstaller } from './installer-probe';
 import type { UpdateState } from '../shared/update-types';
 import { generate, abortGenerate, abortAllRequests, checkAvailability, analyzeImage, analyzeImageForOcr, generateEmbeddings, checkEmbeddingAvailability, cleanupAiService, registerEmbedRequest, unregisterEmbedRequest, GEMINI_EMBED_MODEL } from './ai-service';
 import { MAX_PDF_SIZE_BYTES, isLocalhostHost, isValidOllamaUrl, UPDATER_CACHE_DIR_NAME } from '../shared/constants';
+// Task 9: 진입 게이트(드롭 URL·다이얼로그 필터·재읽기)가 확장자를 각자 알고 있던 것을
+// document-formats.ts 단일 출처로 모은다.
+import { isSupportedExtension, DIALOG_FILTERS } from '../shared/document-formats';
 import { validateSettingValue } from './settings-validate';
 // v0.18.19 patch R34 P2: settings 키 단일 출처. 이전엔 본 파일 두 곳에 별도 리터럴이 있었고
 // R33 Surface 4 P3 가 drift 가드 부재를 지적. settings-keys.ts 가 양쪽을 derive 함.
@@ -283,7 +286,7 @@ export function createWindow(): BrowserWindow {
   let dropAbortController: AbortController | null = null;
   win.webContents.on('will-navigate', (event, url) => {
     event.preventDefault();
-    if (url.startsWith('file://') && url.toLowerCase().endsWith('.pdf')) {
+    if (url.startsWith('file://') && isSupportedExtension(decodeURIComponent(url))) {
       // UNC 경로 차단: file://remote-server/share/file.pdf 등 네트워크 읽기 방지
       try { if (new URL(url).hostname !== '') return; } catch { return; }
       const filePath = fileURLToPath(url);
@@ -1665,7 +1668,7 @@ export function registerIpcHandlers(): void {
     // rejection 대신 구조화된 error 로 변환됨 (호출자가 unhandled rejection 없이 처리 가능).
     try {
       const { filePaths } = await dialog.showOpenDialog({
-        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        filters: [...DIALOG_FILTERS],
         properties: ['openFile'],
       });
       if (filePaths.length === 0) return null;
@@ -1711,7 +1714,7 @@ export function registerIpcHandlers(): void {
     if (typeof targetPath !== 'string' || targetPath.length === 0 || targetPath.length > 4096) {
       return { error: '잘못된 경로입니다.' };
     }
-    if (path.extname(targetPath).toLowerCase() !== '.pdf') {
+    if (!isSupportedExtension(targetPath)) {
       return { error: 'PDF 파일만 열 수 있습니다.' };
     }
     // QA20(B-MED): UNC(`\\server\share`) 차단 — 드롭 경로(will-navigate)는 "UNC 경로 차단:
