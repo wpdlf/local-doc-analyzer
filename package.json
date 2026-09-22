@@ -103,7 +103,7 @@
       {
         "provider": "github",
         "owner": "wpdlf",
-        "repo": "local-pdf-analyzer"
+        "repo": "local-doc-analyzer"
       }
     ],
     "mac": {

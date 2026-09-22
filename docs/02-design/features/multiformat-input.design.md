@@ -404,15 +404,20 @@ subject-path: dist/*Setup*.exe  # Sigstore provenance attest
 
 ### 7.4 저장소 이름 변경
 
-`wpdlf/local-pdf-analyzer` → `wpdlf/local-doc-analyzer`. GitHub 쪽 작업이므로 **사람이 실행한다**
-(`gh repo rename`). 함께 갱신할 것:
+`wpdlf/local-pdf-analyzer` → `wpdlf/local-doc-analyzer`. ✅ **2026-09-22 완료** (`gh repo rename`).
+함께 갱신한 것:
 
+- git remote origin URL (`gh repo rename` 이 자동 갱신)
 - `package.json` `build.publish.repo`
-- git remote origin URL
-- README · CLAUDE.md · 문서의 저장소 링크
+- README.md · README.ko.md · docs/HISTORY.md 의 저장소 링크
 
 GitHub 이 옛 저장소 URL 을 리다이렉트하므로 **이미 배포된 v1.7.1 설치본의 업데이트 확인도 계속
-동작한다.** 다만 리다이렉트에 기대지 않도록 `publish.repo` 는 즉시 새 이름으로 맞춘다.
+동작한다.** 다만 리다이렉트에 기대지 않도록 `publish.repo` 는 즉시 새 이름으로 맞췄다.
+
+README 의 `Local-PDF-Analyzer-Setup-x.x.x.exe` 는 **아직 바꾸지 않는다** — 현재 배포본(v1.7.1)의
+실제 파일명이라 지금 바꾸면 문서가 틀리게 된다. `artifactName` 과 함께 P5 에서 바꾼다.
+
+과거 설계 문서(`multi-doc-*.design.md`)의 `project:` 필드는 그 시점의 기록이므로 손대지 않는다.
 
 ### 7.5 실기기 확인
 

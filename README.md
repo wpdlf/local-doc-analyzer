@@ -28,7 +28,7 @@ This document has two parts — **[User Guide](#user-guide)** (install · usage 
 
 ## Download & Install
 
-> **[Download the latest version](https://github.com/wpdlf/local-pdf-analyzer/releases/latest)**
+> **[Download the latest version](https://github.com/wpdlf/local-doc-analyzer/releases/latest)**
 
 | Platform | File |
 |---|---|
@@ -65,7 +65,7 @@ Each release ships with the installer's **SHA-256 hash** (`SHA256SUMS-windows.tx
 Get-FileHash -Algorithm SHA256 .\Local-PDF-Analyzer-Setup-x.x.x.exe
 
 # Verify the Sigstore attestation via GitHub CLI (optional)
-gh attestation verify ./Local-PDF-Analyzer-Setup-x.x.x.exe --repo wpdlf/local-pdf-analyzer
+gh attestation verify ./Local-PDF-Analyzer-Setup-x.x.x.exe --repo wpdlf/local-doc-analyzer
 ```
 
 ## How to Use
@@ -253,7 +253,7 @@ For image-based/scanned PDFs where text extraction fails, Vision AI recognizes t
 | The update check fails or finds nothing | Press **Check now** under Settings → App Updates. A network error suggests a firewall/proxy blocking `github.com`; if it persists, install the latest version manually from the releases page. Versions installed before auto-update shipped need one manual update first |
 | No macOS download | dmg releases are paused until code signing/notarization credentials are in place; meanwhile, build from source with `npm run package` |
 
-> For the detailed history of issues fixed in past versions, see [docs/HISTORY.md](docs/HISTORY.md) (Korean) and [GitHub Releases](https://github.com/wpdlf/local-pdf-analyzer/releases).
+> For the detailed history of issues fixed in past versions, see [docs/HISTORY.md](docs/HISTORY.md) (Korean) and [GitHub Releases](https://github.com/wpdlf/local-doc-analyzer/releases).
 
 ---
 

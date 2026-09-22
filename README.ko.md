@@ -28,7 +28,7 @@
 
 ## 다운로드 및 설치
 
-> **[최신 버전 다운로드](https://github.com/wpdlf/local-pdf-analyzer/releases/latest)**
+> **[최신 버전 다운로드](https://github.com/wpdlf/local-doc-analyzer/releases/latest)**
 
 | 플랫폼 | 파일 |
 |---|---|
@@ -65,7 +65,7 @@
 Get-FileHash -Algorithm SHA256 .\Local-PDF-Analyzer-Setup-x.x.x.exe
 
 # GitHub CLI 로 attestation 검증 (선택)
-gh attestation verify ./Local-PDF-Analyzer-Setup-x.x.x.exe --repo wpdlf/local-pdf-analyzer
+gh attestation verify ./Local-PDF-Analyzer-Setup-x.x.x.exe --repo wpdlf/local-doc-analyzer
 ```
 
 ## 사용 방법
@@ -253,7 +253,7 @@ PDF에 포함된 차트, 다이어그램, 표, 사진 등을 Vision AI가 자동
 | 업데이트 확인이 실패하거나 새 버전이 안 뜸 | 설정 → 앱 업데이트에서 **지금 확인**을 눌러보세요. 네트워크 오류면 방화벽/프록시가 `github.com` 을 막고 있을 수 있습니다. 계속 실패하면 릴리즈 페이지에서 최신 버전을 직접 설치하세요. 자동 업데이트 도입 이전 버전은 최초 1회 수동 업데이트가 필요합니다 |
 | macOS 다운로드가 보이지 않음 | 코드사인/공증 자격이 갖춰질 때까지 dmg 출시를 일시 중단했습니다. 그동안은 소스에서 `npm run package`로 직접 빌드해 사용하실 수 있습니다 |
 
-> 과거 버전에서 수정된 문제들의 상세 이력은 [docs/HISTORY.md](docs/HISTORY.md)와 [GitHub Releases](https://github.com/wpdlf/local-pdf-analyzer/releases)를 참고하세요.
+> 과거 버전에서 수정된 문제들의 상세 이력은 [docs/HISTORY.md](docs/HISTORY.md)와 [GitHub Releases](https://github.com/wpdlf/local-doc-analyzer/releases)를 참고하세요.
 
 ---
 
