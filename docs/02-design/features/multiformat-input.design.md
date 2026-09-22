@@ -4,7 +4,7 @@ version: 1.0
 feature: multiformat-input
 date: 2026-09-22
 author: jjw
-project: local-pdf-analyzer (summary-lecture-material)
+project: local-doc-analyzer (개명 전 local-pdf-analyzer / summary-lecture-material)
 version_project: 1.8.0
 ---
 
@@ -15,7 +15,7 @@ version_project: 1.8.0
 > **"포맷별 추출기 → 중간 표현 `ExtractedDoc` → 정규화 → 기존 `PdfDocument`"** 로, 요약 · Vision ·
 > RAG · 전역검색 · 컬렉션 · 세션 영속화는 **한 줄도 바꾸지 않는다**.
 >
-> **Project**: local-pdf-analyzer
+> **Project**: local-doc-analyzer (이 릴리즈에서 local-pdf-analyzer 에서 개명 — §7)
 > **Version**: 1.8.0 (minor — 기능 추가)
 > **Author**: jjw
 > **Date**: 2026-09-22
@@ -30,7 +30,7 @@ version_project: 1.8.0
 |-----|-------|
 | **WHY** | `src/main/index.ts` 의 파일 필터가 `extensions: ['pdf']` 하나뿐이라 입력이 닫혀 있다. **HWPX 는 국내 자료의 상당수인데 아예 넣을 수 없다.** 마인드맵(v0.31.26) 이후 제품이 커진 것은 수식 렌더링 · 세로 분할 · 뷰어 줌뿐이고 나머지는 QA·수정이었다 — 제품을 키우는 축이 여기다. |
 | **WHO** | 회의록 · 주간보고 · 제안서(HWPX/DOCX), 발표자료(PPTX), 전자책(EPUB) 을 다루는 사용자. 기존 PDF 사용자의 자연 확장. |
-| **RISK** | ① 확장자 게이트가 5곳에 흩어져 있어 "한 곳만 안 따라감" 이 거의 확실하다 ② 표를 평문화하면 한국 사무 문서(표 중심)의 요약이 껍데기가 된다 ③ 페이지가 없는 포맷에서 `[p.N]` 인용이 앱의 척추인데 매핑이 미정이었다 ④ zip 폭탄 — 신뢰할 수 없는 파일을 파싱하는 앱이다 ⑤ 제품명 변경이 자동 업데이트·사용자 데이터를 끊을 수 있다. |
+| **RISK** | ① 확장자 게이트가 5곳에 흩어져 있어 "한 곳만 안 따라감" 이 거의 확실하다 ② 표를 평문화하면 한국 사무 문서(표 중심)의 요약이 껍데기가 된다 ③ 페이지가 없는 포맷에서 `[p.N]` 인용이 앱의 척추인데 매핑이 미정이었다 ④ zip 폭탄 — 신뢰할 수 없는 파일을 파싱하는 앱이다 ⑤ 전면 개명이 자동 업데이트 체인을 새로 시작시킨다(끊길 기존 설치가 없음을 실측 확인 — §7.0). |
 | **SCOPE** | 문서 4종 입력 + 텍스트 뷰어 + 표시 라벨 + 제품명 변경. **URL(웹페이지) 입력은 범위 밖** — 네트워크 페치 · HTML 정제 · 재읽기 불가 · 영속화가 이질적이라 별도 라운드. |
 
 ---
@@ -46,7 +46,7 @@ version_project: 1.8.0
 | D5 | DOCX·HWPX 가상 페이지 = **명시적 쪽나눠 우선 + 분량 보조** (한국어 A4 한 쪽 기준 1,800자, 문단 경계를 넘지 않음) | 작성자가 넣은 쪽나눠는 사용자가 보는 경계와 일치한다. 없는 구간만 분량으로 끊는다 |
 | D6 | 추출기 구조 = **공통 인터페이스 + 포맷별 모듈** | `pdf-parser.ts` 가 이미 1,303줄이고 QA 에서 반복해 결함이 나온 파일이다. 같은 형태를 하나 더 만들지 않는다 |
 | D7 | **표는 GFM 마크다운 표로 직렬화** | §3.1 의 실물 분석 결과. 평문화하면 열 대응이 사라진다 |
-| D8 | 제품명 `PDF 자료 분석기` → **`로컬 문서 분석기`**(en: Local Doc Analyzer) | 이름이 내용과 어긋난다. 단 식별자는 전부 유지 — §7 |
+| D8 | 제품명 `PDF 자료 분석기` → **`로컬 문서 분석기`**(en: Local Doc Analyzer). `name` · `appId` · 저장소 이름까지 **전면 개명** | 이름이 내용과 어긋난다. 끊길 기존 설치가 없음을 실측으로 확인했으므로 반쪽 개명을 안고 갈 이유가 없다 — §7.0 |
 
 ---
 
@@ -345,18 +345,36 @@ RAG · 전역검색 · 컬렉션 · 마인드맵 · 내보내기는 **변경 없
 
 `PDF 자료 분석기` → **`로컬 문서 분석기`** (en: Local Doc Analyzer)
 
-### 7.1 바꾸는 것 / 절대 건드리지 않는 것
+### 7.0 전면 개명으로 정한 근거 (2026-09-22)
 
-| 항목 | 현재 값 | 판단 |
+식별자(`name` · `appId` · `publish` repo)는 원래 **기존 설치본을 끊지 않기 위해** 유지 대상이었다.
+그런데 실측 결과 그 전제가 성립하지 않는다:
+
+- 개발 기계의 언인스톨 레지스트리에 **설치 흔적이 없다**(개발 실행만)
+- `%APPDATA%\summary-lecture-material\` 의 실데이터는 **세션 7개 + `settings.json` 349바이트 +
+  빈 `collections.json`** 이 전부다(나머지 130MB 는 Chromium 캐시)
+- 배포된 설치본을 쓰는 외부 사용자가 없다
+
+즉 "끊길 기존 설치" 자체가 없으므로, **반쪽짜리 개명(보이는 이름만 바꾸고 식별자는 옛 이름)을
+영구히 안고 가는 비용** 쪽이 더 크다. 전면 개명한다. 지금이 가장 싼 시점이다.
+
+### 7.1 변경 대상 — 전부
+
+| 항목 | 현재 값 | 변경 후 |
 |---|---|---|
-| `package.json` `name` | `summary-lecture-material` | ⛔ **유지** — userData 경로가 여기서 파생된다. 실물 확인: `%APPDATA%\summary-lecture-material\`(collections.json 등). 바꾸면 기존 사용자의 **세션 · 컬렉션 · 설정 · API 키가 사라진 것처럼 보인다** |
-| `build.appId` | `com.jjw.summary-lecture-material` | ⛔ **유지** — NSIS 업그레이드 식별자. 바꾸면 업데이트가 아니라 별도 앱으로 설치된다 |
-| `build.publish` owner/repo | `wpdlf/local-pdf-analyzer` | ⛔ **유지** — 자동 업데이트 피드 URL. 저장소 이름도 바꾸지 않는다 |
-| `build.productName` | `PDF 자료 분석기` | ✅ `로컬 문서 분석기` |
-| `build.nsis.shortcutName` | `PDF 자료 분석기` | ✅ `로컬 문서 분석기` |
-| `build.win.artifactName` | `Local-PDF-Analyzer-Setup-${version}.${ext}` | ✅ `Local-Doc-Analyzer-Setup-${version}.${ext}` — **`Setup` 문자열 유지 필수** |
-| `build.mac.artifactName` | `Local-PDF-Analyzer-${version}.${ext}` | ✅ `Local-Doc-Analyzer-${version}.${ext}` |
-| UI 문구 · README(ko/en) · 릴리즈 노트 | | ✅ 변경 |
+| `package.json` `name` | `summary-lecture-material` | `local-doc-analyzer` |
+| `build.appId` | `com.jjw.summary-lecture-material` | `com.jjw.local-doc-analyzer` |
+| `build.publish` owner/repo | `wpdlf/local-pdf-analyzer` | `wpdlf/local-doc-analyzer` (§7.4) |
+| git remote origin | `.../local-pdf-analyzer` | `.../local-doc-analyzer` (§7.4) |
+| `build.productName` | `PDF 자료 분석기` | `로컬 문서 분석기` |
+| `build.nsis.shortcutName` | `PDF 자료 분석기` | `로컬 문서 분석기` |
+| `build.win.artifactName` | `Local-PDF-Analyzer-Setup-${version}.${ext}` | `Local-Doc-Analyzer-Setup-${version}.${ext}` — **`Setup` 문자열 유지 필수(§7.2)** |
+| `build.mac.artifactName` | `Local-PDF-Analyzer-${version}.${ext}` | `Local-Doc-Analyzer-${version}.${ext}` |
+| userData 폴더 | `%APPDATA%\summary-lecture-material` | `%APPDATA%\local-doc-analyzer` (§7.3) |
+| UI 문구 · README(ko/en) · CLAUDE.md · 릴리즈 노트 | | 변경 |
+
+`updaterCacheDirName`(현재 `summary-lecture-material-updater`)은 electron-builder 가 자동으로
+파생하므로 별도 수정 대상이 아니다.
 
 ### 7.2 `Setup` 문자열이 필수인 이유
 
@@ -372,16 +390,40 @@ subject-path: dist/*Setup*.exe  # Sigstore provenance attest
 `Setup` 이 빠지면 **업로드가 조용히 비고**, QA33 I5 가 지적한 "latest.yml 이 빠지면 전 사용자
 자동 업데이트가 조용히 정지" 와 같은 결과가 된다.
 
-### 7.3 실기기 확인 필수
+### 7.3 userData 이전
 
-`productName` 이 바뀌면 설치 폴더가 `C:\Program Files\로컬 문서 분석기` 로 달라진다. 같은 `appId`
-이므로 NSIS 가 기존 설치를 인식해 업그레이드해야 하지만, **이것은 실기기로 확인한다.** 자동 업데이트
-경로는 이 프로젝트에서 "앱이 조용히 꺼진다" 클래스가 나왔던 자리다(자동 업데이트 v0.31.30~,
-실패 경로 실기기 검증 2026-09-02 완료).
+`name` 이 바뀌면 앱이 `%APPDATA%\local-doc-analyzer` 를 보게 되어 기존 세션 7개가 앱에서 사라진다
+(디스크에서 지워지는 것은 아니다). **폴더를 한 번 옮기면 그대로 따라온다:**
 
-확인 항목: ① 구버전(v1.7.1) 설치 상태에서 v1.8.0 자동 업데이트 → 기존 설치가 제거되고 새 폴더로
-이동하는가 ② `%APPDATA%\summary-lecture-material` 의 세션·설정이 그대로 보이는가 ③ 바로가기가
-중복으로 남지 않는가.
+```
+%APPDATA%\summary-lecture-material  →  %APPDATA%\local-doc-analyzer
+```
+
+앱 안에 마이그레이션 코드를 넣지 않는다 — 옮길 대상이 개발자 기계 하나뿐인데 영구 코드를 남기면
+그쪽이 더 비싸다. P5 체크리스트의 수동 단계로 둔다.
+
+### 7.4 저장소 이름 변경
+
+`wpdlf/local-pdf-analyzer` → `wpdlf/local-doc-analyzer`. GitHub 쪽 작업이므로 **사람이 실행한다**
+(`gh repo rename`). 함께 갱신할 것:
+
+- `package.json` `build.publish.repo`
+- git remote origin URL
+- README · CLAUDE.md · 문서의 저장소 링크
+
+GitHub 이 옛 저장소 URL 을 리다이렉트하므로 **이미 배포된 v1.7.1 설치본의 업데이트 확인도 계속
+동작한다.** 다만 리다이렉트에 기대지 않도록 `publish.repo` 는 즉시 새 이름으로 맞춘다.
+
+### 7.5 실기기 확인
+
+설치 폴더가 `C:\Program Files\로컬 문서 분석기` 로 달라지고 `appId` 도 바뀌므로, v1.8.0 은 기존
+설치를 인식하지 못하는 **신규 설치**가 된다. 이것은 의도한 결과다(§7.0 — 끊길 설치가 없다).
+
+확인 항목: ① 신규 설치 후 정상 실행 ② `%APPDATA%\local-doc-analyzer` 의 세션 7개가 보이는가
+(§7.3 이전 후) ③ 바로가기·시작 메뉴 항목이 새 이름으로 하나만 생기는가 ④ **v1.8.0 → v1.8.1
+자동 업데이트가 새 `appId`·새 저장소 이름으로 동작하는가** — 자동 업데이트 경로는 이 프로젝트에서
+"앱이 조용히 꺼진다" 클래스가 나왔던 자리다(자동 업데이트 v0.31.30~, 실패 경로 실기기 검증
+2026-09-02 완료). 식별자를 통째로 바꾸는 릴리즈이므로 ④ 는 생략할 수 없다.
 
 ---
 
@@ -438,7 +480,7 @@ README 는 ko/en 양쪽 + 4개 표면(제목·기능 목록·스크린샷 설명
 | **P2** | `document-formats.ts` 단일 출처 + 게이트 5곳 교체 + `handlePdfData` → `document-open.ts` 이동 | **DOCX 를 실제로 열어 요약할 수 있다.** PDF 회귀 없음 |
 | **P3** | 텍스트 뷰어 + 라벨(`formatPageLabel` · `unitKind` 전파) | **인용 클릭 → 근거로 점프**가 동작 (앱의 척추가 비-PDF 에서 성립) |
 | **P4** | HWPX · PPTX · EPUB 추출기 | 네 포맷 전부 |
-| **P5** | 제품명 변경 + README(ko/en) + 릴리즈 v1.8.0 + **실기기 업그레이드 확인** | §7.3 |
+| **P5** | 전면 개명(`name` · `appId` · 저장소 · productName) + userData 폴더 이전 + README(ko/en) · CLAUDE.md + 릴리즈 v1.8.0 + **실기기 확인** | §7 |
 
 P2 가 가장 위험하다 — 기존 PDF 경로를 건드리는 유일한 구간이다. **이동 전에 현재 동작을 고정하는
 테스트를 먼저 붙인다**(§4.4).
@@ -452,7 +494,7 @@ P2 가 가장 위험하다 — 기존 PDF 경로를 건드리는 유일한 구�
 | R1 | 게이트 5곳 중 일부가 안 따라감 | `document-formats.ts` 단일 출처 + 소스 스캔 가드 (§4.2, §8.3) |
 | R2 | 표 평문화로 한국 사무 문서 요약이 껍데기 | GFM 표 직렬화 + 실물 HWPX 스모크 (§3.3) |
 | R3 | zip 폭탄 / 악성 파일 | 해제 총량·엔트리 수 상한, 내용 기반 sniff, 경로는 읽기만(디스크 추출 없음) (§4.3) |
-| R4 | 제품명 변경이 자동 업데이트·사용자 데이터를 끊음 | 식별자 3종 유지 + `Setup` 글로브 유지 + **실기기 업그레이드 확인** (§7) |
+| R4 | 전면 개명이 자동 업데이트를 끊음 | 끊길 기존 설치가 없음을 실측 확인(§7.0) + `Setup` 글로브 유지(§7.2) + userData 폴더 이전(§7.3) + **신규 `appId`·저장소로 v1.8.0→v1.8.1 자동 업데이트 실기기 확인**(§7.5 ④) |
 | R5 | 추출기가 `PdfDocument` 필드를 포맷별로 빠뜨림 | 조립을 `normalize.ts` 한 곳으로 강제 + 뮤테이션 검증 (§1.1, §8.2) |
 | R6 | 텍스트 뷰어 500 블록 렌더 성능 | 실측 항목으로 남김. 느리면 가상화 (§5.3) |
 | R7 | DOCX/PPTX/EPUB 세부 구조가 문서 지식 기반(실물 미확인) | 구현 1단계에서 각 포맷 실물 1개씩으로 확인 후 진행 (§11) |
@@ -491,7 +533,8 @@ P2 가 가장 위험하다 — 기존 PDF 경로를 건드리는 유일한 구�
 | HWPX 표 중첩 (`hp:tbl>hp:tr>hp:tc>hp:subList>hp:p`) | ✅ 실물 확인 |
 | HWPX 이미지(`BinData/`) | ❌ 미확인 — 샘플에 그림 없음 (A2) |
 | 게이트 5곳 위치 | ✅ 소스 확인 |
-| userData = `%APPDATA%\summary-lecture-material` | ✅ 디스크 확인 |
+| userData = `%APPDATA%\summary-lecture-material` (세션 7 · settings 349B · collections 빈 값) | ✅ 디스크 확인 |
+| 이 기계에 설치본 없음 (언인스톨 레지스트리 무항목) | ✅ 확인 — §7.0 의 근거 |
 | 릴리즈 워크플로 글로브 (`*Setup*`) | ✅ 소스 확인 |
 | 세션 스키마 불일치 처리 (read-old/write-new) | ✅ 소스 확인 |
 | `remark-gfm` 번들 포함 | ✅ `shippedDevDependencies` 확인 |
