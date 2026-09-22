@@ -153,6 +153,8 @@ async function restoreTabFromSession(tab: OpenTab): Promise<boolean> {
     // images:[] 이므로 그것만으로는 **텍스트-only PDF 와 구분되지 않았다** — 재요약이 Vision
     // 없이 조용히 진행됐다(QA6-D 가 없앤 무음 no-op 이 다수 경로에서 살아 있었다).
     hadImages: session.hadImages,
+    // 단위의 성격도 형제다 — 없으면 'page' 로 자연 폴백(구버전 세션도 그 값이 정확하다).
+    unitKind: session.unitKind,
   };
   // handlePdfData 성공 블록과 동일한 정리 시퀀스
   const s = useAppStore.getState();
@@ -163,7 +165,10 @@ async function restoreTabFromSession(tab: OpenTab): Promise<boolean> {
   s.clearQa();
   s.setDocument(doc);
   s.setPdfBytes(null); // 비상주 — 인용 클릭 시 lazy 로드
-  s.upsertOpenTab({ filePath: tab.filePath, fileName: doc.fileName, pageCount: doc.pageCount, docHash: tab.docHash });
+  s.upsertOpenTab({
+    filePath: tab.filePath, fileName: doc.fileName, pageCount: doc.pageCount, docHash: tab.docHash,
+    unitKind: doc.unitKind,
+  });
   s.setSessionRestorePending(true);
   // 동일 콘텐츠 → 동일 해시 → 복원 hit (요약/Q&A/인덱스, 재임베딩 0)
   void restoreSessionForDocument(doc);
@@ -364,6 +369,9 @@ export async function openCollection(docHashes: string[]): Promise<{ opened: num
         fileName: session.fileName,
         pageCount: session.pageCount,
         docHash,
+        // restoreTabFromSession 의 활성화 대상이 아닌 멤버는 이 upsert 가 유일한 등록이다 —
+        // 여기서 빠뜨리면 클릭 전까지 교차문서 인용이 그 탭의 unitKind 를 모른다.
+        unitKind: session.unitKind,
       };
       useAppStore.getState().upsertOpenTab(tab);
       opened++;

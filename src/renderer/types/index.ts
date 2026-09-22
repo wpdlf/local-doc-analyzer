@@ -319,6 +319,11 @@ export interface OpenTab {
    * 영속 세션에서 직접 복원하는 전환 fallback 의 키 (뷰어만 비활성, 분석은 전부 복원).
    */
   docHash?: string;
+  /**
+   * 단위의 성격. 교차문서 인용은 **대상 탭의** 값을 써야 한다 — 활성 문서 것을 쓰면 PPTX 를
+   * 인용하는데 활성 문서가 PDF 라고 `p.3` 이 되는 오류가 난다(Task 12 CitationButton).
+   */
+  unitKind?: UnitKind;
 }
 
 // ─── 다중 문서 컬렉션 Q&A (multi-doc Phase 2) ───
@@ -411,6 +416,8 @@ export interface PersistedSession {
   pageTexts: string[];
   chapters: Chapter[];
   isOcr?: boolean;
+  /** 단위의 성격. 부재는 'page' — 기존 PDF 세션이 곧 그 값이라 마이그레이션이 필요 없다. */
+  unitKind?: UnitKind;
   /**
    * QA26(C-Medium): 파싱 당시 이미지 추출을 스킵했다는 마커를 세션에도 싣는다.
    *

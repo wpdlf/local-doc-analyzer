@@ -28,6 +28,16 @@ export interface SessionManifestEntry {
   embedModel: string | null; // index.bin 을 만든 임베딩 모델 (없으면 인덱스 미저장)
   embedDim: number | null;   // 임베딩 차원
   chunkCount: number;
+  /**
+   * 단위의 성격. 최근 문서 목록·전역 검색이 pageCount 로 "N쪽" 을 표시하므로 여기도 필요하다.
+   * 구버전 앱이 매니페스트를 다시 쓰면 사라지는데(session-store 의 강등 규칙), 그때는 'page' 로
+   * 폴백되어 표시만 되돌아가고 데이터는 멀쩡하다 — 허용 가능한 열화로 판단했다.
+   *
+   * `src/renderer/lib/extract/types.ts` 의 `UnitKind` 를 그대로 쓰지 않고 리터럴을 복제한다 —
+   * 이 파일은 main/renderer 공용이라 renderer 를 import하면 레이어링이 뒤집힌다. drift 는
+   * `src/shared/__tests__/unit-kind-drift.test.ts` 가 막는다.
+   */
+  unitKind?: 'page' | 'slide' | 'chapter';
   byteSize: number;          // session.json + index.bin 합계
   createdAt: string;         // ISO
   lastAccessed: string;      // ISO — LRU 정렬 키
@@ -88,5 +98,5 @@ export interface SemanticSearchResponse {
  */
 export type SessionSaveMeta = Pick<
   SessionManifestEntry,
-  'docHash' | 'fileName' | 'filePath' | 'pageCount' | 'embedModel' | 'embedDim' | 'chunkCount'
+  'docHash' | 'fileName' | 'filePath' | 'pageCount' | 'embedModel' | 'embedDim' | 'chunkCount' | 'unitKind'
 >;
