@@ -9,6 +9,13 @@ const RELS = `<?xml version="1.0"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>
   <Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.png"/>
+  <Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com" TargetMode="External"/>
+</Relationships>`;
+
+const RELS_WITH_DUPE = `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/first.png"/>
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/last.png"/>
 </Relationships>`;
 
 function zipOf(files: Record<string, string>): ReturnType<typeof openZip> {
@@ -43,5 +50,32 @@ describe('readRels', () => {
   it('rels 파일이 없으면 빈 Map 이다 (throw 하지 않는다)', () => {
     const zip = zipOf({ 'word/document.xml': '<x/>' });
     expect(readRels(zip, 'word/document.xml').size).toBe(0);
+  });
+
+  it('TargetMode="External" 관계는 담지 않는다', () => {
+    const zip = zipOf({ 'word/document.xml': '<x/>', 'word/_rels/document.xml.rels': RELS });
+    const rels = readRels(zip, 'word/document.xml');
+    // 외부 링크는 아카이브에 없으므로 제외된다
+    expect(rels.has('rId9')).toBe(false);
+    // 기존 관계는 여전히 해석된다
+    expect(rels.has('rId6')).toBe(true);
+    expect(rels.has('rId7')).toBe(true);
+  });
+
+  it('루트 레벨 파트는 _rels/<파일>.rels 에서 읽는다', () => {
+    const relsAtRoot = `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="images/pic1.png"/>
+</Relationships>`;
+    const zip = zipOf({ 'content.xml': '<x/>', '_rels/content.xml.rels': relsAtRoot });
+    const rels = readRels(zip, 'content.xml');
+    expect(rels.get('rId1')).toBe('images/pic1.png');
+  });
+
+  it('중복 Id 는 마지막 것이 이긴다 (Map 시맨틱스)', () => {
+    const zip = zipOf({ 'word/document.xml': '<x/>', 'word/_rels/document.xml.rels': RELS_WITH_DUPE });
+    const rels = readRels(zip, 'word/document.xml');
+    // Map.set 이므로 마지막 값으로 덮어씌워진다
+    expect(rels.get('rId1')).toBe('word/media/last.png');
   });
 });
