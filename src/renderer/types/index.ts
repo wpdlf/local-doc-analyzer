@@ -1,3 +1,6 @@
+import type { UnitKind } from '../lib/extract/types';
+export type { UnitKind };
+
 // 페이지별 추출 이미지
 export interface PageImage {
   pageIndex: number;
@@ -61,6 +64,14 @@ export interface PdfDocument {
    * 표식(세션에 저장하지 않음 — 파싱 직후 1회 고지 용도).
    */
   imageBudgetExceeded?: boolean;
+  /**
+   * 단위의 성격. 표시 라벨만 갈린다(`[p.3]` / `[슬라이드 3]` / `[3장]`).
+   *
+   * 내부 표현은 언제나 정수 N 이다 — CITATION_REGEX·clampCitationPage·pageTexts·RAG 청크 메타가
+   * 전부 그 위에 서 있어서, 여기에 배열이나 문자열을 끼우면 계약이 번진다. 부재는 'page' 다
+   * (기존 PDF 문서·구버전 세션이 곧 그 값이므로 마이그레이션이 필요 없다).
+   */
+  unitKind?: UnitKind;
 }
 
 // 챕터 (페이지 기반 분할)
