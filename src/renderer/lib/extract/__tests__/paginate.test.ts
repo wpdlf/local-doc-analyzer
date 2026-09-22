@@ -53,15 +53,15 @@ describe('paginate', () => {
     expect(r.unitOfBlock).toHaveLength(3);
   });
 
-  it('빈 블록과 내용이 섞여 있을 때 unitOfBlock 이 올바르다', () => {
-    const r = paginate([b(''), b('가'), b('   '), b('나'), b('')], 100);
-    // 첫 번째 빈 블록: units 가 비었으므로 0
-    // 두 번째 '가': units 에 들어감, 인덱스는 0
-    // 세 번째 빈 블록: 현재 units.length 는 0 이지만 current 에 '가' 가 있으므로 0
-    // 네 번째 '나': '가' + '나' 가 budget 안이므로 같은 단위, 인덱스 0
-    // 다섯 번째 빈 블록: units.length 는 여전히 0, current 에 내용이 있으므로 0
-    expect(r.unitOfBlock).toEqual([0, 0, 0, 0, 0]);
-    expect(r.units).toEqual(['가\n\n나']);
+  it('쪽나눔 후 빈 블록에서 unitOfBlock 값이 정확하다', () => {
+    // 쪽나눔이 flush 를 트리거하면, 빈 블록은 새로운 units.length 를 참조해야 한다.
+    // 이 경우 ternary 의 units.length > 0 브랜치를 타므로 hardcoded(0) 과 달라진다.
+    const r = paginate([b('가'), b('나', true), b('')], 100);
+    // Block 0: '가' → units.length=0, unitOfBlock[0]=0
+    // Block 1: '나' + breakBefore → flush(['가']), units=['가'], unitOfBlock[1]=1
+    // Block 2: '' → units.length=1, ternary 타고 unitOfBlock[2]=1
+    expect(r.units).toEqual(['가', '나']);
+    expect(r.unitOfBlock).toEqual([0, 1, 1]);
   });
 
   it('두 블록의 합이 정확히 상한과 같으면 한 단위에 담는다', () => {
