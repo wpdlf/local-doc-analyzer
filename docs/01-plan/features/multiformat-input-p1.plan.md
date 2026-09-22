@@ -980,14 +980,34 @@ describe('docxExtractor.extract', () => {
   });
 
   it('extractImages:false 면 그림을 수집하지 않는다', async () => {
+    // 그림 문단 앞에 텍스트를 둔다 — 그림만 있는 문단은 빈 블록이라 paginate 가 버리고,
+    // units 가 비어 DOC_NO_TEXT 가 먼저 발화한다(아래 별도 테스트로 고정). 실제 DOCX 도
+    // 그림 옆에 본문이 있다.
     const zip = zipOf({
-      'word/document.xml': doc(`<w:p><w:r><w:drawing><a:blip r:embed="rId6"/></w:drawing></w:r></w:p>`),
+      'word/document.xml': doc(
+        para('앞') + `<w:p><w:r><w:drawing><a:blip r:embed="rId6"/></w:drawing></w:r></w:p>`,
+      ),
       'word/_rels/document.xml.rels':
         `<?xml version="1.0"?><Relationships xmlns="urn:rel"><Relationship Id="rId6" Type="urn:x/image" Target="media/image1.png"/></Relationships>`,
       'word/media/image1.png': PNG,
     });
     const ex = await docxExtractor.extract(zip, { extractImages: false });
     expect(ex.images).toEqual([]);
+  });
+
+  it('텍스트가 없고 그림만 있으면 DOC_NO_TEXT 다', async () => {
+    // 의도된 동작이다. 텍스트가 0 이면 인용 [p.N] 이 가리킬 자리도, RAG 가 색인할 것도,
+    // 요약이 근거로 삼을 것도 없다. PDF 의 PDF_NO_TEXT 와 같은 판단이며, PDF 에 있는 OCR
+    // 폴백은 DOCX 에 없다(P1 범위 밖). 사용자는 "텍스트가 없다"는 명확한 안내를 받는다.
+    const zip = zipOf({
+      'word/document.xml': doc(`<w:p><w:r><w:drawing><a:blip r:embed="rId6"/></w:drawing></w:r></w:p>`),
+      'word/_rels/document.xml.rels':
+        `<?xml version="1.0"?><Relationships xmlns="urn:rel"><Relationship Id="rId6" Type="urn:x/image" Target="media/image1.png"/></Relationships>`,
+      'word/media/image1.png': PNG,
+    });
+    await expect(docxExtractor.extract(zip, {})).rejects.toThrowError(
+      expect.objectContaining({ code: 'DOC_NO_TEXT' }),
+    );
   });
 
   it('document.xml 이 없으면 DOC_CORRUPT 다', async () => {
@@ -1209,7 +1229,7 @@ export const docxExtractor: Extractor = {
 - [ ] **Step 4: 테스트가 통과하는지 확인**
 
 Run: `npx vitest run src/renderer/lib/extract/__tests__/docx.test.ts`
-Expected: PASS (11 tests)
+Expected: PASS (13 tests)
 
 - [ ] **Step 5: 커밋**
 
