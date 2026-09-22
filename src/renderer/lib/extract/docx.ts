@@ -33,21 +33,32 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
+/** 문단 안에서 조각 하나의 텍스트와, 그 조각 구간(직전 쪽나눔~이 쪽나눔) 안에서 만난 그림. */
+interface ParagraphPiece {
+  text: string;
+  /** 이 구간 안의 `a:blip/@r:embed` — 실제로 이 조각과 같은 쪽에 남는 그림이다. */
+  blipRelIds: string[];
+}
+
 /** 문단 하나를 텍스트 조각으로. `w:br type=page` 에서 조각이 끊긴다. */
-function paragraphPieces(p: Element): string[] {
-  const pieces: string[] = [];
+function paragraphPieces(p: Element): ParagraphPiece[] {
+  const pieces: ParagraphPiece[] = [];
   let buf = '';
+  let blips: string[] = [];
   for (const el of walk(p)) {
     const name = localName(el);
     if (name === 't') buf += el.textContent ?? '';
     else if (name === 'tab') buf += '\t';
-    else if (name === 'br') {
+    else if (name === 'blip') {
+      const relId = attr(el, 'embed');
+      if (relId) blips.push(relId);
+    } else if (name === 'br') {
       // 실물 DOCX 의 w:br 은 대부분 textWrapping(줄바꿈)이다. page 인 것만 쪽나눠다.
-      if (attr(el, 'type') === 'page') { pieces.push(buf); buf = ''; }
+      if (attr(el, 'type') === 'page') { pieces.push({ text: buf, blipRelIds: blips }); buf = ''; blips = []; }
       else buf += '\n';
     }
   }
-  pieces.push(buf);
+  pieces.push({ text: buf, blipRelIds: blips });
   return pieces;
 }
 
@@ -60,9 +71,15 @@ function headingLevel(p: Element): number | null {
   return null;
 }
 
+/** ST_OnOff 의 거짓 값 — 값이 없으면(빈 요소) 참으로 본다. */
+const ON_OFF_FALSE = new Set(['0', 'false', 'off']);
+
 function hasPageBreakBefore(p: Element): boolean {
   for (const el of walk(p)) {
-    if (localName(el) === 'pageBreakBefore') return attr(el, 'val') !== '0';
+    if (localName(el) === 'pageBreakBefore') {
+      const val = attr(el, 'val');
+      return val === null || !ON_OFF_FALSE.has(val);
+    }
   }
   return false;
 }
@@ -71,9 +88,20 @@ function hasPageBreakBefore(p: Element): boolean {
 function tableRows(tbl: Element): string[][] {
   return childrenNamed(tbl, 'tr').map((tr) =>
     childrenNamed(tr, 'tc').map((tc) =>
-      childrenNamed(tc, 'p').map((p) => paragraphPieces(p).join('\n')).join('\n'),
+      childrenNamed(tc, 'p').map((p) => paragraphPieces(p).map((piece) => piece.text).join('\n')).join('\n'),
     ),
   );
+}
+
+/** 요소 서브트리 안의 `a:blip/@r:embed` 전부. 표 안 그림처럼 문단 조각 단위가 아닌 경우에 쓴다. */
+function blipsIn(el: Element): string[] {
+  const ids: string[] = [];
+  for (const e of walk(el)) {
+    if (localName(e) !== 'blip') continue;
+    const relId = attr(e, 'embed');
+    if (relId) ids.push(relId);
+  }
+  return ids;
 }
 
 export const docxExtractor: Extractor = {
@@ -101,7 +129,10 @@ export const docxExtractor: Extractor = {
       const name = localName(child);
 
       if (name === 'tbl') {
+        const blockIndex = blocks.length;
         blocks.push({ text: toGfmTable(tableRows(child)), breakBefore: false });
+        // 표 셀 안 그림 — 셀 나눔은 단위 경계가 아니므로 표 전체를 담은 이 블록에 붙인다.
+        for (const relId of blipsIn(child)) imageAt.push({ relId, blockIndex });
         continue;
       }
       if (name !== 'p') continue;
@@ -112,18 +143,15 @@ export const docxExtractor: Extractor = {
 
       for (const [i, piece] of pieces.entries()) {
         const blockIndex = blocks.length;
-        blocks.push({ text: piece, breakBefore: breakBefore || i > 0 });
+        blocks.push({ text: piece.text, breakBefore: breakBefore || i > 0 });
         breakBefore = false;
-        if (i === 0) {
-          if (level !== null && piece.trim()) {
-            headingAt.push({ level, title: piece.trim(), blockIndex });
-          }
-          for (const el of walk(child)) {
-            if (localName(el) !== 'blip') continue;
-            const relId = attr(el, 'embed');
-            if (relId) imageAt.push({ relId, blockIndex });
-          }
+        // 제목은 조각이 아니라 문단의 스타일이므로 첫 조각에만 붙인다.
+        if (i === 0 && level !== null && piece.text.trim()) {
+          headingAt.push({ level, title: piece.text.trim(), blockIndex });
         }
+        // 그림은 실제로 그 조각(쪽나눔 이전 구간) 에 속한 것만 붙인다 — 문단 중간의
+        // 쪽나눔 뒤에 오는 그림이 앞쪽 조각에 잘못 매핑되는 것을 막는다.
+        for (const relId of piece.blipRelIds) imageAt.push({ relId, blockIndex });
       }
     }
 

@@ -30,6 +30,8 @@ const PNG = new Uint8Array([
   0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
   0x42, 0x60, 0x82,
 ]);
+// 위 PNG 바이트를 base64 로 직접 인코딩한 값 — toBase64 가 상수를 반환하는 뮤테이션을 잡는다.
+const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==';
 
 describe('docxExtractor.sniff', () => {
   it('word/document.xml 이 있으면 참이다', () => {
@@ -102,7 +104,131 @@ describe('docxExtractor.extract', () => {
     expect(ex.images).toHaveLength(1);
     expect(ex.images[0]!.unitIndex).toBe(0);
     expect(ex.images[0]!.mimeType).toBe('image/png');
-    expect(ex.images[0]!.base64.length).toBeGreaterThan(0);
+    expect(ex.images[0]!.base64).toBe(PNG_BASE64);
+  });
+
+  it('문단 끝 쪽나눔(Ctrl+Enter)에서도 단위가 갈린다', async () => {
+    const body = `<w:p><w:r><w:t>본문</w:t><w:br w:type="page"/></w:r></w:p>` + para('다음');
+    const zip = zipOf({ 'word/document.xml': doc(body) });
+    const ex = await docxExtractor.extract(zip, { extractImages: false });
+    expect(ex.units).toEqual(['본문', '다음']);
+  });
+
+  it('표 셀 안 그림도 수집해 표 블록에 매핑한다', async () => {
+    const body =
+      `<w:tbl><w:tr><w:tc>${para('설명')}</w:tc>` +
+      `<w:tc><w:p><w:r><w:drawing><a:blip r:embed="rId6"/></w:drawing></w:r></w:p></w:tc></w:tr></w:tbl>`;
+    const zip = zipOf({
+      'word/document.xml': doc(body),
+      'word/_rels/document.xml.rels':
+        `<?xml version="1.0"?><Relationships xmlns="urn:rel"><Relationship Id="rId6" Type="urn:x/image" Target="media/image1.png"/></Relationships>`,
+      'word/media/image1.png': PNG,
+    });
+    const ex = await docxExtractor.extract(zip, {});
+    expect(ex.images).toHaveLength(1);
+    expect(ex.images[0]!.unitIndex).toBe(0);
+  });
+
+  it('문단 중간 쪽나눔 뒤의 그림은 다음 단위로 매핑된다', async () => {
+    const body =
+      para('앞') +
+      `<w:p><w:r><w:t>전</w:t><w:br w:type="page"/><w:drawing><a:blip r:embed="rId6"/></w:drawing></w:r></w:p>` +
+      para('후');
+    const zip = zipOf({
+      'word/document.xml': doc(body),
+      'word/_rels/document.xml.rels':
+        `<?xml version="1.0"?><Relationships xmlns="urn:rel"><Relationship Id="rId6" Type="urn:x/image" Target="media/image1.png"/></Relationships>`,
+      'word/media/image1.png': PNG,
+    });
+    const ex = await docxExtractor.extract(zip, {});
+    expect(ex.units).toEqual(['앞\n\n전', '후']);
+    expect(ex.images).toHaveLength(1);
+    expect(ex.images[0]!.unitIndex).toBe(1);
+  });
+
+  it('제목과 그림이 0 이 아닌 단위에 있으면 그 단위 인덱스를 정확히 반영한다', async () => {
+    const body =
+      para('앞') +
+      para('제목', { breakBefore: true, style: 'Heading1' }) +
+      `<w:p><w:r><w:drawing><a:blip r:embed="rId6"/></w:drawing></w:r></w:p>`;
+    const zip = zipOf({
+      'word/document.xml': doc(body),
+      'word/_rels/document.xml.rels':
+        `<?xml version="1.0"?><Relationships xmlns="urn:rel"><Relationship Id="rId6" Type="urn:x/image" Target="media/image1.png"/></Relationships>`,
+      'word/media/image1.png': PNG,
+    });
+    const ex = await docxExtractor.extract(zip, {});
+    expect(ex.units).toEqual(['앞', '제목']);
+    expect(ex.headings).toEqual([{ level: 1, title: '제목', unitIndex: 1 }]);
+    expect(ex.images).toHaveLength(1);
+    expect(ex.images[0]!.unitIndex).toBe(1);
+  });
+
+  it('JPEG 확장자 그림도 image/jpeg 로 수집한다', async () => {
+    // 바이트 내용은 실제 JPEG 가 아니어도 된다 — mimeOf 는 확장자만 보고, 추출기는
+    // 이미지를 디코드하지 않는다(Vision 호출부가 바이트를 그대로 넘긴다).
+    const body = para('앞') + `<w:p><w:r><w:drawing><a:blip r:embed="rId7"/></w:drawing></w:r></w:p>`;
+    const zip = zipOf({
+      'word/document.xml': doc(body),
+      'word/_rels/document.xml.rels':
+        `<?xml version="1.0"?><Relationships xmlns="urn:rel"><Relationship Id="rId7" Type="urn:x/image" Target="media/image2.jpg"/></Relationships>`,
+      'word/media/image2.jpg': PNG,
+    });
+    const ex = await docxExtractor.extract(zip, {});
+    expect(ex.images).toHaveLength(1);
+    expect(ex.images[0]!.mimeType).toBe('image/jpeg');
+  });
+
+  it('같은 그림을 서로 다른 rId 로 두 번 참조해도 한 번만 담는다', async () => {
+    const body =
+      `<w:p><w:r><w:drawing><a:blip r:embed="rId6"/></w:drawing></w:r></w:p>` +
+      para('가운데') +
+      `<w:p><w:r><w:drawing><a:blip r:embed="rId7"/></w:drawing></w:r></w:p>`;
+    const zip = zipOf({
+      'word/document.xml': doc(body),
+      'word/_rels/document.xml.rels':
+        `<?xml version="1.0"?><Relationships xmlns="urn:rel">` +
+        `<Relationship Id="rId6" Type="urn:x/image" Target="media/image1.png"/>` +
+        `<Relationship Id="rId7" Type="urn:x/image" Target="media/image1.png"/>` +
+        `</Relationships>`,
+      'word/media/image1.png': PNG,
+    });
+    const ex = await docxExtractor.extract(zip, {});
+    expect(ex.images).toHaveLength(1);
+  });
+
+  it('단위 수가 상한을 넘으면 PDF_TOO_MANY_PAGES 다', async () => {
+    const paragraphs = Array.from({ length: 501 }, (_, i) => para(`p${i}`, { breakBefore: i > 0 }));
+    const zip = zipOf({ 'word/document.xml': doc(paragraphs.join('')) });
+    await expect(docxExtractor.extract(zip, { extractImages: false })).rejects.toThrowError(
+      expect.objectContaining({ code: 'PDF_TOO_MANY_PAGES' }),
+    );
+  });
+
+  it('pageBreakBefore 의 val=false/off 는 쪽나눔이 아니다 (ST_OnOff)', async () => {
+    const body =
+      `<w:p><w:pPr><w:pageBreakBefore w:val="false"/></w:pPr><w:r><w:t>가</w:t></w:r></w:p>` +
+      `<w:p><w:pPr><w:pageBreakBefore w:val="off"/></w:pPr><w:r><w:t>나</w:t></w:r></w:p>`;
+    const zip = zipOf({ 'word/document.xml': doc(body) });
+    const ex = await docxExtractor.extract(zip, { extractImages: false });
+    expect(ex.units).toEqual(['가\n\n나']);
+  });
+
+  it('추출 도중 abort 되면 ABORTED 로 즉시 멈춘다', async () => {
+    const zip = zipOf({ 'word/document.xml': doc(para('첫째') + para('둘째')) });
+    let calls = 0;
+    // 진입 전 가드(1회차)는 통과시키고, 본문 순회 루프 안의 가드(2회차)에서 abort 로 만든다 —
+    // "pre-entry 만 테스트됨" 뮤테이션을 잡는다.
+    const signal = {
+      get aborted() {
+        calls += 1;
+        return calls > 1;
+      },
+    } as unknown as AbortSignal;
+    await expect(docxExtractor.extract(zip, { signal })).rejects.toThrowError(
+      expect.objectContaining({ code: 'ABORTED' }),
+    );
+    expect(calls).toBeGreaterThan(1);
   });
 
   it('extractImages:false 면 그림을 수집하지 않는다', async () => {
