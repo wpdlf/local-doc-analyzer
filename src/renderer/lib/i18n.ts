@@ -44,6 +44,11 @@ export const _translations = {
   // QA21(D-MED): 같은 이름의 문서가 둘 이상 열려 있으면 어느 쪽인지 판정할 수 없다 — 이전에는
   // 앞의 것으로 조용히 점프했다(활성 문서와 이름이 겹치면 활성 문서로). 표면화가 정답.
   'citation.ambiguousDoc': { ko: '{name} 이라는 이름의 문서가 여러 개 열려 있어 어느 문서인지 판정할 수 없습니다 — 하나를 닫으면 이동할 수 있습니다', en: 'Several open documents are named {name}, so the source cannot be determined — close one to navigate' },
+  // Task12: 표시용 인용 라벨(formatUnitLabel) 이 unitKind 별로 참조하는 키. AI 프롬프트에
+  // 주입되는 formatPromptPageLabel 의 `[p.N]` 과는 무관 — 이쪽은 화면에만 보인다.
+  'citation.unit.page': { ko: 'p.{n}', en: 'p.{n}' },
+  'citation.unit.slide': { ko: '슬라이드 {n}', en: 'Slide {n}' },
+  'citation.unit.chapter': { ko: '{n}장', en: 'Ch. {n}' },
   'pdfviewer.title': { ko: '원문 보기', en: 'Source Viewer' },
   'pdfviewer.close': { ko: '뷰어 닫기', en: 'Close viewer' },
   'pdfviewer.loading': { ko: 'PDF 로드 중...', en: 'Loading PDF...' },

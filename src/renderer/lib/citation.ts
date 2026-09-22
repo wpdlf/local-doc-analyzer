@@ -1,5 +1,7 @@
 // Design Ref: §3.3.2 parseCitations — 단일 진실원, 순수 함수
 // Plan SC: SC-01 (청크 page 메타데이터), SC-02 (인용 토큰), SC-05 (legacy 호환)
+import type { UnitKind } from '../types';
+import { t, type TranslationKey } from './i18n';
 
 /**
  * 페이지 인용 토큰 정규식.
@@ -265,10 +267,36 @@ export function normalizeCitationPlacement(text: string): string {
  * `-7]` 에서 매칭에 실패해 인용이 일반 텍스트로 렌더되며 소실됐다. 범위→단일 변환을
  * 로컬 소형 모델의 지시 준수에 의존한 것이 citation 매치율 88.8% 미달의 1차 원인이었다.
  * 라벨 생성 단계에서 청크 body 시작 페이지로 고정해 근본 원인을 제거한다.
+ *
+ * Task12 계획 결함 정정: 이 함수는 표시용이 아니다 — `use-qa.ts` 가 이 반환값을 **그대로
+ * AI 프롬프트 컨텍스트에 주입**하고, LLM 이 그것을 베껴 응답에 실으면 `CITATION_REGEX` 가
+ * 다시 그 문자열을 파싱해 클릭 가능한 인용으로 되살린다. 이 왕복 계약 때문에 반환값은
+ * **언제나 ASCII `[p.N]`** 이어야 하고, UI 언어나 문서의 `unitKind`(page/slide/chapter)에
+ * 따라 달라지면 절대 안 된다 — 조금이라도 갈리면 그 순간부터 정규식이 매칭에 실패해
+ * 모든 Q&A 답변의 인용이 조용히 평문으로 강등된다. 표시용 라벨은 `formatUnitLabel` 이
+ * 별도로 맡는다. 이름을 개명한 이유도 이것이다: 이전 이름(`formatPageLabel`)이 "표시
+ * 라벨"처럼 들려서, 이 함수를 표시 지점(unitKind 대응)으로 오인해 교체하려던 시도가
+ * 있었다 — 프롬프트/정규식이 그대로라는 전제와 정면 충돌하는 변경이었다.
  */
-export function formatPageLabel(page?: number): string {
+export function formatPromptPageLabel(page?: number): string {
   if (!page || page < 1) return '';
   return `[p.${Math.floor(page)}]`;
+}
+
+/**
+ * 인용 라벨의 **표시용 단일 통로**.
+ *
+ * 내부 표현은 언제나 정수 N 이고(프롬프트도 `[p.N]` 그대로, `formatPromptPageLabel` 참조),
+ * 갈리는 것은 **화면에 보이는 문구**뿐이다. 여기를 거치지 않고 'p.' 를 조립하면 source-scan
+ * 가드가 실패한다 — 표시 지점은 검색 스니펫·마인드맵·StatusBar 등에 흩어져 있어서, 열거하면
+ * 사각이 생긴다(QA33 I3).
+ *
+ * 대괄호는 붙이지 않는다 — 교차문서 라벨(`[문서명 p.N]`)처럼 대괄호 안에 다른 내용과 함께
+ * 조합해야 하는 호출부가 있어, 대괄호 부착은 호출부(`CitationButton`)의 책임으로 둔다.
+ */
+export function formatUnitLabel(page?: number, unitKind: UnitKind = 'page'): string {
+  if (page === undefined || !Number.isFinite(page)) return '';
+  return t(`citation.unit.${unitKind}` as TranslationKey, { n: String(page) });
 }
 
 /**

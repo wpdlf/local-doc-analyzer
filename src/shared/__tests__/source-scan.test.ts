@@ -388,3 +388,43 @@ describe('PDF/CFB 매직바이트는 document-formats.ts 밖에 두지 않는다
     expect(offenders, 'PDF/CFB 매직바이트는 document-formats.ts 에서만 안다').toEqual([]);
   });
 });
+
+describe('인용 표시 라벨은 formatUnitLabel 밖에서 조립하지 않는다 (Task12)', () => {
+  /**
+   * 이 가드는 **표시** 라벨(화면에 보이는 'p.3'/'슬라이드 3'/'3장')만 다룬다. 표시 지점은
+   * 검색 스니펫·마인드맵·StatusBar 등에 흩어져 있어 열거하면 사각이 생긴다(QA33 I3) —
+   * 그래서 위치를 나열하지 않고 소스 전체에서 'p.' 조립 패턴을 도출한다.
+   *
+   * `formatPromptPageLabel`(citation.ts) 은 이 가드가 잡아선 안 되는 **의도된 예외**다 — 그
+   * 반환값은 화면이 아니라 AI 프롬프트로 나가 LLM 이 되돌려주고 `CITATION_REGEX` 가 재매칭하는
+   * 값이라 언제나 ASCII `[p.N]` 이어야 한다(citation.ts 함수 주석 참조, citation-roundtrip.test.ts
+   * 가 그 계약을 별도로 고정한다). 이 예외를 정규식을 헐겁게 써서 우연히 비켜가게 하지 않고,
+   * 파일 단위 ALLOWED 로 **명시**해 둔다 — citation.ts 안에 또 다른 위반이 생겨도 파일째
+   * 면제되는 트레이드오프는 있지만, 그 파일은 이 가드가 지키려는 개념(단일 통로) 자체를
+   * 정의하는 곳이라 정당한 예외다. i18n.ts 는 번역 사전 값 자체(`'p.{n}'` 등)가 이 파일에
+   * 있어야 하므로 함께 면제한다.
+   */
+  const ALLOWED = new Set([
+    'src/renderer/lib/citation.ts',
+    'src/renderer/lib/i18n.ts',
+  ]);
+
+  it("'p.' 템플릿 리터럴/문자열 조립이 단일 통로 밖에 없다", () => {
+    const scanned = walkSourceFiles('src', /\.tsx?$/);
+    assertScanIsWide(scanned);
+    const offenders: string[] = [];
+    for (const file of scanned) {
+      const norm = file.replace(/\\/g, '/');
+      if (ALLOWED.has(norm) || isTestPath(file)) continue;
+      const src = stripJsComments(readFileSync(file, 'utf-8'));
+      for (const [i, line] of src.split('\n').entries()) {
+        // `p.${n}` (대괄호로 감싸인 `[p.${n}]` 포함) / `'p.' + n` / `"p." + n` 형태를 모두
+        // 잡는다. 원안(따옴표가 'p.' 바로 앞에 와야 함)은 `` `[p.${n}]` `` 처럼 앞에 다른
+        // 문자(`[`)가 끼면 못 잡는 사각이 있었다(실측: use-summarize.ts 의 기존 프롬프트
+        // 라벨 조립이 원안 정규식으로는 안 걸렸다) — 그 사각을 닫는다.
+        if (/p\.\s*(\$\{|['"`]\s*\+|\+\s*['"`])/.test(line)) offenders.push(`${norm}:${i + 1}`);
+      }
+    }
+    expect(offenders, '표시 라벨은 formatUnitLabel 을 거친다').toEqual([]);
+  });
+});

@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { parseCitations, formatPageLabel, clampCitationPage, CITATION_REGEX, normalizeCitationPlacement, stripCitations, sanitizeDocLabelName, qualifyBareCitations, stripTrailingPartialCitation, stripBareCitations } from '../citation';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { parseCitations, formatPromptPageLabel, formatUnitLabel, clampCitationPage, CITATION_REGEX, normalizeCitationPlacement, stripCitations, sanitizeDocLabelName, qualifyBareCitations, stripTrailingPartialCitation, stripBareCitations } from '../citation';
+import { useAppStore } from '../store';
 
 describe('parseCitations', () => {
   it('단일 인용을 3 세그먼트로 분리한다', () => {
@@ -176,28 +177,28 @@ describe('normalizeCitationPlacement', () => {
 });
 
 
-describe('formatPageLabel', () => {
+describe('formatPromptPageLabel', () => {
   it('단일 페이지', () => {
-    expect(formatPageLabel(5)).toBe('[p.5]');
-    expect(formatPageLabel(1)).toBe('[p.1]');
+    expect(formatPromptPageLabel(5)).toBe('[p.5]');
+    expect(formatPromptPageLabel(1)).toBe('[p.1]');
   });
 
   it('page 없거나 1 미만이면 빈 문자열', () => {
-    expect(formatPageLabel(undefined)).toBe('');
-    expect(formatPageLabel(0)).toBe('');
-    expect(formatPageLabel(-3)).toBe('');
+    expect(formatPromptPageLabel(undefined)).toBe('');
+    expect(formatPromptPageLabel(0)).toBe('');
+    expect(formatPromptPageLabel(-3)).toBe('');
   });
 
   it('소수 페이지는 floor 처리', () => {
-    expect(formatPageLabel(5.9)).toBe('[p.5]');
+    expect(formatPromptPageLabel(5.9)).toBe('[p.5]');
   });
 
-  // R35 회귀 가드: formatPageLabel 은 멀티페이지 청크라도 절대 범위 라벨 `[p.N-M]` 을
+  // R35 회귀 가드: formatPromptPageLabel 은 멀티페이지 청크라도 절대 범위 라벨 `[p.N-M]` 을
   // 방출하지 않아야 한다. 범위 라벨은 CITATION_REGEX 가 인식하지 못해 인용이 소실되며,
   // 이것이 citation 매치율 88.8% 미달의 1차 원인이었다. 단일 라벨만 생산하므로,
   // 그 출력은 항상 CITATION_REGEX 로 다시 파싱 가능해야 한다(생산-소비 포맷 정합성).
   it('범위 라벨을 방출하지 않으며, 출력은 CITATION_REGEX 로 재파싱 가능하다', () => {
-    const label = formatPageLabel(7);
+    const label = formatPromptPageLabel(7);
     expect(label).not.toMatch(/-/);
     const re = new RegExp(CITATION_REGEX.source, CITATION_REGEX.flags);
     const matches = Array.from(label.matchAll(re));
@@ -517,5 +518,37 @@ describe('소스 위생 (QA25)', () => {
     expect(out.split('\n').some((l) => l.trim() === '[p.1] [p.2]')).toBe(false);
     expect(out).toContain('[p.1]');
     expect(out).toContain('[p.2]');
+  });
+});
+
+describe('formatUnitLabel — 표시 라벨만 포맷별로 갈린다', () => {
+  // 브리프 원안은 `useAppStore.setState({ uiLanguage: 'ko' })` 였으나 실제 store 형태는
+  // `settings.uiLanguage` 다(AppState 최상위에는 그런 필드가 없다) — 이 저장소의 다른 모든
+  // i18n 테스트(i18n.test.ts 등)와 같은 형태로 맞춘다. 기대값 자체는 브리프와 동일하다.
+  const setUiLanguage = (lang: 'ko' | 'en'): void => {
+    useAppStore.setState((s) => ({ settings: { ...s.settings, uiLanguage: lang } }));
+  };
+
+  beforeEach(() => { setUiLanguage('ko'); });
+
+  it('기본(page)은 종전과 같다', () => {
+    expect(formatUnitLabel(3, 'page')).toBe('p.3');
+    expect(formatUnitLabel(3)).toBe('p.3');
+  });
+
+  it('슬라이드와 장은 한국어 라벨이다', () => {
+    expect(formatUnitLabel(3, 'slide')).toBe('슬라이드 3');
+    expect(formatUnitLabel(3, 'chapter')).toBe('3장');
+  });
+
+  it('영어 UI 에서는 영어 라벨이다', () => {
+    setUiLanguage('en');
+    expect(formatUnitLabel(3, 'slide')).toBe('Slide 3');
+    expect(formatUnitLabel(3, 'chapter')).toBe('Ch. 3');
+    expect(formatUnitLabel(3, 'page')).toBe('p.3');
+  });
+
+  it('페이지가 없으면 빈 문자열이다 (기존 동작 유지)', () => {
+    expect(formatUnitLabel(undefined, 'slide')).toBe('');
   });
 });

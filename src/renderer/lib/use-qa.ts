@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback } from 'react';
 import { useAppStore, whenSettingsCommitted, isDocSwapPending } from './store';
 import { AiClient } from './ai-client';
 import { chunkText, chunkTextWithOverlap, chunkTextWithOverlapByPage, estimateCharsPerToken } from './chunker';
-import { formatPageLabel, normalizeCitationPlacement, stripCitations, sanitizeDocLabelName, stripTrailingPartialCitation, stripBareCitations } from './citation';
+import { formatPromptPageLabel, normalizeCitationPlacement, stripCitations, sanitizeDocLabelName, stripTrailingPartialCitation, stripBareCitations } from './citation';
 // QA21(D-MED): 키워드 폴백 컨텍스트의 페이지 라벨 부착 — 요약 경로와 동일한 원천을 공유한다.
 import { labelParagraphsWithPages } from './use-summarize';
 import { t } from './i18n';
@@ -507,7 +507,7 @@ async function ragSearch(question: string, signal?: AbortSignal): Promise<string
     // 인용하도록 유도. 기존 청크도 label 없이 그대로 폴백. R35: 멀티페이지 청크라도 단일 라벨
     // (body 시작 페이지)만 방출(범위 라벨은 파서 미인식).
     const withLabel = results.map((r) => {
-      const label = formatPageLabel(r.pageStart);
+      const label = formatPromptPageLabel(r.pageStart);
       // QA29(B-6) + QA30(B-2): overlap tail 은 직전 청크에서 복사해 온 **이전 페이지** 텍스트라
       // 라벨과 함께 실으면 모델이 한 페이지 뒤를 인용한다. 그 제거 규칙은 buildLabeledSegment
       // 단일 구현이 소유한다(컬렉션 경로와 공유 — 한쪽만 고쳐지는 형제 누락을 구조적으로 차단).
@@ -673,7 +673,7 @@ export async function collectionRagSearch(
 
     // 컨텍스트: 출처(문서명+페이지)를 라벨로 명시해 LLM 이 교차 문서 인용을 하도록 유도.
     const withSeg = merged.map((r) => {
-      const pageLabel = formatPageLabel(r.pageStart); // "[p.N]" 또는 ''
+      const pageLabel = formatPromptPageLabel(r.pageStart); // "[p.N]" 또는 ''
       const page = pageLabel ? ` ${pageLabel.replace(/^\[|\]$/g, '')}` : ''; // "p.N"
       // QA9(B-LOW): 파일명에 예약문자([ ] | 개행)나 120자 초과가 있으면 CITATION_REGEX 의 doc 그룹
       // ([^[\]|\n]{1,120})에 안 걸려 교차인용 라벨이 비클릭 plain text 로 강등됐다(페이지 네비 상실).

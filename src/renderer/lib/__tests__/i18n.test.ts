@@ -264,7 +264,11 @@ describe('i18n 정적 키 가드 (QA28)', () => {
   const SRC_ROOT = resolve(import.meta.dirname, '../../..');
   // 동적 조합 키: translateMainProgress(`mainprog.${ev.key}`) / translateMainError(`mainerr.${errorKey}`).
   // 이 둘은 위 "errorKey ↔ i18n" 가드와 main 의 progress key 계약이 별도로 대조한다.
-  const DYNAMIC_PREFIXES = ['mainprog.', 'mainerr.'];
+  // Task12: formatUnitLabel(citation.ts) 이 `citation.unit.${unitKind}` 로 동적 조합한다.
+  // unitKind 는 닫힌 합타입(UnitKind = 'page'|'slide'|'chapter')이라 citation.unit.page/slide/
+  // chapter 3개로 완결되며, citation.test.ts 의 formatUnitLabel 테스트가 세 값 모두를 실제로
+  // 호출해 ko/en 라벨을 검증한다.
+  const DYNAMIC_PREFIXES = ['mainprog.', 'mainerr.', 'citation.unit.'];
   const isDynamic = (k: string) => DYNAMIC_PREFIXES.some((p) => k.startsWith(p));
 
   function walk(dir: string, out: string[] = []): string[] {
