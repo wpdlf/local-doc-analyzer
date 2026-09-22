@@ -2,8 +2,15 @@
 
 ## Project Overview
 
-PDF 자료 분석 데스크톱 앱 (Electron + React + TypeScript)
-Ollama/Claude/OpenAI/Gemini를 통한 AI 요약, PDF 이미지 Vision 분석 지원
+로컬 문서 분석기 (Local Doc Analyzer) — 문서 분석 데스크톱 앱 (Electron + React + TypeScript)
+Ollama/Claude/OpenAI/Gemini를 통한 AI 요약, 이미지 Vision 분석 지원
+
+**입력 포맷**: 현재 PDF. v1.8.0 에서 HWPX·DOCX·PPTX·EPUB 추가 예정
+(설계: `docs/02-design/features/multiformat-input.design.md`)
+
+**개명 (2026-09-22)**: `summary-lecture-material` / `PDF 자료 분석기` → `local-doc-analyzer` /
+`로컬 문서 분석기`. 저장소도 `local-pdf-analyzer` → `local-doc-analyzer`. README 의 제품 설명과
+설치 파일명은 **v1.8.0 릴리즈에서** 바꾼다 — 지금 바꾸면 아직 없는 기능을 광고하게 된다.
 
 ## Build & Package
 

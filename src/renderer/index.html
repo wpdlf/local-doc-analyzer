@@ -17,7 +17,7 @@
       - form-action 'none': 폼 submit 으로 외부 origin 데이터 전송 차단
     -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-EGIiDi9IsPjfDRlZm477C/K+ZowthNLgLs1uyBa5kxU='; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; child-src 'none'; base-uri 'none'; form-action 'none'">
-    <title>PDF 자료 분석기</title>
+    <title>로컬 문서 분석기</title>
     <script>
       // FOUC 방지: React 마운트 전에 동기적으로 테마 클래스 적용.
       // 테마는 localStorage('theme')에 캐시되며, 실제 저장소는 main의 settings.json.

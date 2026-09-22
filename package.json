@@ -1,5 +1,5 @@
 {
-  "name": "summary-lecture-material",
+  "name": "local-doc-analyzer",
   "version": "1.7.1",
   "description": "PDF 자료 분석 데스크톱 앱",
   "license": "MIT",
@@ -70,8 +70,8 @@
     "zustand": "^5.0.3"
   },
   "build": {
-    "appId": "com.jjw.summary-lecture-material",
-    "productName": "PDF 자료 분석기",
+    "appId": "com.jjw.local-doc-analyzer",
+    "productName": "로컬 문서 분석기",
     "files": [
       "out/**/*",
       "!**/*.map"
@@ -89,14 +89,14 @@
     "win": {
       "target": "nsis",
       "icon": "resources/icon.png",
-      "artifactName": "Local-PDF-Analyzer-Setup-${version}.${ext}"
+      "artifactName": "Local-Doc-Analyzer-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "PDF 자료 분석기"
+      "shortcutName": "로컬 문서 분석기"
     },
     "forceCodeSigning": false,
     "publish": [
@@ -109,7 +109,7 @@
     "mac": {
       "target": "dmg",
       "icon": "resources/icon.png",
-      "artifactName": "Local-PDF-Analyzer-${version}.${ext}"
+      "artifactName": "Local-Doc-Analyzer-${version}.${ext}"
     }
   }
 }

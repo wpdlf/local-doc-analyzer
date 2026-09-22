@@ -97,11 +97,11 @@ export const LOCALHOST_HOSTS: readonly string[] = ['localhost', '127.0.0.1', '::
  * electron-builder 는 **`name` 기반**으로 캐시 이름을 만든다
  * (`sanitizeFileName(metadata.name).toLowerCase() + '-updater'`, app-builder-lib/out/appInfo.js).
  * 현재는 루트 package.json 에 productName 이 없어 우연히 일치하지만, `build.productName`
- * ("PDF 자료 분석기")을 루트로 승격하는 순간 둘이 갈리고 정리는 영구 no-op 이 된다.
+ * ("로컬 문서 분석기")을 루트로 승격하는 순간 둘이 갈리고 정리는 영구 no-op 이 된다.
  *
  * 이 상수가 package.json 과 어긋나지 않도록 `updater-cache-name-drift.test.ts` 가 못박는다.
  */
-export const APP_PACKAGE_NAME = 'summary-lecture-material';
+export const APP_PACKAGE_NAME = 'local-doc-analyzer';
 
 /** electron-builder 의 updaterCacheDirName 규약을 재현한다(위 주석 참조). */
 export const UPDATER_CACHE_DIR_NAME = `${APP_PACKAGE_NAME.toLowerCase()}-updater`;

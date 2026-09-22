@@ -104,7 +104,7 @@ export const _translations = {
   'common.saved': { ko: '저장됨', en: 'Saved' },
 
   // ─── App ───
-  'app.title': { ko: 'PDF 자료 분석기', en: 'PDF Analyzer' },
+  'app.title': { ko: '로컬 문서 분석기', en: 'Local Doc Analyzer' },
   'app.logo': { ko: '로고', en: 'Logo' },
   'app.settings': { ko: '설정', en: 'Settings' },
   'app.closeError': { ko: '에러 닫기', en: 'Close error' },
@@ -439,7 +439,7 @@ export const _translations = {
   'settings.notInstalled': { ko: '미설치', en: 'Not installed' },
 
   // ─── OllamaSetupWizard ───
-  'setup.title': { ko: 'PDF 자료 분석기 설정', en: 'PDF Analyzer Setup' },
+  'setup.title': { ko: '로컬 문서 분석기 설정', en: 'Local Doc Analyzer Setup' },
   'setup.desc': { ko: '이 앱은 로컬 AI(Ollama)를 사용하여 PDF 자료를 요약합니다.', en: 'This app uses local AI (Ollama) to summarize PDF documents.' },
   'setup.autoInstall': { ko: '아래 항목이 자동으로 설치됩니다:', en: 'The following will be installed automatically:' },
   'setup.start': { ko: '설정 시작', en: 'Start setup' },
