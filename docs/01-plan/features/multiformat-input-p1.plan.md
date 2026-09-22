@@ -1917,7 +1917,11 @@ export function resolveExtractor(zip: ZipIndex): Extractor | null {
       return;
     }
     if (!hasZipMagic(head)) {
-      store.setError({ code: 'DOC_UNSUPPORTED', message: t('doc.unsupported', { list: SUPPORTED_LABEL }) } as AppError);
+      // 여기 도달했다는 것은 **확장자는 지원 포맷인데 내용이 아니라는** 뜻이다 — 진입 게이트
+      // 5곳이 확장자를 앞에서 거르므로 이 지점의 확장자는 항상 지원 목록 안이다.
+      // 그러므로 "지원하지 않는 형식"이 아니라 손상/불일치로 안내해야 정확하다.
+      // (`fake.pdf` 에 쓰레기를 넣고 "지원 형식: PDF" 라고 답하면 사용자는 "내 건 .pdf 인데?" 가 된다.)
+      store.setError({ code: 'DOC_CORRUPT', message: t('doc.corrupt') } as AppError);
       return;
     }
     try {
