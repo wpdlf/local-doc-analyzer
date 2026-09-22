@@ -64,6 +64,14 @@ describe('paginate', () => {
     expect(r.unitOfBlock).toEqual([0, 1, 1]);
   });
 
+  it('빈 블록도 breakBefore 면 직전 누적을 새 단위로 민다 (예: 문단 끝 쪽나눔)', () => {
+    // 문단 끝의 w:br type=page 는 텍스트 없는 조각(빈 블록)을 만들되 breakBefore 를 지닌다.
+    // 이 신호를 놓치면 두 번째 블록이 첫 블록과 한 단위로 합쳐진다.
+    const r = paginate([b('가'), b('', true), b('나')], 10000);
+    expect(r.units).toEqual(['가', '나']);
+    expect(r.unitOfBlock).toEqual([0, 1, 1]);
+  });
+
   it('두 블록의 합이 정확히 상한과 같으면 한 단위에 담는다', () => {
     const r = paginate([b('가'.repeat(50)), b('나'.repeat(50))], 100);
     // 50 + 50 = 100, 정확히 budget 과 같음 → 한 단위에 담긴다

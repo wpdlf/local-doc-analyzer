@@ -45,7 +45,12 @@ export function paginate(blocks: Block[], maxChars: number = DEFAULT_UNIT_CHARS)
   for (const block of blocks) {
     const text = block.text.trim();
     if (text === '') {
-      // 빈 블록은 단위를 만들지 않는다. 매핑은 직전 단위(없으면 0)로 둔다.
+      // 빈 블록이라도 breakBefore 면 실제 쪽나눔이 일어난 자리다(예: 문단 끝
+      // w:br type=page 가 텍스트 없는 조각을 만드는 경우). 여기서 flush 하지 않으면
+      // 그 쪽나눔 신호가 통째로 사라진다. flush 는 누적이 없으면 no-op 이라
+      // 선행 breakBefore 만으로 빈 단위가 생기지는 않는다.
+      if (block.breakBefore) flush();
+      // 빈 블록 자체는 단위를 만들지 않는다. 매핑은 직전 단위(없으면 0)로 둔다.
       unitOfBlock.push(units.length > 0 || current.length > 0 ? units.length : 0);
       continue;
     }
