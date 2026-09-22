@@ -12,6 +12,20 @@ import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { stripJsComments, stripYamlComments, stripHtmlComments, readGeneratedText } from './helpers/source-scan';
 
+/**
+ * 소스 트리를 재귀 순회해 패턴에 맞는 파일을 모은다 — 여러 스캔 가드가 공유하는 단일 워커.
+ * 가드마다 따로 두면 그 자체가 이 저장소 최다 결함 형태(형제 누락)를 반복하는 셈이다.
+ */
+function walkSourceFiles(dir: string, pattern: RegExp): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(resolve(dir), { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkSourceFiles(p, pattern));
+    else if (pattern.test(entry.name)) out.push(p);
+  }
+  return out;
+}
+
 describe('stripJsComments — 주석은 지우고 코드는 남긴다', () => {
   it('줄 주석과 블록 주석을 지운다', () => {
     const s = stripJsComments('const a = 1; // 주석 안의 secretToken\n/* 여러 줄\n secretToken */\nconst b = 2;');
@@ -173,15 +187,6 @@ x
 describe('소스 스캔 가드는 전부 공용 제거기를 쓴다 (열거 금지)', () => {
   const SRC_ROOT = resolve(import.meta.dirname, '../..');
 
-  function walk(dir: string, out: string[] = []): string[] {
-    for (const e of readdirSync(dir, { withFileTypes: true })) {
-      const p = join(dir, e.name);
-      if (e.isDirectory()) walk(p, out);
-      else if (/\.(test|spec)\.tsx?$/.test(e.name)) out.push(p);
-    }
-    return out;
-  }
-
   /**
    * 소스(.ts/.tsx/.mts/.yml)를 텍스트로 읽는 테스트인가 — 경로 리터럴 형태와 readdir 필터 형태 둘 다.
    * QA30(D2): `.mts` 를 추가했다. `vitest.config.mts` 를 읽는 가드(coverage-drift.test)가
@@ -208,7 +213,7 @@ describe('소스 스캔 가드는 전부 공용 제거기를 쓴다 (열거 금�
   // derived() 기계도 원본을 읽는다. 자기 자신을 파생 집합에 넣으면 그 read 사이트들이 위반으로
   // 잡힌다(QA31 에서 실제로 밟았다). 예외는 여기 한 곳뿐이며 이름으로 못박는다.
   const META_GUARD = 'shared/__tests__/source-scan.test.ts';
-  const derived = () => walk(SRC_ROOT)
+  const derived = () => walkSourceFiles(SRC_ROOT, /\.(test|spec)\.tsx?$/)
     .filter((f) => rel(f) !== META_GUARD)
     .filter((f) => scansSource(readFileSync(f, 'utf8')));
 
@@ -271,5 +276,32 @@ describe('readGeneratedText — 소스가 아님을 확장자로 증명한 읽�
     const p = join(mkdtempSync(join(tmpdir(), 'src-scan-')), 'step-summary.md');
     writeFileSync(p, '# 요약\n');
     expect(readGeneratedText(p)).toBe('# 요약\n');
+  });
+});
+
+describe.skip('확장자 리터럴은 document-formats.ts 밖에 두지 않는다', () => {
+  /**
+   * 진입 게이트가 흩어져 있으면 포맷이 늘 때 한 곳이 안 따라간다. 새 게이트가 생기는 순간
+   * 여기서 실패하게 만들어 지점을 **도출**한다(열거하면 사각이 생긴다 — QA33 I3).
+   */
+  const ALLOWED = new Set([
+    'src/shared/document-formats.ts',
+    'src/shared/__tests__/document-formats.test.ts',
+    'src/shared/__tests__/source-scan.test.ts',
+  ]);
+  // 내보내기 저장 다이얼로그(file:save / file:export-pdf)는 **출력** 확장자라 이 가드의 대상이 아니다.
+  const OUTPUT_ONLY = /export-pdf|showSaveDialog|MAX_EXPORT_SIZE/;
+
+  it("'.pdf'/'.docx' 리터럴이 단일 출처 밖에 없다", () => {
+    const offenders: string[] = [];
+    for (const file of walkSourceFiles('src', /\.(ts|tsx)$/)) {
+      if (ALLOWED.has(file.replace(/\\/g, '/'))) continue;
+      const src = stripJsComments(readFileSync(file, 'utf-8'));
+      for (const [i, line] of src.split('\n').entries()) {
+        if (OUTPUT_ONLY.test(line)) continue;
+        if (/['"`]\.?(pdf|docx)['"`]/i.test(line)) offenders.push(`${file}:${i + 1}`);
+      }
+    }
+    expect(offenders, '확장자는 document-formats.ts 에서만 안다').toEqual([]);
   });
 });
