@@ -46,4 +46,28 @@ describe('paginate', () => {
   it('기본 분량은 한국어 A4 한 쪽 기준이다', () => {
     expect(DEFAULT_UNIT_CHARS).toBe(1800);
   });
+
+  it('모든 입력이 비어 있으면 units 는 빈 배열이고 unitOfBlock 길이는 입력 길이와 같다', () => {
+    const r = paginate([b(''), b('   '), b('\t\n')], 100);
+    expect(r.units).toEqual([]);
+    expect(r.unitOfBlock).toHaveLength(3);
+  });
+
+  it('빈 블록과 내용이 섞여 있을 때 unitOfBlock 이 올바르다', () => {
+    const r = paginate([b(''), b('가'), b('   '), b('나'), b('')], 100);
+    // 첫 번째 빈 블록: units 가 비었으므로 0
+    // 두 번째 '가': units 에 들어감, 인덱스는 0
+    // 세 번째 빈 블록: 현재 units.length 는 0 이지만 current 에 '가' 가 있으므로 0
+    // 네 번째 '나': '가' + '나' 가 budget 안이므로 같은 단위, 인덱스 0
+    // 다섯 번째 빈 블록: units.length 는 여전히 0, current 에 내용이 있으므로 0
+    expect(r.unitOfBlock).toEqual([0, 0, 0, 0, 0]);
+    expect(r.units).toEqual(['가\n\n나']);
+  });
+
+  it('두 블록의 합이 정확히 상한과 같으면 한 단위에 담는다', () => {
+    const r = paginate([b('가'.repeat(50)), b('나'.repeat(50))], 100);
+    // 50 + 50 = 100, 정확히 budget 과 같음 → 한 단위에 담긴다
+    expect(r.units).toEqual(['가'.repeat(50) + '\n\n' + '나'.repeat(50)]);
+    expect(r.unitOfBlock).toEqual([0, 0]);
+  });
 });

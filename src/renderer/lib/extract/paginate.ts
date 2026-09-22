@@ -14,7 +14,14 @@ export interface Block {
 
 export interface PaginateResult {
   units: string[];
-  /** blocks[i] 가 속한 단위의 0-based 인덱스. 빈 블록은 직전 단위를 가리킨다. */
+  /**
+   * blocks[i] 가 속한 단위의 0-based 인덱스.
+   *
+   * ⚠️ 항목들은 units 가 비어 있지 않을 때만 의미가 있다.
+   * 모든 입력 블록이 비어 있으면 units: [] 이고, unitOfBlock 의 모든 항목은
+   * 존재하지 않는 단위를 가리킨다 — 호출자는 units.length > 0 을 확인해야 한다.
+   * 빈 블록은 직전 단위를 가리킨다.
+   */
   unitOfBlock: number[];
 }
 
