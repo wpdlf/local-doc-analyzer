@@ -33,7 +33,7 @@ describe('updater 캐시 디렉터리 이름 — package.json drift 가드', () 
 
   // 루트 productName 이 생기면 app.getName() 이 그쪽을 반환하게 되어, 과거 구현처럼
   // app.getName() 을 쓰는 코드가 다시 들어오면 무음으로 어긋난다. 승격 시도 자체를 잡는다.
-  // (build.productName = "PDF 자료 분석기" 가 있어 루트로 올리고 싶은 유혹이 실재한다.)
+  // (build.productName = "로컬 문서 분석기" 가 있어 루트로 올리고 싶은 유혹이 실재한다.)
   it('루트 package.json 에 productName 이 없다 — 있으면 캐시 이름 계산의 전제가 깨진다', () => {
     expect(
       pkg.productName,
