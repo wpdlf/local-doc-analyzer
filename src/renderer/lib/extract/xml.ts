@@ -5,15 +5,13 @@
  * getElementsByTagName('w:t') 는 프리픽스가 달라지면 **조용히 0건**을 주므로 쓰지 않는다.
  */
 
-function fail(message: string): never {
-  throw Object.assign(new Error(message), { code: 'DOC_CORRUPT' });
-}
+import { extractFail } from './errors';
 
 export function parseXml(text: string): Document {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   // DOMParser 는 throw 하지 않고 parsererror 요소를 심는다.
-  if (doc.getElementsByTagName('parsererror').length > 0) fail('malformed xml');
-  if (!doc.documentElement) fail('empty xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) extractFail('DOC_CORRUPT', 'malformed xml');
+  if (!doc.documentElement) extractFail('DOC_CORRUPT', 'empty xml');
   return doc;
 }
 

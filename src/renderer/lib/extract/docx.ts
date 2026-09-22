@@ -5,18 +5,15 @@ import { paginate, type Block } from './paginate';
 import { MAX_EXAMINED_IMAGES, MAX_PAGE_COUNT, MAX_TOTAL_IMAGES } from '../pdf-parser';
 import type { Extractor, ExtractedDoc, ExtractedHeading, ExtractedImage, ExtractOptions, ZipIndex } from './types';
 import { DOCX_FORMAT_ID } from '../../../shared/document-formats';
+import { extractFail } from './errors';
 
 const DOCUMENT_PART = 'word/document.xml';
 
 /** 제목 스타일 — 워드가 붙이는 스타일 ID 는 보통 영문이지만 한국어 스타일명도 들어온다. */
 const HEADING_STYLE_RE = /^(?:Heading|제목)\s*([1-9])$/i;
 
-function fail(code: string, message: string): never {
-  throw Object.assign(new Error(message), { code });
-}
-
 function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) fail('ABORTED', 'aborted');
+  if (signal?.aborted) extractFail('ABORTED', 'aborted');
 }
 
 function mimeOf(path: string): 'image/png' | 'image/jpeg' | null {
@@ -114,11 +111,11 @@ export const docxExtractor: Extractor = {
     throwIfAborted(opts.signal);
 
     const xml = zip.text(DOCUMENT_PART);
-    if (!xml) fail('DOC_CORRUPT', 'word/document.xml missing');
+    if (!xml) extractFail('DOC_CORRUPT', 'word/document.xml missing');
 
     // walk 는 제너레이터라 .find 가 없다. 펼쳐서 찾는다.
     const body = [...walk(parseXml(xml).documentElement)].find((el) => localName(el) === 'body')
-      ?? fail('DOC_CORRUPT', 'w:body missing');
+      ?? extractFail('DOC_CORRUPT', 'w:body missing');
 
     const blocks: Block[] = [];
     const headingAt: { level: number; title: string; blockIndex: number }[] = [];
@@ -156,10 +153,18 @@ export const docxExtractor: Extractor = {
     }
 
     const { units, unitOfBlock } = paginate(blocks);
-    if (units.length === 0) fail('DOC_NO_TEXT', 'no text in document');
+    if (units.length === 0) extractFail('DOC_NO_TEXT', 'no text in document');
     // 단위 수 상한은 PDF 와 같은 예산을 쓴다 — 요약·임베딩이 단위 수에 선형으로 확장된다.
+    // Task10 fix round2: 번역 파라미터를 함께 싣는다 — PDF 경로(parsePdf)는 이미 번역된
+    // 문자열을 던지지만 이쪽(DOCX)은 코드만 던지므로, document-open.ts 의 경계가 pages/max 로
+    // uploader.tooManyPages 를 채울 수 있어야 한다(그래야 "unit count 501 exceeds 500" 같은
+    // 개발자용 영어가 화면에 그대로 노출되지 않는다).
     if (units.length > MAX_PAGE_COUNT) {
-      fail('PDF_TOO_MANY_PAGES', `unit count ${units.length} exceeds ${MAX_PAGE_COUNT}`);
+      extractFail(
+        'PDF_TOO_MANY_PAGES',
+        `unit count ${units.length} exceeds ${MAX_PAGE_COUNT}`,
+        { pages: String(units.length), max: String(MAX_PAGE_COUNT) },
+      );
     }
 
     const headings: ExtractedHeading[] = headingAt.map((h) => ({

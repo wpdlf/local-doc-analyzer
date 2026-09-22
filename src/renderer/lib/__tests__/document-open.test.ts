@@ -49,11 +49,14 @@ vi.stubGlobal('window', Object.assign(window, {
 }));
 vi.stubGlobal('crypto', { randomUUID: () => 'doc-uuid' });
 
-import { openDocumentData, cancelDocumentParse } from '../document-open';
+import { openDocumentData, cancelDocumentParse, EXTRACTOR_ERROR_MESSAGE_KEYS } from '../document-open';
 import { MAX_PAGE_COUNT } from '../pdf-parser';
 import { useAppStore } from '../store';
 import { DEFAULT_SETTINGS } from '../../types';
 import { MAX_PDF_SIZE_BYTES } from '../../../shared/constants';
+import { readFileSync, readdirSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { stripJsComments } from '../../../shared/__tests__/helpers/source-scan';
 
 const GOOD_ITEMS = [{ str: 'A'.repeat(60), transform: [12, 0, 0, 12, 0, 700], width: 100 }];
 const SHORT_ITEMS = [{ str: 'ab', transform: [12, 0, 0, 12, 0, 700], width: 10 }];
@@ -382,7 +385,14 @@ describe('openDocumentData — parsePdf 경로/에러 매핑', () => {
   it('페이지 수 초과 → PDF_TOO_MANY_PAGES', async () => {
     P.getDocument.mockReturnValue({ promise: Promise.resolve(P.fakePdf(MAX_PAGE_COUNT + 1, GOOD_ITEMS)) });
     await openDocumentData(pdfBuf(), 'huge.pdf', '/d/huge.pdf');
-    expect(useAppStore.getState().error?.code).toBe('PDF_TOO_MANY_PAGES');
+    const s = useAppStore.getState();
+    expect(s.error?.code).toBe('PDF_TOO_MANY_PAGES');
+    // Task10 리뷰 라운드2: parsePdf 는 이 코드를 이미 t() 로 번역된 문자열로 던진다(params 없음)
+    // — document-open 의 EXTRACTOR_ERROR_MESSAGE_KEYS 매핑이 여길 다시 건드리면(무조건 덮어쓰기)
+    // params 가 없어 `{pages}p` 미해석 placeholder 로 회귀한다. 그대로 통과해야 한다.
+    expect(s.error?.message).toBe(
+      `페이지 수가 너무 많습니다 (${MAX_PAGE_COUNT + 1}p). 최대 ${MAX_PAGE_COUNT}페이지까지 지원합니다. 문서를 분할해주세요.`,
+    );
   });
 
   it('텍스트 거의 없음 + OCR 비활성 → PDF_NO_TEXT', async () => {
@@ -515,6 +525,34 @@ describe('openDocumentData — 포맷 dispatch (Task10 리뷰 라운드1)', () =
     expect(s.error?.code).toBe('DOC_NO_TEXT');
     expect(s.error?.message).toBe('문서에서 텍스트를 추출할 수 없습니다. 파일 내용을 확인해주세요.');
     expect(s.error?.details).toBe('no text in document');
+  });
+
+  // Task10 리뷰 라운드2(finding 3): docx.ts:159(현 번호 기준) 의 PDF_TOO_MANY_PAGES 가 개발자용
+  // 영어("unit count 501 exceeds 500")를 그대로 던졌었다 — PDF 경로(parsePdf)는 이미 t() 로
+  // 번역된 문자열을 던지므로 라운드1 의 매핑(코드만 보고 덮어쓰기)이 이 경우엔 안전한 줄
+  // 알았는데, DOCX 경로는 코드만 던지고 번역하지 않아 그대로 새 나갔다. extractFail 의 params
+  // 를 통해 t('uploader.tooManyPages', {pages,max}) 로 정확히 채워지는지 — 그리고 어떤 영어
+  // 개발자 문구도 화면에 남지 않는지 확인한다.
+  it('MAX_PAGE_COUNT 를 넘는 DOCX 는 PDF_TOO_MANY_PAGES + 번역된 메시지다(개발자용 영어 노출 없음)', async () => {
+    // 명시적 쪽나눔으로 501개의 독립된 단위를 강제한다(분량 기반 자동분할에 기대지 않는다 —
+    // paginate() 는 문단 하나가 아무리 길어도 그 문단 내부에서는 쪼개지 않는다).
+    const pageCount = MAX_PAGE_COUNT + 1;
+    let body = '';
+    for (let i = 0; i < pageCount; i++) {
+      const pPr = i === 0 ? '' : '<w:pPr><w:pageBreakBefore/></w:pPr>';
+      body += `<w:p>${pPr}<w:r><w:t>쪽 ${i}</w:t></w:r></w:p>`;
+    }
+    const zip = await docxZip(body);
+    await openDocumentData(zip, 'huge.docx', '/d/huge.docx');
+    const s = useAppStore.getState();
+    expect(s.error?.code).toBe('PDF_TOO_MANY_PAGES');
+    expect(s.error?.message).toBe(
+      `페이지 수가 너무 많습니다 (${pageCount}p). 최대 ${MAX_PAGE_COUNT}페이지까지 지원합니다. 문서를 분할해주세요.`,
+    );
+    // 개발자용 원문("unit count ... exceeds ...")이 화면에 그대로 노출되지 않는다.
+    expect(s.error?.message).not.toMatch(/unit count/);
+    expect(s.error?.message).not.toMatch(/exceeds/);
+    expect(s.error?.details).toBe(`unit count ${pageCount} exceeds ${MAX_PAGE_COUNT}`);
   });
 });
 
@@ -749,5 +787,48 @@ describe('openDocumentData — pdfBytesCopy 할당 실패 (Task10 리뷰 라운�
 describe('cancelDocumentParse', () => {
   it('진행 중 파싱이 없으면 안전하게 no-op', () => {
     expect(() => cancelDocumentParse()).not.toThrow();
+  });
+});
+
+// Task10 리뷰 라운드2(항목2): "나열하면 형제가 빠진다"가 이 계획에서 세 번째로 재현됐다
+// (round1 의 DOC_NO_TEXT/CORRUPT/TOO_LARGE, round2 의 PDF_TOO_MANY_PAGES). EXTRACTOR_ERROR_
+// MESSAGE_KEYS 를 손으로 대조하는 대신, `extract/` 소스가 실제로 던지는 코드 집합을 **도출**해
+// 대조한다 — 네 번째 형제가 생기면(새 extractFail 호출에 새 코드) 이 테스트가 즉시 빨개진다.
+//
+// 도출이 가능한 이유: docx.ts/xml.ts/zip.ts 가 각자 갖고 있던 로컬 `fail()` 을 이번 라운드에
+// `extract/errors.ts` 의 단일 `extractFail(code, message, params?)` 로 걷어냈다 — 그래서 "이
+// 디렉터리가 던질 수 있는 코드"가 전부 `extractFail('CODE', ...)` 호출의 첫 인자라는 정적
+// 불변식이 성립한다. 이 불변식이 깨지면(새 로컬 fail 이 다시 생기면) 아래 개수 하한이 함께
+// 무너지진 않지만, 새 코드가 통째로 스캔에서 빠지는 조용한 실패가 될 수 있다 — 그래서
+// registry.test.ts 가 아니라 여기 file-count 하한으로 "extract/ 안의 .ts 파일을 전부 열어
+// 봤다"는 것만 보장하고, 코드 도출 자체는 정규식 하나로 충분히 좁다(단일 헬퍼 = 단일 패턴).
+describe('EXTRACTOR_ERROR_MESSAGE_KEYS — 추출기 코드 전수 도출 가드 (Task10 리뷰 라운드2)', () => {
+  function extractorSourceFiles(): string[] {
+    const dir = resolve('src/renderer/lib/extract');
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile() && /\.ts$/.test(e.name))
+      .map((e) => join(dir, e.name));
+  }
+
+  it('extract/ 의 모든 .ts 파일을 스캔한다(스캔 범위 붕괴 방지)', () => {
+    // docx/xml/zip/ooxml/table/paginate/types/registry/normalize/errors — 현재 10개.
+    // __tests__ 하위는 readdirSync 가 디렉터리로 보고 isFile() 에서 자연히 제외된다.
+    expect(extractorSourceFiles().length).toBeGreaterThan(5);
+  });
+
+  it('extractFail 로 던지는 모든 코드는 EXTRACTOR_ERROR_MESSAGE_KEYS 에 매핑이 있다(ABORTED 제외)', () => {
+    const CODE_RE = /extractFail\(\s*['"]([A-Z_]+)['"]/g;
+    const codes = new Set<string>();
+    for (const file of extractorSourceFiles()) {
+      const src = stripJsComments(readFileSync(file, 'utf-8'));
+      for (const m of src.matchAll(CODE_RE)) codes.add(m[1]!);
+    }
+    // 최소한 지금 알려진 것만큼은 도출돼야 한다 — 정규식 자체가 깨져 0건이 되는 사고 방지.
+    expect(codes.size).toBeGreaterThan(0);
+    // ABORTED 는 취소 신호다 — document-open.ts 의 catch 가 `error.code === 'ABORTED'` 에서
+    // 먼저 걸러 사용자 배너를 아예 띄우지 않는다(의도적 액션) — 번역 대상이 아니다.
+    codes.delete('ABORTED');
+    const unmapped = [...codes].filter((c) => !(c in EXTRACTOR_ERROR_MESSAGE_KEYS));
+    expect(unmapped, `번역 매핑이 없는 추출기 코드: ${unmapped.join(', ')}`).toEqual([]);
   });
 });

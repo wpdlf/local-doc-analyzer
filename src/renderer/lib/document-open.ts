@@ -14,6 +14,30 @@ import type { TranslationKey } from './i18n';
 
 const SUPPORTED_LABEL = SUPPORTED_FORMATS.map((f) => f.label).join(' · ');
 
+/**
+ * 추출기(docx.ts/zip.ts/xml.ts)·파서(pdf-parser.ts) 가 던지는 코드 중, 화면에 보이기 전에
+ * 이 경계에서 번역해야 하는 것들의 단일 출처.
+ *
+ * Task10 fix round2: `PDF_TOO_MANY_PAGES` 는 두 갈래로 던져진다 — PDF 경로(parsePdf)는 이미
+ * t('uploader.tooManyPages', {...}) 로 번역된 문자열을 `message` 에 직접 담아 던지고
+ * (`error.params` 없음), DOCX 경로(docx.ts, extractFail 경유)는 코드 + params 만 던진다
+ * (번역하지 않는다 — 추출기는 i18n 을 모른다). 그래서 이 표의 존재만으로 번역 여부를 정하면
+ * 안 되고, **`error.params` 가 실려 있을 때만** 이 표로 t() 를 호출한다(catch 참조) — 그래야
+ * 이미 번역된 PDF 경로의 메시지를 다시 건드리지 않는다(무조건 덮어쓰면 파라미터가 없어
+ * `{pages}p` 미해석 placeholder 로 회귀한다).
+ *
+ * export 하는 이유: 이 표에 코드가 빠지면(형제 누락) 영어가 그대로 노출된다 — 그 결함이 세
+ * 번째로 반복됐다(round1 의 DOC_NO_TEXT/CORRUPT/TOO_LARGE, round2 의 PDF_TOO_MANY_PAGES).
+ * `document-open-error-i18n.test.ts` 가 `extract/` 소스를 스캔해 이 표와 대조한다 —
+ * 나열이 아니라 도출로 넷을 세운다.
+ */
+export const EXTRACTOR_ERROR_MESSAGE_KEYS: Partial<Record<string, TranslationKey>> = {
+  DOC_NO_TEXT: 'doc.noText',
+  DOC_CORRUPT: 'doc.corrupt',
+  DOC_TOO_LARGE: 'doc.tooLarge',
+  PDF_TOO_MANY_PAGES: 'uploader.tooManyPages',
+};
+
 // ─── 공용 문서 열기 함수 (PdfUploader + App file drop + 탭 전환 + 최근 문서 + 전역 검색 공통) ───
 //
 // 이 함수는 Task10 이전 `pdf-parser.ts` 의 `handlePdfData` 를 그대로 옮긴 것이다. QA 라운드마다
@@ -226,7 +250,7 @@ export async function openDocumentData(
       store.setNotice({ message: t('pdf.imageBudgetNotice', { max: String(MAX_TOTAL_IMAGES) }) });
     }
   } catch (err) {
-    const error = err as Error & { code?: string };
+    const error = err as Error & { code?: string; params?: Record<string, string> };
     // 사용자 취소는 에러 배너로 표시하지 않음 (의도적 액션)
     if (error.code === 'ABORTED') {
       return;
@@ -238,20 +262,19 @@ export async function openDocumentData(
       'DOC_UNSUPPORTED', 'DOC_CORRUPT', 'DOC_ENCRYPTED', 'DOC_TOO_LARGE', 'DOC_NO_TEXT',
     ]);
     const code = (error.code && validCodes.has(error.code) ? error.code : 'PDF_PARSE_FAIL') as AppError['code'];
-    // Task10 fix round1(Important 3): docx.ts/zip.ts 는 개발자용 영어 메시지로 throw 한다
-    // (예: 'word/document.xml missing', 'unzipped size exceeded') — `error.message ||`가
-    // 그걸 먼저 집어 한국어 UI 에도 원문 영어가 그대로 노출됐다(AI 에러가 i18n 을 우회했던
-    // 과거 결함과 같은 클래스). 알려진 DOC_* 코드는 전용 i18n 문구로 덮어쓰고, 원문은
-    // details 에만 남겨 화면에는 노출하지 않는다.
-    const DOC_ERROR_MESSAGE_KEYS: Partial<Record<string, TranslationKey>> = {
-      DOC_NO_TEXT: 'doc.noText',
-      DOC_CORRUPT: 'doc.corrupt',
-      DOC_TOO_LARGE: 'doc.tooLarge',
-    };
-    const overrideKey = DOC_ERROR_MESSAGE_KEYS[code];
+    // Task10 fix round1(Important 3) + round2: docx.ts/zip.ts/xml.ts 는 개발자용 영어 메시지로
+    // throw 한다(예: 'word/document.xml missing', 'unit count 501 exceeds 500') —
+    // `error.message ||`가 그걸 먼저 집어 한국어 UI 에도 원문 영어가 그대로 노출됐다(AI 에러가
+    // i18n 을 우회했던 과거 결함과 같은 클래스). `error.params` 가 실려 있으면(추출기가
+    // extractFail 로 던졌다는 뜻 — 빈 객체 포함) 이 경계에서 t(key, params) 로 번역한다.
+    // params 가 없으면(예: parsePdf 가 던지는 PDF_TOO_MANY_PAGES 는 이미 t() 로 번역된
+    // 문자열을 message 에 직접 담아 온다) 손대지 않고 error.message 를 그대로 쓴다 — 그렇지
+    // 않으면 이미 번역된 PDF 경로 메시지가 파라미터 없이 다시 t() 를 타 {pages}p 미해석
+    // placeholder 로 회귀한다.
+    const overrideKey = error.params ? EXTRACTOR_ERROR_MESSAGE_KEYS[code] : undefined;
     store.setError({
       code,
-      message: overrideKey ? t(overrideKey) : (error.message || t('uploader.cannotRead')),
+      message: overrideKey ? t(overrideKey, error.params) : (error.message || t('uploader.cannotRead')),
       ...(overrideKey && error.message ? { details: error.message } : {}),
     });
   } finally {
