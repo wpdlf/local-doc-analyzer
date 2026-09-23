@@ -13,7 +13,25 @@ export const MAX_UNZIPPED_BYTES = 300 * 1024 * 1024;
 /** 엔트리 수 상한 — 수십만 개의 빈 엔트리로 메모리를 밀어내는 형태를 막는다. */
 export const MAX_ZIP_ENTRIES = 2000;
 
-export function openZip(data: ArrayBuffer): ZipIndex {
+export interface OpenZipOptions {
+  /**
+   * 해제 누적 바이트 상한 — 테스트 전용 오버라이드. 기본값은 `MAX_UNZIPPED_BYTES`.
+   * 프로덕션 호출부(document-open.ts)는 이 옵션을 넘기지 않으므로 항상 기본값을 쓴다.
+   */
+  maxUnzippedBytes?: number;
+}
+
+/**
+ * opts.maxUnzippedBytes 미지정 시의 기본값 해석 — 순수 함수로 분리해 기본값이
+ * `MAX_UNZIPPED_BYTES` 에서 조용히 drift 하지 않도록 직접 단위 테스트한다(zip.test.ts).
+ * 이 분리가 없으면 기본값 회귀는 300MB 문자열을 실제로 만들어야만 잡히는 비싼 테스트가 된다.
+ */
+export function resolveMaxUnzippedBytes(opts: OpenZipOptions = {}): number {
+  return opts.maxUnzippedBytes ?? MAX_UNZIPPED_BYTES;
+}
+
+export function openZip(data: ArrayBuffer, opts: OpenZipOptions = {}): ZipIndex {
+  const maxUnzippedBytes = resolveMaxUnzippedBytes(opts);
   const bytes = new Uint8Array(data);
   let unzipped: Record<string, Uint8Array>;
   let total = 0;
@@ -24,7 +42,7 @@ export function openZip(data: ArrayBuffer): ZipIndex {
         count += 1;
         if (count > MAX_ZIP_ENTRIES) extractFail('DOC_TOO_LARGE', 'zip entry count exceeded');
         total += file.originalSize;
-        if (total > MAX_UNZIPPED_BYTES) extractFail('DOC_TOO_LARGE', 'unzipped size exceeded');
+        if (total > maxUnzippedBytes) extractFail('DOC_TOO_LARGE', 'unzipped size exceeded');
         // 디렉터리 엔트리는 담지 않는다.
         return !file.name.endsWith('/');
       },
