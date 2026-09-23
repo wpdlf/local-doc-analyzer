@@ -21,7 +21,12 @@ export interface LaunchResult {
 }
 
 /** seedSettings 가 있을 때만 settings.json 을 쓴다(재시작 시나리오의 2차 기동은 앱이 쓴 파일을 보존). */
-export async function launchElectron(userDataDir: string, seedSettings?: Record<string, unknown>): Promise<LaunchResult> {
+export async function launchElectron(
+  userDataDir: string,
+  seedSettings?: Record<string, unknown>,
+  /** 스펙 고유 env(예: userdata-migration 의 DOC_ANALYZER_LEGACY_USER_DATA). 격리 env 는 덮어쓸 수 없다. */
+  extraEnv?: Record<string, string>,
+): Promise<LaunchResult> {
   if (seedSettings) {
     writeFileSync(join(userDataDir, 'settings.json'), JSON.stringify(seedSettings), 'utf-8');
   }
@@ -34,6 +39,7 @@ export async function launchElectron(userDataDir: string, seedSettings?: Record<
     ],
     env: {
       ...process.env,
+      ...extraEnv,
       DOC_ANALYZER_USER_DATA: userDataDir,
       // 호스트에 실제 Ollama 가 실행 중이어도(개발 머신) 죽은 포트로 격리 —
       // 콜드 스타트 위자드 노출 등 Ollama 상태 의존 시나리오를 결정적으로 만든다.
