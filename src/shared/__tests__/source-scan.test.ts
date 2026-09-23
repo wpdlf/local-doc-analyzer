@@ -296,6 +296,9 @@ function assertScanIsWide(files: readonly string[]): void {
   expect(rel.length, '스캔 대상이 너무 적다 — walkSourceFiles 범위가 좁혀진 것은 아닌지 확인').toBeGreaterThan(50);
   expect(rel.some((f) => f.startsWith('src/main/')), 'src/main 이 스캔 대상에 없다 — 범위가 좁혀졌다').toBe(true);
   expect(rel.some((f) => f.startsWith('src/renderer/')), 'src/renderer 가 스캔 대상에 없다 — 범위가 좁혀졌다').toBe(true);
+  // fix I1: 파일-타입 패턴이 `.tsx` 를 빼도 위 3개 단언은 여전히 초록이었다(렌더러 컴포넌트가
+  // 전부 .tsx 라 스캔에서 통째로 빠져도 안 걸림). `.tsx` 대표성을 직접 못박는다.
+  expect(rel.some((f) => f.endsWith('.tsx')), '.tsx 가 스캔 대상에 없다 — 파일-타입 패턴이 좁혀졌다').toBe(true);
 }
 
 describe('확장자 리터럴은 document-formats.ts 밖에 두지 않는다', () => {
@@ -307,10 +310,11 @@ describe('확장자 리터럴은 document-formats.ts 밖에 두지 않는다', (
    * 구성해도 정당하다(예: 긴 파일명 회귀 픽스처 `'x'.repeat(200) + '.pdf'`) — 프로덕션
    * 경로는 여전히 전수 스캔한다.
    */
+  // fix I1: '__tests__/document-formats.test.ts' 와 '__tests__/source-scan.test.ts' 는
+  // isTestPath() 가 이미 걸러내서(아래 continue) 여기 있어도 절대 참조되지 않는 죽은 항목이라
+  // 지운다 — 실제로 없는 예외 범위를 광고하고 있었다.
   const ALLOWED = new Set([
     'src/shared/document-formats.ts',
-    'src/shared/__tests__/document-formats.test.ts',
-    'src/shared/__tests__/source-scan.test.ts',
   ]);
   // 내보내기 저장 다이얼로그(file:save / file:export-pdf)는 **출력** 확장자라 이 가드의 대상이
   // 아니다. 핸들러 단위로 스코프한다 — 이전엔 같은 줄에 키워드가 있어야 했는데, 필터 배열과

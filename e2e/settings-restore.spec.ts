@@ -44,7 +44,7 @@ test('요약 언어 설정 변경 → 앱 재시작 후에도 유지', async () 
     // ── 1차 기동: 문서 열기 → 요약 언어 ko→en 변경(updateSettings → settings.json) ──
     const r1 = await launchElectron(userDataDir, SEED);
     try {
-      await expect(r1.page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+      await expect(r1.page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
       await sendDropPath(r1.app, pathA, b64);
       await expect(r1.page.getByText('doc.pdf (1p)')).toBeVisible({ timeout: 30000 });
 
@@ -63,7 +63,7 @@ test('요약 언어 설정 변경 → 앱 재시작 후에도 유지', async () 
     // ── 2차 기동: 재시드 없이(앱이 쓴 settings.json 보존) → 요약 언어가 en 으로 복원 ──
     const r2 = await launchElectron(userDataDir);
     try {
-      await expect(r2.page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+      await expect(r2.page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
       await sendDropPath(r2.app, pathA, b64);
       await expect(r2.page.getByText('doc.pdf (1p)')).toBeVisible({ timeout: 30000 });
 

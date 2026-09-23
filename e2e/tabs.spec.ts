@@ -55,7 +55,7 @@ test('실경로 두 문서 → 탭 전환 (file:dropped IPC)', async () => {
   page.on('pageerror', (e) => pageErrors.push(e));
 
   try {
-    await expect(page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
 
     // 실경로 로드 — 프로덕션 OS 드롭과 동일한 main IPC 경로
     const sendDrop = (p: string, b64: string) => app.evaluate(({ BrowserWindow }, arg) => {
@@ -85,7 +85,7 @@ test('실경로 두 문서 → 탭 전환 (file:dropped IPC)', async () => {
     // 사용자 보고 시나리오 재현: 문서 1 → 새 탭(+) → 문서 2 순차 업로드 → 탭 전환.
     // (연속 드롭 교체 경로와 달리 + 경유는 setDocument(null) 후 업로드 화면에서 열린다)
     await page.getByRole('button', { name: '새 문서 열기' }).click();
-    await expect(page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible();
+    await expect(page.getByText('문서를 여기에 드래그하거나')).toBeVisible();
     const pathC = join(docsDir, '감마 자료 gamma.pdf');
     const bufC = await makePdf('GAMMA document');
     writeFileSync(pathC, bufC);
@@ -136,7 +136,7 @@ test('실제 Ollama 인덱싱 중 — 문서 → + → 문서 → 탭 전환 (�
   page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') consoleWarns.push(m.text()); });
 
   try {
-    await expect(page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
 
     const sendDrop = (p: string, b64: string) => app.evaluate(({ BrowserWindow }, arg) => {
       const win = BrowserWindow.getAllWindows()[0]!;
@@ -153,7 +153,7 @@ test('실제 Ollama 인덱싱 중 — 문서 → + → 문서 → 탭 전환 (�
     await expect(page.getByText('first.pdf (40p)')).toBeVisible({ timeout: 30000 });
     const tablist = page.getByRole('navigation', { name: '열린 문서' });
     await page.getByRole('button', { name: '새 문서 열기' }).click();
-    await expect(page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible();
+    await expect(page.getByText('문서를 여기에 드래그하거나')).toBeVisible();
 
     // 문서 2 업로드 → 파싱 완료 직후(인덱싱 진행 중) 첫 탭으로 전환 — 사용자 타이밍
     await sendDrop(pathB, bufB.toString('base64'));

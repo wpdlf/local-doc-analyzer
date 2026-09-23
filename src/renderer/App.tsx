@@ -93,7 +93,7 @@ export default function App() {
 
   const { handleSummarize, handleAbort, getPartialRecovery } = useSummarize();
 
-  // H2(UX): 파일 열기 다이얼로그 단일 진입점 — Ctrl+O 와 헤더 "PDF 열기" 버튼이 공유.
+  // H2(UX): 파일 열기 다이얼로그 단일 진입점 — Ctrl+O 와 헤더 "문서 열기" 버튼이 공유.
   // dialogOpenRef 재진입 가드 + async throw 의 setError 수렴은 기존 Ctrl+O 경로와 동일.
   const openPdfDialog = useCallback(async () => {
     if (dialogOpenRef.current) return;
@@ -505,7 +505,7 @@ export default function App() {
           {tr('app.title')}
         </h1>
         <div className="flex items-center gap-2">
-          {/* H2(UX): 헤더에 상시 노출되는 PDF 열기 버튼 — 기존엔 전역 열기 진입점이 Ctrl+O(비가시)뿐이었다. */}
+          {/* H2(UX): 헤더에 상시 노출되는 문서 열기 버튼 — 기존엔 전역 열기 진입점이 Ctrl+O(비가시)뿐이었다. */}
           <button
             onClick={() => void openPdfDialog()}
             className="px-2.5 py-1.5 text-sm rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-200"

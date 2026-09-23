@@ -116,7 +116,7 @@ export const _translations = {
   'app.removeFile': { ko: '현재 문서 닫기', en: 'Close current document' },
   'app.otherFile': { ko: '✕ 문서 닫기', en: '✕ Close document' },
   'app.startSummary': { ko: '📝 요약 시작', en: '📝 Summarize' },
-  'app.openPdf': { ko: 'PDF 열기', en: 'Open PDF' },
+  'app.openPdf': { ko: '문서 열기', en: 'Open Document' },
   'app.openPdfHint': { ko: 'PDF 열기 (Ctrl+O)', en: 'Open PDF (Ctrl+O)' },
   'app.viewSummary': { ko: '📄 요약 보기 / Q&A 계속', en: '📄 View summary / Continue Q&A' },
   'app.reSummarize': { ko: '🔄 다시 요약', en: '🔄 Re-summarize' },
@@ -137,9 +137,9 @@ export const _translations = {
 
   // ─── PdfUploader ───
   'uploader.fileTooLarge': { ko: '파일이 너무 큽니다 ({size}MB). 최대 100MB까지 지원합니다.', en: 'File too large ({size}MB). Maximum 100MB supported.' },
-  'uploader.cannotRead': { ko: 'PDF를 읽을 수 없습니다.', en: 'Cannot read PDF.' },
+  'uploader.cannotRead': { ko: '문서를 읽을 수 없습니다.', en: 'Cannot read document.' },
   'uploader.multipleFiles': { ko: '한 번에 하나의 PDF만 처리할 수 있습니다. 첫 번째 파일({name})만 열었습니다.', en: 'Only one PDF can be processed at a time. Opening the first file ({name}) only.' },
-  'uploader.notPdf': { ko: 'PDF 파일만 지원됩니다.', en: 'Only PDF files are supported.' },
+  'uploader.notPdf': { ko: 'PDF · Word 파일만 지원됩니다.', en: 'Only PDF and Word files are supported.' },
   // ─── openDocumentData 진입 가드(모든 파일 열기 경로 공통) ───
   'pdf.busyGenerating': { ko: '요약 진행 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while summarizing.' },
   'pdf.busyQa': { ko: 'Q&A 답변 생성 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while answering Q&A.' },
@@ -208,9 +208,9 @@ export const _translations = {
   'uploader.ocrProgress': { ko: '스캔 PDF 텍스트 인식 중...', en: 'Recognizing scanned PDF text...' },
   'uploader.ocrLabel': { ko: 'OCR 진행', en: 'OCR progress' },
   'uploader.ocrDesc': { ko: 'Vision 모델로 텍스트를 추출하고 있습니다', en: 'Extracting text with Vision model' },
-  'uploader.reading': { ko: 'PDF를 읽고 있습니다...', en: 'Reading PDF...' },
+  'uploader.reading': { ko: '문서를 읽고 있습니다...', en: 'Reading document...' },
   'uploader.wait': { ko: '잠시만 기다려주세요', en: 'Please wait' },
-  'uploader.dragDrop': { ko: 'PDF 파일을 여기에 드래그하거나', en: 'Drag PDF file here or' },
+  'uploader.dragDrop': { ko: '문서를 여기에 드래그하거나', en: 'Drag document here or' },
   'uploader.clickSelect': { ko: '클릭하여 선택', en: 'click to select' },
   'uploader.selectFile': { ko: '파일 선택', en: 'Select file' },
   'uploader.orShortcut': { ko: '또는 Ctrl+O', en: 'or press Ctrl+O' },

@@ -76,7 +76,7 @@ test('PDF 드롭 → 파싱 → 문서 화면 전환 (pdfjs worker/cmaps 번들 
   // provider 를 claude 로 시드 — Ollama 미설치여도 셋업 위자드를 우회해 메인 화면 진입
   const r = await launchApp({ provider: 'claude', uiLanguage: 'ko', summaryLanguage: 'ko', theme: 'light' });
   try {
-    await expect(r.page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+    await expect(r.page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
 
     // 합성 드롭 — App.tsx 의 window capture drop 핸들러 경로 (실사용 HTML5 드롭과 동일)
     const pdfBase64 = await makeSamplePdfBase64('SAMPLE-A');
@@ -114,7 +114,7 @@ test('PDF 드롭 → 파싱 → 문서 화면 전환 (pdfjs worker/cmaps 번들 
 
     // 새 탭(+) → 업로드 화면 복귀하되 탭 2개 유지
     await r.page.getByRole('button', { name: '새 문서 열기' }).click();
-    await expect(r.page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible();
+    await expect(r.page.getByText('문서를 여기에 드래그하거나')).toBeVisible();
     await expect(tablist.getByRole('listitem')).toHaveCount(2);
 
     expect(r.pageErrors, `렌더러 페이지 에러: ${r.pageErrors.map((e) => e.message).join('; ')}`)
@@ -127,7 +127,7 @@ test('PDF 드롭 → 파싱 → 문서 화면 전환 (pdfjs worker/cmaps 번들 
 test('설정 화면 왕복 — 진입/저장 버튼/닫기 (IPC settings 왕복)', async () => {
   const r = await launchApp({ provider: 'claude', uiLanguage: 'ko', theme: 'light' });
   try {
-    await expect(r.page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+    await expect(r.page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
 
     // 헤더의 설정(⚙️) 버튼 진입
     await r.page.getByText('⚙️').click();
@@ -137,7 +137,7 @@ test('설정 화면 왕복 — 진입/저장 버튼/닫기 (IPC settings 왕복)
 
     // 닫기 → 메인 복귀
     await r.page.getByText('✕ 닫기').click();
-    await expect(r.page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible();
+    await expect(r.page.getByText('문서를 여기에 드래그하거나')).toBeVisible();
 
     expect(r.pageErrors).toHaveLength(0);
   } finally {

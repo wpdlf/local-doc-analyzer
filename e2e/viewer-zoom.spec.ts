@@ -63,7 +63,7 @@ test('원문 뷰어 확대·축소 — 버튼·Ctrl+휠·Ctrl+0 이 canvas 크�
   const appZoomFactor = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.getZoomFactor());
 
   try {
-    await expect(page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
     await sendDrop(pathA, bufA.toString('base64'));
     await expect(page.getByText(/gateway\.pdf \(3p\)/)).toBeVisible({ timeout: 60000 });
     await page.getByRole('button', { name: '📝 요약 시작' }).click();

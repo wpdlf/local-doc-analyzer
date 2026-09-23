@@ -64,12 +64,12 @@ test('컬렉션 Phase 3 — 통합 요약 + 저장→재오픈 (로컬 전용)',
   }
 
   try {
-    await expect(page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
 
     // 1) 두 문서 요약(세션+인덱스 생성)
     await loadAndSummarize(pathA, bufA.toString('base64'), /gateway\.pdf \(3p\)/);
     await page.getByRole('button', { name: '새 문서 열기' }).click();
-    await expect(page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
     await loadAndSummarize(pathB, bufB.toString('base64'), /discovery\.pdf \(3p\)/);
 
     // 2) 문서 A 로 전환 + 컬렉션 모드 ON → 2개 ready
@@ -99,12 +99,12 @@ test('컬렉션 Phase 3 — 통합 요약 + 저장→재오픈 (로컬 전용)',
       await tablist.getByRole('button', { name: /탭 닫기/ }).first().click();
       await expect.poll(() => tablist.getByRole('listitem').count(), { timeout: 30000 }).toBeLessThan(before);
     }
-    await expect(page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 30000 });
+    await expect(page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 30000 });
 
     // 6) 저장된 컬렉션 목록에서 재오픈 → 탭 2개 복원
     await expect(page.getByText('MSA 강의 묶음')).toBeVisible({ timeout: 10000 });
     // 컬렉션 카드(MSA 강의 묶음) 안의 '열기' 를 스코프해 클릭 — getByRole(name:'열기') 는 부분문자열
-    // 매칭이라 헤더 "📂 PDF 열기" 버튼·RecentDocuments '열기' 와 충돌한다(.first() 가 헤더 버튼을 집음).
+    // 매칭이라 헤더 "📂 문서 열기" 버튼·RecentDocuments '열기' 와 충돌한다(.first() 가 헤더 버튼을 집음).
     await page.getByRole('listitem').filter({ hasText: 'MSA 강의 묶음' }).getByRole('button', { name: '열기' }).click();
     await expect(tablist.getByRole('listitem')).toHaveCount(2, { timeout: 30000 });
 

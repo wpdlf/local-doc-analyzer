@@ -51,7 +51,7 @@ test('DOCX 를 열면 쪽나눔으로 2단위가 나뉘고 표가 표로 렌더�
     // ── 1차 기동: DOCX 파싱 → 두 번째 문서 드롭으로 flush(recent-restore.spec.ts 와 동일 계약) ──
     const r1 = await launchElectron(userDataDir, SEED);
     try {
-      await expect(r1.page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+      await expect(r1.page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
 
       await sendDropPath(r1.app, fixture, docxBuf.toString('base64'));
       // 쪽나눔 1회 → 2단위로 갈렸다는 사실이 헤더의 페이지 수 표기에 그대로 드러난다.
@@ -93,7 +93,7 @@ test('DOCX 를 열면 쪽나눔으로 2단위가 나뉘고 표가 표로 렌더�
     // ── 2차 기동: 같은 DOCX 를 다시 드롭 → docHash 일치 → 세션 복원 → 진짜 인용 버튼 등장 ──
     const r2 = await launchElectron(userDataDir, SEED);
     try {
-      await expect(r2.page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+      await expect(r2.page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
 
       await sendDropPath(r2.app, fixture, docxBuf.toString('base64'));
       await expect(r2.page.getByText('sample.docx (2p)')).toBeVisible({ timeout: 60000 });

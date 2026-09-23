@@ -59,7 +59,7 @@ test('요약 마인드맵 — 실 요약 → 텍스트/마인드맵 토글 → �
   }, { p, b64 });
 
   try {
-    await expect(page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
 
     // 문서 로드 → 요약 시작 → 요약 완료(QaChat 입력창 등장)
     await sendDrop(pathA, bufA.toString('base64'));

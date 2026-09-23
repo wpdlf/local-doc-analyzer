@@ -35,7 +35,7 @@ test('텍스트 없는 PDF + OCR 비활성 → PDF_NO_TEXT 에러 배너', async
     provider: 'claude', uiLanguage: 'ko', theme: 'light', enableOcrFallback: false,
   });
   try {
-    await expect(r.page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+    await expect(r.page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
     const empty = await makeEmptyPdf();
     await sendDropPath(r.app, '/tmp/scan.pdf', empty.toString('base64'));
     // OCR 비활성 → 추출 실패가 OCR 로 넘어가지 않고 즉시 PDF_NO_TEXT 배너로 수렴
@@ -53,7 +53,7 @@ test('매직바이트 불일치(위장 바이너리) → 손상/형식불일치 
   const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-err2-'));
   const r = await launchElectron(userDataDir, { provider: 'claude', uiLanguage: 'ko', theme: 'light' });
   try {
-    await expect(r.page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+    await expect(r.page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
     // %PDF- 로도 zip 로컬 파일 헤더(PK\x03\x04)로도 시작하지 않는 바이트 — document-open.ts 의
     // 매직바이트 게이트가 pdfjs/추출기 진입 전에 거부한다.
     const notPdf = Buffer.from('This is plainly not a PDF document, just some plain text bytes.', 'utf-8');

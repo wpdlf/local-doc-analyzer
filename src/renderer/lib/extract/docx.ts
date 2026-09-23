@@ -121,36 +121,50 @@ export const docxExtractor: Extractor = {
     const headingAt: { level: number; title: string; blockIndex: number }[] = [];
     const imageAt: { relId: string; blockIndex: number }[] = [];
 
-    for (const child of Array.from(body.children)) {
-      throwIfAborted(opts.signal);
-      const name = localName(child);
+    // body 직계 자식을 처리한다. `w:sdt`(구조적 콘텐츠 컨트롤 — 생성 목차나 템플릿 섹션
+    // 전체를 감싸는 데 흔히 쓰인다)는 그 자신이 문단/표가 아니라 `w:sdtContent` 안에
+    // 그것들을 담으므로, 만나면 그 안의 자식들을 같은 규칙으로 재귀 처리한다 — sdt 안에
+    // 또 sdt 가 와도(중첩) 특별 취급 없이 풀린다.
+    function walkChildren(children: Element[]): void {
+      for (const child of children) {
+        throwIfAborted(opts.signal);
+        const name = localName(child);
 
-      if (name === 'tbl') {
-        const blockIndex = blocks.length;
-        blocks.push({ text: toGfmTable(tableRows(child)), breakBefore: false });
-        // 표 셀 안 그림 — 셀 나눔은 단위 경계가 아니므로 표 전체를 담은 이 블록에 붙인다.
-        for (const relId of blipsIn(child)) imageAt.push({ relId, blockIndex });
-        continue;
-      }
-      if (name !== 'p') continue;
-
-      const pieces = paragraphPieces(child);
-      const level = headingLevel(child);
-      let breakBefore = hasPageBreakBefore(child);
-
-      for (const [i, piece] of pieces.entries()) {
-        const blockIndex = blocks.length;
-        blocks.push({ text: piece.text, breakBefore: breakBefore || i > 0 });
-        breakBefore = false;
-        // 제목은 조각이 아니라 문단의 스타일이므로 첫 조각에만 붙인다.
-        if (i === 0 && level !== null && piece.text.trim()) {
-          headingAt.push({ level, title: piece.text.trim(), blockIndex });
+        if (name === 'sdt') {
+          const content = childrenNamed(child, 'sdtContent')[0];
+          if (content) walkChildren(Array.from(content.children));
+          continue;
         }
-        // 그림은 실제로 그 조각(쪽나눔 이전 구간) 에 속한 것만 붙인다 — 문단 중간의
-        // 쪽나눔 뒤에 오는 그림이 앞쪽 조각에 잘못 매핑되는 것을 막는다.
-        for (const relId of piece.blipRelIds) imageAt.push({ relId, blockIndex });
+
+        if (name === 'tbl') {
+          const blockIndex = blocks.length;
+          blocks.push({ text: toGfmTable(tableRows(child)), breakBefore: false });
+          // 표 셀 안 그림 — 셀 나눔은 단위 경계가 아니므로 표 전체를 담은 이 블록에 붙인다.
+          for (const relId of blipsIn(child)) imageAt.push({ relId, blockIndex });
+          continue;
+        }
+        if (name !== 'p') continue;
+
+        const pieces = paragraphPieces(child);
+        const level = headingLevel(child);
+        let breakBefore = hasPageBreakBefore(child);
+
+        for (const [i, piece] of pieces.entries()) {
+          const blockIndex = blocks.length;
+          blocks.push({ text: piece.text, breakBefore: breakBefore || i > 0 });
+          breakBefore = false;
+          // 제목은 조각이 아니라 문단의 스타일이므로 첫 조각에만 붙인다.
+          if (i === 0 && level !== null && piece.text.trim()) {
+            headingAt.push({ level, title: piece.text.trim(), blockIndex });
+          }
+          // 그림은 실제로 그 조각(쪽나눔 이전 구간) 에 속한 것만 붙인다 — 문단 중간의
+          // 쪽나눔 뒤에 오는 그림이 앞쪽 조각에 잘못 매핑되는 것을 막는다.
+          for (const relId of piece.blipRelIds) imageAt.push({ relId, blockIndex });
+        }
       }
     }
+
+    walkChildren(Array.from(body.children));
 
     const { units, unitOfBlock } = paginate(blocks);
     if (units.length === 0) extractFail('DOC_NO_TEXT', 'no text in document');

@@ -1685,7 +1685,7 @@ export function registerIpcHandlers(): void {
       // "파일 형식" 드롭다운을 "모든 파일"로 바꾸거나 경로를 직접 타이핑하면 임의 확장자가
       // 그대로 넘어온다. file:open-path 가 이미 하는 서버측 확장자 재검증을 여기도 건다.
       if (!isSupportedExtension(filePath)) {
-        return { error: 'PDF 파일만 열 수 있습니다.' };
+        return { error: 'PDF · Word 파일만 열 수 있습니다.' };
       }
       // drop 핸들러와 동일한 방어 — 심볼릭 링크/비정규 파일 거부.
       const lstat = await fsp.lstat(filePath);
@@ -1727,7 +1727,7 @@ export function registerIpcHandlers(): void {
       return { error: '잘못된 경로입니다.' };
     }
     if (!isSupportedExtension(targetPath)) {
-      return { error: 'PDF 파일만 열 수 있습니다.' };
+      return { error: 'PDF · Word 파일만 열 수 있습니다.' };
     }
     // QA20(B-MED): UNC(`\\server\share`) 차단 — 드롭 경로(will-navigate)는 "UNC 경로 차단:
     // 네트워크 읽기 방지"를 이미 하는데 이 경로만 빠져 있던 비대칭. 손상된 렌더러가 원격 경로를

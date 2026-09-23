@@ -45,7 +45,7 @@ test('세션 영속 → 앱 재시작 후 최근 문서에서 재오픈', async 
     // ── 1차 기동: A 파싱 → B 파싱(=A 를 manifest 로 flush) ──
     const r1 = await launchElectron(userDataDir, SEED);
     try {
-      await expect(r1.page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+      await expect(r1.page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
 
       await sendDropPath(r1.app, pathA, bufA.toString('base64'));
       await expect(r1.page.getByText('alpha.pdf (1p)')).toBeVisible({ timeout: 30000 });
@@ -66,7 +66,7 @@ test('세션 영속 → 앱 재시작 후 최근 문서에서 재오픈', async 
     // ── 2차 기동: 같은 userData → 최근 문서에 A 노출 → 재오픈 ──
     const r2 = await launchElectron(userDataDir, SEED);
     try {
-      await expect(r2.page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+      await expect(r2.page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
 
       // session-store manifest → RecentDocuments 실배선: A 항목 + 페이지 수 표기
       await expect(r2.page.getByText('최근 문서')).toBeVisible({ timeout: 15000 });
@@ -108,7 +108,7 @@ test('최근 문서 재오픈 — 원본 파일이 사라져도 세션으로 복
     // ── 1차 기동: A 파싱 → B 파싱(=A 를 manifest 로 flush) ──
     const r1 = await launchElectron(userDataDir, SEED);
     try {
-      await expect(r1.page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+      await expect(r1.page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
       await sendDropPath(r1.app, pathA, bufA.toString('base64'));
       await expect(r1.page.getByText('gamma.pdf (1p)')).toBeVisible({ timeout: 30000 });
       await r1.page.waitForTimeout(2000);
@@ -125,7 +125,7 @@ test('최근 문서 재오픈 — 원본 파일이 사라져도 세션으로 복
     // ── 2차 기동: 최근 문서에 A 노출 → 열기 → file:open-path 실패 → graceful 배너 + 목록 유지 ──
     const r2 = await launchElectron(userDataDir, SEED);
     try {
-      await expect(r2.page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+      await expect(r2.page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
       await expect(r2.page.getByText('최근 문서')).toBeVisible({ timeout: 15000 });
       const row = r2.page.locator('li', { hasText: 'gamma.pdf' });
       await expect(row).toBeVisible();

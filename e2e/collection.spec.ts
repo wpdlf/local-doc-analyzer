@@ -72,14 +72,14 @@ test('컬렉션 Q&A — 두 문서 요약 → 모드 토글 → 교차 질문 (�
   }
 
   try {
-    await expect(page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
 
     // 1) 문서 A 요약 (세션 A + 인덱스 생성)
     await loadAndSummarize(pathA, bufA.toString('base64'), /gateway\.pdf \(3p\)/);
 
     // 2) + 새 탭 → 문서 B 요약 (세션 B + 인덱스 생성)
     await page.getByRole('button', { name: '새 문서 열기' }).click();
-    await expect(page.getByText('PDF 파일을 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
     await loadAndSummarize(pathB, bufB.toString('base64'), /discovery\.pdf \(3p\)/);
 
     // 3) 문서 A 탭으로 전환 (세션 복원 — 요약/인덱스 즉시 복원, QaChat 재등장)

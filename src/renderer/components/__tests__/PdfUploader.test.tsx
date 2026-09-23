@@ -87,7 +87,7 @@ describe('PdfUploader', () => {
     useAppStore.setState({ isParsing: true });
     const user = userEvent.setup();
     render(<PdfUploader />);
-    expect(screen.getByText(/PDF를 읽고 있습니다/)).toBeTruthy();
+    expect(screen.getByText(/문서를 읽고 있습니다/)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'PDF 처리 취소' }));
     expect(M.cancelDocumentParse).toHaveBeenCalledTimes(1);
   });
@@ -103,7 +103,7 @@ describe('PdfUploader', () => {
     useAppStore.setState({ isParsing: true });
     render(<PdfUploader />);
     // 파싱 중 외곽 presentation div onClick 은 undefined — openPdf 미호출
-    fireEvent.click(screen.getByText(/PDF를 읽고 있습니다/));
+    fireEvent.click(screen.getByText(/문서를 읽고 있습니다/));
     expect(M.openPdf).not.toHaveBeenCalled();
   });
 

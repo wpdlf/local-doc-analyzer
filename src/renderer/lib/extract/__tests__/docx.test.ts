@@ -197,6 +197,30 @@ describe('docxExtractor.extract', () => {
     expect(ex.images).toHaveLength(1);
   });
 
+  it('w:sdt(구조적 콘텐츠 컨트롤) 안의 문단도 추출한다 — Word 가 생성 목차를 이렇게 감싼다', async () => {
+    const body = `<w:sdt><w:sdtContent>${para('본문')}</w:sdtContent></w:sdt>`;
+    const zip = zipOf({ 'word/document.xml': doc(body) });
+    const ex = await docxExtractor.extract(zip, { extractImages: false });
+    expect(ex.units).toEqual(['본문']);
+  });
+
+  it('w:sdt 안의 표도 추출한다', async () => {
+    const body =
+      `<w:sdt><w:sdtContent><w:tbl>` +
+      `<w:tr><w:tc>${para('가')}</w:tc><w:tc>${para('나')}</w:tc></w:tr>` +
+      `</w:tbl></w:sdtContent></w:sdt>`;
+    const zip = zipOf({ 'word/document.xml': doc(body) });
+    const ex = await docxExtractor.extract(zip, { extractImages: false });
+    expect(ex.units[0]).toBe('| 가 | 나 |\n| --- | --- |');
+  });
+
+  it('본문 전체가 sdt 하나뿐이어도 텍스트를 추출한다 (DOC_NO_TEXT 로 오판하지 않는다)', async () => {
+    const body = `<w:sdt><w:sdtContent>${para('첫째')}${para('둘째')}</w:sdtContent></w:sdt>`;
+    const zip = zipOf({ 'word/document.xml': doc(body) });
+    const ex = await docxExtractor.extract(zip, { extractImages: false });
+    expect(ex.units).toEqual(['첫째\n\n둘째']);
+  });
+
   it('단위 수가 상한을 넘으면 PDF_TOO_MANY_PAGES 다', async () => {
     const paragraphs = Array.from({ length: 501 }, (_, i) => para(`p${i}`, { breakBefore: i > 0 }));
     const zip = zipOf({ 'word/document.xml': doc(paragraphs.join('')) });
