@@ -28,7 +28,7 @@ export const _translations = {
     ko: '세션 저장이 꺼져 있어 탭을 전환하면 현재 문서의 요약과 Q&A 가 사라집니다. 계속할까요?\n(설정 → 세션 데이터에서 저장을 켤 수 있습니다)',
     en: 'Session saving is off, so switching tabs will discard this document’s summary and Q&A. Continue?\n(You can turn saving on in Settings → Session data.)',
   },
-  'tabs.switchFail': { ko: '원본 PDF 파일을 찾을 수 없어 탭을 전환할 수 없습니다. 파일이 이동/삭제되었다면 다시 열어주세요.', en: 'Could not switch tabs because the original PDF file was not found. If it was moved or deleted, please open it again.' },
+  'tabs.switchFail': { ko: '원본 파일을 찾을 수 없어 탭을 전환할 수 없습니다. 파일이 이동/삭제되었다면 다시 열어주세요.', en: 'Could not switch tabs because the original file was not found. If it was moved or deleted, please open it again.' },
   'common.renderError': { ko: '렌더링 오류가 발생했습니다.', en: 'A rendering error occurred.' },
   'common.imagePlaceholder': { ko: '[이미지]', en: '[image]' },
   'common.blockedLink': { ko: '차단된 링크 (지원하지 않는 URL 형식)', en: 'Blocked link (unsupported URL scheme)' },
@@ -99,7 +99,7 @@ export const _translations = {
   'ai.summaryTimeout': { ko: '요약 시간이 초과되었습니다. 생성된 부분까지 표시됩니다. 청크 크기를 줄이거나 경량 모델을 사용해보세요.', en: 'Summary timed out. The portion generated so far is shown. Try reducing chunk size or using a lighter model.' },
   'ai.ollamaNotRunning': { ko: 'Ollama가 실행 중이 아닙니다. 설정을 확인해주세요.', en: 'Ollama is not running. Please check your settings.' },
   'ai.apiKeyMissing': { ko: '{provider} API 키가 설정되지 않았습니다. 설정에서 API 키를 입력해주세요.', en: '{provider} API key is not set. Please enter it in Settings.' },
-  'ai.noText': { ko: '요약할 내용이 없습니다. PDF에서 유의미한 텍스트를 추출하지 못했습니다.', en: 'Nothing to summarize. No meaningful text could be extracted from the PDF.' },
+  'ai.noText': { ko: '요약할 내용이 없습니다. 문서에서 유의미한 텍스트를 추출하지 못했습니다.', en: 'Nothing to summarize. No meaningful text could be extracted from the document.' },
   'common.save': { ko: '저장', en: 'Save' },
   'common.delete': { ko: '삭제', en: 'Delete' },
   'common.cancel': { ko: '취소', en: 'Cancel' },
@@ -138,7 +138,7 @@ export const _translations = {
   // ─── PdfUploader ───
   'uploader.fileTooLarge': { ko: '파일이 너무 큽니다 ({size}MB). 최대 100MB까지 지원합니다.', en: 'File too large ({size}MB). Maximum 100MB supported.' },
   'uploader.cannotRead': { ko: '문서를 읽을 수 없습니다.', en: 'Cannot read document.' },
-  'uploader.multipleFiles': { ko: '한 번에 하나의 PDF만 처리할 수 있습니다. 첫 번째 파일({name})만 열었습니다.', en: 'Only one PDF can be processed at a time. Opening the first file ({name}) only.' },
+  'uploader.multipleFiles': { ko: '한 번에 하나의 파일만 처리할 수 있습니다. 첫 번째 파일({name})만 열었습니다.', en: 'Only one file can be processed at a time. Opening the first file ({name}) only.' },
   'uploader.notPdf': { ko: 'PDF · Word 파일만 지원됩니다.', en: 'Only PDF and Word files are supported.' },
   // ─── openDocumentData 진입 가드(모든 파일 열기 경로 공통) ───
   'pdf.busyGenerating': { ko: '요약 진행 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while summarizing.' },
@@ -332,7 +332,7 @@ export const _translations = {
   'collection.savedTitle': { ko: '저장된 컬렉션', en: 'Saved collections' },
   // QA28(B2-Important): 삭제 실패 고지 — RecentDocuments 의 recent.deleteFail 과 대칭.
   'collection.deleteFail': { ko: '컬렉션을 삭제하지 못했습니다. 파일이 잠겨 있거나 권한이 없을 수 있습니다.', en: 'Could not delete the collection. The file may be locked or you may lack permission.' },
-  'collection.savedEmptyHint': { ko: '여러 PDF를 탭으로 열고 요약한 뒤 "여러 문서에 걸쳐 질문"을 켜면 묶음을 컬렉션으로 저장할 수 있습니다.', en: 'Open several PDFs as tabs, summarize, then turn on "Ask across documents" to save the set as a collection.' },
+  'collection.savedEmptyHint': { ko: '여러 문서를 탭으로 열고 요약한 뒤 "여러 문서에 걸쳐 질문"을 켜면 묶음을 컬렉션으로 저장할 수 있습니다.', en: 'Open several documents as tabs, summarize, then turn on "Ask across documents" to save the set as a collection.' },
   'collection.docCount': { ko: '문서 {count}개', en: '{count} documents' },
   'collection.open': { ko: '열기', en: 'Open' },
   'collection.delete': { ko: '삭제', en: 'Delete' },
@@ -446,7 +446,7 @@ export const _translations = {
     en: 'Invalid Ollama URL. It must be a local address including the scheme, e.g. http://localhost:11434',
   },
   'settings.imageAnalysis': { ko: '이미지 분석', en: 'Image Analysis' },
-  'settings.imageAnalysisLabel': { ko: 'PDF 이미지 자동 분석', en: 'Auto-analyze PDF images' },
+  'settings.imageAnalysisLabel': { ko: '문서 이미지 자동 분석', en: 'Auto-analyze document images' },
   'settings.imageAnalysisDesc': { ko: 'Vision 지원 모델 필요 (llava, Claude, GPT-4o, Gemini 등)', en: 'Requires Vision model (llava, Claude, GPT-4o, Gemini, etc.)' },
   'settings.ocrTitle': { ko: '스캔 PDF OCR', en: 'Scanned PDF OCR' },
   'settings.ocrLabel': { ko: '스캔 PDF 자동 텍스트 인식 (OCR)', en: 'Auto text recognition for scanned PDFs (OCR)' },
@@ -471,7 +471,7 @@ export const _translations = {
 
   // ─── OllamaSetupWizard ───
   'setup.title': { ko: '로컬 문서 분석기 설정', en: 'Local Doc Analyzer Setup' },
-  'setup.desc': { ko: '이 앱은 로컬 AI(Ollama)를 사용하여 PDF 자료를 요약합니다.', en: 'This app uses local AI (Ollama) to summarize PDF documents.' },
+  'setup.desc': { ko: '이 앱은 로컬 AI(Ollama)를 사용하여 문서를 요약합니다.', en: 'This app uses local AI (Ollama) to summarize documents.' },
   'setup.autoInstall': { ko: '아래 항목이 자동으로 설치됩니다:', en: 'The following will be installed automatically:' },
   'setup.start': { ko: '설정 시작', en: 'Start setup' },
   'setup.done': { ko: '모든 설정이 완료되었습니다!', en: 'Setup complete!' },
@@ -560,14 +560,14 @@ export const _translations = {
 
   // ─── 세션 영속화 (session-persistence) ───
   'recent.title': { ko: '최근 문서', en: 'Recent Documents' },
-  'recent.empty': { ko: '저장된 세션이 없습니다. PDF를 분석하면 여기에 나타납니다.', en: 'No saved sessions yet. Analyzed PDFs will appear here.' },
+  'recent.empty': { ko: '저장된 세션이 없습니다. 문서를 분석하면 여기에 나타납니다.', en: 'No saved sessions yet. Analyzed documents will appear here.' },
   'recent.open': { ko: '열기', en: 'Open' },
   'recent.delete': { ko: '세션 삭제', en: 'Delete session' },
   'recent.pages': { ko: '{count}페이지', en: '{count} pages' },
   'recent.indexed': { ko: '인덱스 {count}청크', en: '{count} chunks indexed' },
   // QA24(C-M2): "불러오지 못함" 과 "정말 없음" 을 구분 — collection.loadFailed 와 같은 계약.
   'recent.loadFailed': { ko: '최근 문서 목록을 불러오지 못했습니다. 세션은 그대로 있습니다.', en: 'Could not load the recent documents list. Your sessions are still there.' },
-  'recent.openedWithoutFile': { ko: '원본 파일을 찾지 못해 저장된 분석 결과만 열었습니다. 요약·Q&A 는 그대로이며 PDF 뷰어만 사용할 수 없습니다.', en: 'The original file was not found, so only the saved analysis was opened. Your summary and Q&A are intact; only the PDF viewer is unavailable.' },
+  'recent.openedWithoutFile': { ko: '원본 파일을 찾지 못해 저장된 분석 결과만 열었습니다. 요약·Q&A 는 그대로이며 원문 보기만 사용할 수 없습니다.', en: 'The original file was not found, so only the saved analysis was opened. Your summary and Q&A are intact; only the source-document view is unavailable.' },
   'recent.openFail': { ko: '문서를 열 수 없습니다. 원본 파일이 이동/삭제되었을 수 있습니다.', en: 'Could not open the document. The original file may have been moved or deleted.' },
   'recent.deleteFail': { ko: '세션을 삭제하지 못했습니다. 잠시 후 다시 시도하세요.', en: 'Could not delete the session. Please try again.' },
   // 전체 문서 검색 (cross-session search)
