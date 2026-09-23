@@ -457,4 +457,68 @@ describe('인용 표시 라벨은 formatUnitLabel 밖에서 조립하지 않는�
     expect(P_LABEL_RE.test('const label = `top.${i}`;')).toBe(false);
     expect(P_LABEL_RE.test('const label = `step.${n}`;')).toBe(false);
   });
+
+  // QA34(H2): 템플릿이 아닌 문자열 연결 형태도 잡는지 — 정규식의 두 번째·세 번째 대안
+  // (`'p.' +` / `+ 'p.'` 쪽)이 조용히 빠져도 위 샘플은 전부 첫 대안(`${`)으로 초록이다.
+  it("가드 패턴이 문자열 연결형 'p.' + n / '[p.' + n 도 잡는다", () => {
+    expect(P_LABEL_RE.test("const label = 'p.' + page;")).toBe(true);
+    expect(P_LABEL_RE.test('const label = "[p." + page + "]";')).toBe(true);
+    expect(P_LABEL_RE.test("const label = `[p.` + page + ']';")).toBe(true);
+  });
+});
+
+describe('프롬프트 빌더는 표시 라벨(formatUnitLabel)을 쓰지 않는다 (QA34 H2)', () => {
+  /**
+   * 프롬프트에 심는 라벨은 unitKind 와 무관하게 ASCII `[p.N]` 이어야 한다 — LLM 이 되돌려준
+   * 라벨을 `CITATION_REGEX` 가 재매칭하기 때문이다(citation.ts `formatPromptPageLabel` 주석).
+   * 위 P_LABEL 가드는 `'p.'` 조립만 보므로, `formatPromptPageLabel(n)` 을
+   * `` `[${formatUnitLabel(n, unitKind)}]` `` 로 바꾸는 치환(QA34 에서 실측: 전 스위트 초록)은
+   * 'p.' 문자가 아예 없어 원천적으로 못 잡는다. 'page' 문서에서는 출력까지 같다.
+   *
+   * 프롬프트 빌더는 열거하지 않고 **도출**한다: 프롬프트 라벨 통로(`formatPromptPageLabel`)
+   * 나 그것을 감싼 라벨러(`labelParagraphsWithPages`/`labelChaptersWithPages`)를 코드에서
+   * 참조하는 파일. 치환 뮤턴트는 `formatPromptPageLabel` 참조를 지우므로 도출에서 빠질 수
+   * 있다 — 그래서 알려진 빌더 두 곳을 **하한**으로 함께 요구한다(도출이 붕괴해도 초록이
+   * 되지 않게).
+   */
+  const PROMPT_LABEL_API = /\b(formatPromptPageLabel|labelParagraphsWithPages|labelChaptersWithPages)\b/;
+  const DISPLAY_LABEL_API = /\bformatUnitLabel\b/;
+  const DEFINER = 'src/renderer/lib/citation.ts';
+  const REQUIRED_BUILDERS = ['src/renderer/lib/use-summarize.ts', 'src/renderer/lib/use-qa.ts'];
+
+  function promptBuilders(): string[] {
+    const found = walkSourceFiles('src', /\.tsx?$/)
+      .filter((f) => !isTestPath(f))
+      .map((f) => f.replace(/\\/g, '/'))
+      .filter((f) => f !== DEFINER && PROMPT_LABEL_API.test(stripJsComments(readFileSync(f, 'utf-8'))));
+    return [...new Set([...found, ...REQUIRED_BUILDERS])].sort();
+  }
+
+  it('도출이 알려진 빌더를 스스로 찾는다 (하한에 기대지 않는 자기 점검)', () => {
+    const derived = walkSourceFiles('src', /\.tsx?$/)
+      .filter((f) => !isTestPath(f))
+      .map((f) => f.replace(/\\/g, '/'))
+      .filter((f) => f !== DEFINER && PROMPT_LABEL_API.test(stripJsComments(readFileSync(f, 'utf-8'))));
+    expect(derived).toEqual(expect.arrayContaining(REQUIRED_BUILDERS));
+    // 교차문서 요약도 labelParagraphsWithPages 로 프롬프트를 만든다 — 도출이 이것까지 닿는다.
+    expect(derived).toContain('src/renderer/lib/use-collection-summary.ts');
+  });
+
+  it('프롬프트 빌더 어디에도 formatUnitLabel 참조가 없다', () => {
+    const offenders: string[] = [];
+    for (const file of promptBuilders()) {
+      const src = stripJsComments(readFileSync(file, 'utf-8'));
+      for (const [i, line] of src.split('\n').entries()) {
+        if (DISPLAY_LABEL_API.test(line)) offenders.push(`${file}:${i + 1}`);
+      }
+    }
+    expect(offenders, '프롬프트 라벨은 formatPromptPageLabel([p.N]) 만 쓴다').toEqual([]);
+  });
+
+  it('가드 패턴이 QA34 뮤턴트 형태를 실제로 잡는다 (양성 샘플)', () => {
+    expect(DISPLAY_LABEL_API.test('const label = `[${formatUnitLabel(n, doc?.unitKind)}]`;')).toBe(true);
+    expect(DISPLAY_LABEL_API.test("import { formatUnitLabel } from './citation';")).toBe(true);
+    // 주석 안의 언급은 stripJsComments 가 지운다 — 이 파일의 설명 주석 같은 자리에서 오탐하지 않는다.
+    expect(DISPLAY_LABEL_API.test(stripJsComments('// formatUnitLabel 은 쓰지 않는다\nconst x = 1;'))).toBe(false);
+  });
 });

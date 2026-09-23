@@ -312,6 +312,26 @@ describe('useSummarize — 챕터 요약', () => {
     expect(body!.text).toContain('[p.3] 셋째 쪽 본문');
     expect(body!.text).not.toContain('[p.1]');
   });
+
+  // QA34(H2): 프롬프트 라벨은 unitKind 와 무관하게 ASCII `[p.N]` 이다 — LLM 이 되돌려준 값을
+  // CITATION_REGEX 가 재매칭해야 하기 때문이다. 'page' 문서만으로는 `formatUnitLabel(n, unitKind)`
+  // 로 바꿔치기해도 출력이 같아(`p.N`) 모든 테스트가 초록이었다 — 슬라이드 문서로 갈라 본다.
+  it("unitKind 'slide' 문서도 프롬프트에는 [p.N] 라벨만 들어간다 (표시 라벨 누수 가드)", async () => {
+    useAppStore.setState({
+      settings: { ...DEFAULT_SETTINGS, provider: 'ollama', enableImageAnalysis: false, uiLanguage: 'ko' },
+      summaryType: 'full',
+      document: makeDoc({
+        fileName: 'deck.pptx', pageCount: 3, unitKind: 'slide',
+        pageTexts: ['첫 슬라이드', '둘째 슬라이드', '셋째 슬라이드 본문'],
+        extractedText: '첫 슬라이드\n\n둘째 슬라이드\n\n셋째 슬라이드 본문',
+      }),
+    });
+    await runSummarize();
+    const prompt = M.summarizeCalls.map((c) => c.text).join('\n');
+    expect(prompt).toContain('[p.3] 셋째 슬라이드 본문');
+    expect(prompt).not.toContain('[슬라이드');
+    expect(prompt).not.toMatch(/Slide \d/);
+  });
 });
 
 describe('useSummarize — 이미지 분석', () => {
