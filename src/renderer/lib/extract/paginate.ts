@@ -51,7 +51,8 @@ export function paginate(blocks: Block[], maxChars: number = DEFAULT_UNIT_CHARS)
       // 선행 breakBefore 만으로 빈 단위가 생기지는 않는다.
       if (block.breakBefore) flush();
       // 빈 블록 자체는 단위를 만들지 않는다. 매핑은 직전 단위(없으면 0)로 둔다.
-      unitOfBlock.push(units.length > 0 || current.length > 0 ? units.length : 0);
+      // (units 가 비어 있으면 units.length 가 곧 0 이라 삼항 분기가 필요 없다.)
+      unitOfBlock.push(units.length);
       continue;
     }
     const tooLong = currentLen > 0 && currentLen + text.length > maxChars;

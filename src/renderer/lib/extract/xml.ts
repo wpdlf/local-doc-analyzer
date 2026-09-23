@@ -19,10 +19,27 @@ export function localName(el: Element): string {
   return el.localName || el.nodeName.replace(/^[^:]*:/, '');
 }
 
-/** 자기 자신을 포함한 깊이 우선 순회. */
-export function* walk(el: Element): Generator<Element> {
-  yield el;
-  for (const child of Array.from(el.children)) yield* walk(child);
+/**
+ * 자기 자신을 포함한 깊이 우선(문서 순서) 순회.
+ *
+ * QA34: 재귀 `yield*` 였을 때는 원소 하나를 내보낼 때마다 깊이만큼의 제너레이터 체인을 거쳐
+ * 재개했다 — 원소당 O(깊이), 병리적 중첩(악성 DOCX)에서는 전체가 O(n·깊이)로 렌더러를 얼리고
+ * 더 깊어지면 스택을 넘겼다. 명시적 스택으로 바꿔 원소당 O(1) 로 만든다. 자식을 역순으로
+ * 쌓아야 꺼내는 순서가 문서 순서가 된다.
+ *
+ * `skip` 이 참을 돌려주는 요소는 그 서브트리째 건너뛴다(자기 자신도 내보내지 않는다) —
+ * `mc:Fallback`·`w:moveFrom` 처럼 "통째로 없는 셈 쳐야 하는" 서브트리를 호출부마다 따로
+ * 거르다 한 곳을 빠뜨리는 것을 막는다.
+ */
+export function* walk(el: Element, skip?: (e: Element) => boolean): Generator<Element> {
+  const stack: Element[] = [el];
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    if (skip?.(cur)) continue;
+    yield cur;
+    const kids = cur.children;
+    for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]!);
+  }
 }
 
 export function childrenNamed(el: Element, name: string): Element[] {
