@@ -409,6 +409,21 @@ describe('인용 표시 라벨은 formatUnitLabel 밖에서 조립하지 않는�
     'src/renderer/lib/i18n.ts',
   ]);
 
+  /**
+   * `p.${n}` (대괄호로 감싸인 `[p.${n}]` 포함) / `'p.' + n` / `"p." + n` 형태를 모두 잡는다.
+   * 원안(따옴표가 'p.' 바로 앞에 와야 함, `/['"`]p\.\s*(\$\{|["'`+])/`)은 `` `[p.${n}]` ``
+   * 처럼 앞에 다른 문자(`[`)가 끼면 못 잡는 사각이 있었다(실측: use-summarize.ts 의 기존
+   * 프롬프트 라벨 조립이 원안 정규식으로는 안 걸렸다 — fix-round1 이전 report 참조) — 그
+   * 사각을 닫으려고 따옴표 인접 요구를 없앴다.
+   *
+   * 좌측 경계 `(?<![A-Za-z0-9_])`: 위 완화의 대가로 `` `group.${x}` ``/`` `top.${i}` ``/
+   * `` `step.${n}` `` 처럼 "p." 로 **끝나는 식별자**(group/top/step)까지 오탐할 여지가
+   * 생겼다 — "p." 바로 앞이 영숫자/밑줄이면(=식별자의 일부) 배제한다. fix-round1(코디네이터
+   * 지적, Minor 3): 지금은 이 형태를 실제로 쓰는 코드가 없어 무해했지만, 오탐은 "시끄러운
+   * 실패"가 아니라 가드를 무시하게 만드는 소음이라 방어해 둔다.
+   */
+  const P_LABEL_RE = /(?<![A-Za-z0-9_])p\.\s*(\$\{|['"`]\s*\+|\+\s*['"`])/;
+
   it("'p.' 템플릿 리터럴/문자열 조립이 단일 통로 밖에 없다", () => {
     const scanned = walkSourceFiles('src', /\.tsx?$/);
     assertScanIsWide(scanned);
@@ -418,13 +433,24 @@ describe('인용 표시 라벨은 formatUnitLabel 밖에서 조립하지 않는�
       if (ALLOWED.has(norm) || isTestPath(file)) continue;
       const src = stripJsComments(readFileSync(file, 'utf-8'));
       for (const [i, line] of src.split('\n').entries()) {
-        // `p.${n}` (대괄호로 감싸인 `[p.${n}]` 포함) / `'p.' + n` / `"p." + n` 형태를 모두
-        // 잡는다. 원안(따옴표가 'p.' 바로 앞에 와야 함)은 `` `[p.${n}]` `` 처럼 앞에 다른
-        // 문자(`[`)가 끼면 못 잡는 사각이 있었다(실측: use-summarize.ts 의 기존 프롬프트
-        // 라벨 조립이 원안 정규식으로는 안 걸렸다) — 그 사각을 닫는다.
-        if (/p\.\s*(\$\{|['"`]\s*\+|\+\s*['"`])/.test(line)) offenders.push(`${norm}:${i + 1}`);
+        if (P_LABEL_RE.test(line)) offenders.push(`${norm}:${i + 1}`);
       }
     }
     expect(offenders, '표시 라벨은 formatUnitLabel 을 거친다').toEqual([]);
+  });
+
+  /**
+   * fix-round1(코디네이터 지적, Important 2): 위 본 가드는 "패턴이 걸린 자리가 0개" 만
+   * 확인한다 — 패턴 자체가 조용히 원안(따옴표 인접 요구)으로 되돌아가도 초록으로 남는다.
+   * 그러면 이 태스크가 처음에 발견한 사각(대괄호로 감싼 `[p.${n}]` 을 못 잡음)이 말없이
+   * 부활한다. 패턴이 실제로 그 형태를 잡는지를 **양성 샘플**로 직접 고정한다.
+   */
+  it('가드 패턴 자체가 대괄호로 감싼 [p.${n}] / [${doc} p.${n}] 형태를 실제로 잡는다', () => {
+    expect(P_LABEL_RE.test('const label = `[p.${page}]`;')).toBe(true);
+    expect(P_LABEL_RE.test('const label = `[${docName} p.${page}]`;')).toBe(true);
+    // 좌측 경계 회귀 가드: "p." 로 끝나는 식별자는 오탐하지 않는다(fix-round1 Minor 3).
+    expect(P_LABEL_RE.test('const label = `group.${x}`;')).toBe(false);
+    expect(P_LABEL_RE.test('const label = `top.${i}`;')).toBe(false);
+    expect(P_LABEL_RE.test('const label = `step.${n}`;')).toBe(false);
   });
 });

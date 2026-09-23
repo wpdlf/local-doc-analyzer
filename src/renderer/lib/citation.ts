@@ -287,12 +287,21 @@ export function formatPromptPageLabel(page?: number): string {
  * 인용 라벨의 **표시용 단일 통로**.
  *
  * 내부 표현은 언제나 정수 N 이고(프롬프트도 `[p.N]` 그대로, `formatPromptPageLabel` 참조),
- * 갈리는 것은 **화면에 보이는 문구**뿐이다. 여기를 거치지 않고 'p.' 를 조립하면 source-scan
- * 가드가 실패한다 — 표시 지점은 검색 스니펫·마인드맵·StatusBar 등에 흩어져 있어서, 열거하면
- * 사각이 생긴다(QA33 I3).
+ * 갈리는 것은 **화면에 보이는 문구**뿐이다.
  *
  * 대괄호는 붙이지 않는다 — 교차문서 라벨(`[문서명 p.N]`)처럼 대괄호 안에 다른 내용과 함께
  * 조합해야 하는 호출부가 있어, 대괄호 부착은 호출부(`CitationButton`)의 책임으로 둔다.
+ *
+ * source-scan 가드(`source-scan.test.ts`)가 여기를 거치지 않은 'p.' **문자열 리터럴/템플릿
+ * 조립**을 잡는다 — 열거하면 사각이 생기므로(QA33 I3) 위치를 나열하지 않고 소스 전체에서
+ * 도출한다. **주의**: 그 가드는 소스 텍스트 패턴만 본다. `t('search.page')`(GlobalSearch
+ * 검색 스니펫)처럼 **i18n 키 참조**를 거쳐 라벨을 내는 자리는 코드 상 'p.' 문자열이 전혀
+ * 없으므로 이 가드로는 원천적으로 못 잡는다 — 실제로 `search.page` 키는 `unitKind` 와
+ * 무관하게 항상 `'p.{page}'` 를 반환해 이 함수를 우회하고 있다(알려진 상태, Task12 코디네이터
+ * 판단으로 보류 — 고치려면 검색 결과에 `unitKind` 를 실어야 하는데 main 프로세스 검색
+ * 인덱스/IPC 스키마까지 건드리는 별도 작업이다). 가드가 지키는 범위를 부풀려 적으면, 이번
+ * 태스크의 계획 결함(함수 이름이 "표시용"처럼 들려서 프롬프트 계약을 깬 시도로 이어진 것)과
+ * 같은 실패 형태 — 보호를 약속하는 주석이 실제로는 보호하지 않는 것 — 를 반복하게 된다.
  */
 export function formatUnitLabel(page?: number, unitKind: UnitKind = 'page'): string {
   if (page === undefined || !Number.isFinite(page)) return '';
