@@ -5,10 +5,12 @@ import { restoreSessionForDocument, persistCurrentSession } from './use-session'
 import { confirmDiscardIfNotPersisted } from './discard-policy';
 import { MAX_PDF_SIZE_BYTES } from '../../shared/constants';
 import { hasPdfMagic, hasZipMagic, hasCfbMagic, SUPPORTED_FORMATS } from '../../shared/document-formats';
-import { openZip } from './extract/zip';
-import { resolveExtractor } from './extract/registry';
-import { toPdfDocument } from './extract/normalize';
-import type { Extractor, ZipIndex } from './extract/types';
+// QA34(bundle): 추출기 체인(extract/zip = fflate, extract/registry = docx…, extract/normalize)은
+// 비-PDF 분기에서만 동적 import 한다(loadExtractChain). App.tsx 가 이 모듈을 정적으로 import
+// 하므로, 여기서 정적으로 끌면 PDF 만 여는 사용자도 fflate·추출기를 eager 진입 청크로 받는다.
+// ⚠️ 이 셋을 다시 정적 import 로 되돌리지 말 것 — 타입은 `import type` 만 허용.
+import type { PdfDocument } from '../types';
+import type { Extractor } from './extract/types';
 import { parsePdf, isReReadablePath, MAX_TOTAL_IMAGES } from './pdf-parser';
 import type { TranslationKey } from './i18n';
 
@@ -36,7 +38,108 @@ export const EXTRACTOR_ERROR_MESSAGE_KEYS: Partial<Record<string, TranslationKey
   DOC_CORRUPT: 'doc.corrupt',
   DOC_TOO_LARGE: 'doc.tooLarge',
   PDF_TOO_MANY_PAGES: 'uploader.tooManyPages',
+  // QA34: DOC_UNSUPPORTED 는 이 파일이 비-PDF 분기에서 직접 던진다(extractFail 경유, params 동봉).
+  // DOC_ENCRYPTED 는 지금은 컨테이너 매직(CFB) 선검사가 try 밖에서 바로 배너를 올려 catch 에
+  // 닿지 않지만, P4 의 EPUB(META-INF/encryption.xml)처럼 **zip 을 연 뒤에야** 암호/DRM 을 알 수
+  // 있는 포맷의 추출기가 던질 자리다 — 표에 두면 그때 번역·통과 코드(OPEN_ERROR_CODES)가 자동으로
+  // 따라온다. 종전 validCodes 에만 있던 DOC_ENCRYPTED 는 번역 키가 없어 영어 원문을 노출했을 것이다.
+  DOC_UNSUPPORTED: 'doc.unsupported',
+  DOC_ENCRYPTED: 'doc.encrypted',
 };
+
+/**
+ * catch 가 그대로 통과시키는(PDF_PARSE_FAIL 로 뭉개지 않는) 에러 코드.
+ *
+ * QA34(P4 전제): 종전엔 이 집합(validCodes)을 EXTRACTOR_ERROR_MESSAGE_KEYS 와 **따로 나열**해
+ * "표의 모든 코드가 여기 있다"는 부분집합 관계가 증명되지 않았다 — 표에만 코드를 추가하면
+ * 번역 키가 있는데도 PDF_PARSE_FAIL 로 뭉개지고, 뭉개진 코드로는 표 조회도 실패해 영어 원문이
+ * 노출된다. 나열 대신 표에서 **도출**한다. PDF 쪽 코드는 parsePdf 가 이미 번역된 메시지로 던지는
+ * 것들이다(params 없음 — catch 가 message 를 그대로 쓴다).
+ */
+const PDF_PARSER_ERROR_CODES = ['PDF_PARSE_FAIL', 'PDF_NO_TEXT', 'PDF_TOO_MANY_PAGES', 'PDF_ENCRYPTED', 'OCR_FAIL'] as const;
+export const OPEN_ERROR_CODES: ReadonlySet<string> = new Set<string>([
+  ...PDF_PARSER_ERROR_CODES,
+  ...Object.keys(EXTRACTOR_ERROR_MESSAGE_KEYS),
+]);
+
+/** 추출기 체인 lazy 로드 — import 절 주석 참조. */
+async function loadExtractChain() {
+  const [zip, registry, normalize, errors] = await Promise.all([
+    import('./extract/zip'),
+    import('./extract/registry'),
+    import('./extract/normalize'),
+    import('./extract/errors'),
+  ]);
+  return {
+    openZip: zip.openZip,
+    resolveExtractor: registry.resolveExtractor,
+    toPdfDocument: normalize.toPdfDocument,
+    extractFail: errors.extractFail,
+  };
+}
+
+/**
+ * QA34(Low): isParsing=true 가 **그려질** 기회를 준다. 뒤따르는 zip 해제(fflate unzipSync,
+ * 최대 300MB)는 동기라 이 양보 없이 들어가면 스피너·취소 버튼이 한 프레임도 그려지지 않는다.
+ * rAF→setTimeout 은 "다음 프레임이 그려진 뒤"를 보장하고, 창이 가려져 rAF 가 멈춘 경우(IPC 로
+ * 들어온 파일 열기 — 최소화 상태에서도 온다)를 위해 짧은 타이머로 상한을 둔다.
+ */
+function yieldForPaint(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => setTimeout(finish, 0));
+    setTimeout(finish, 50);
+  });
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw Object.assign(new Error('aborted'), { code: 'ABORTED' });
+}
+
+/**
+ * 비-PDF(zip 컨테이너) 문서 열기: 해제 → 포맷 판별 → 추출 → PdfDocument 정규화.
+ *
+ * QA34(Low 8): 이 구간의 예외 중 **코드 없는 것**(btoa/spread 의 RangeError, DOMParser 의
+ * TypeError, fflate 내부 오류…)은 바깥 catch 에서 PDF_PARSE_FAIL + 영어 원문 그대로 노출됐다.
+ * 여기서 DOC_CORRUPT(params 동봉 → 경계에서 t('doc.corrupt'))로 바꾸고 원문은 details 로 남긴다.
+ * 표에 있는 코드와 ABORTED 는 그대로 통과시킨다.
+ */
+async function openZipDocument(
+  data: ArrayBuffer,
+  meta: { fileName: string; filePath: string },
+  opts: { extractImages: boolean; signal: AbortSignal },
+): Promise<PdfDocument> {
+  // 청크 로드 실패는 "파일 손상"이 아니다 — 아래 매핑 try 밖에 둬서 종전 PDF_PARSE_FAIL 로 간다.
+  const chain = await loadExtractChain();
+  try {
+    await yieldForPaint();
+    throwIfAborted(opts.signal);
+    // zip.ts 소유 에이전트에 요청: 이미지 분석 OFF 면 word/media/ 를 풀 필요가 없다 — openZip 에
+    // 엔트리 filter 옵션이 생기면 여기서 넘긴다(현재 OpenZipOptions 는 maxUnzippedBytes 뿐).
+    const zip = chain.openZip(data);
+    throwIfAborted(opts.signal);
+    const extractor: Extractor | null = chain.resolveExtractor(zip);
+    if (!extractor) {
+      return chain.extractFail('DOC_UNSUPPORTED', 'no extractor matched', { list: SUPPORTED_LABEL });
+    }
+    const extracted = await extractor.extract(zip, {
+      extractImages: opts.extractImages,
+      signal: opts.signal,
+    });
+    return chain.toPdfDocument(extracted, meta);
+  } catch (err) {
+    const e = err as { code?: unknown; params?: Record<string, string>; message?: unknown } | null;
+    if (e?.code === 'ABORTED') throw err;
+    if (typeof e?.code === 'string' && e.code in EXTRACTOR_ERROR_MESSAGE_KEYS) {
+      // 표에 있는 코드는 번역 대상 — params 가 빠진 채 던져졌어도 번역 경로를 타게 한다.
+      if (!e.params) e.params = {};
+      throw err;
+    }
+    const detail = typeof e?.message === 'string' ? e.message : String(err);
+    throw Object.assign(new Error(detail), { code: 'DOC_CORRUPT', params: {} });
+  }
+}
 
 // ─── 공용 문서 열기 함수 (PdfUploader + App file drop + 탭 전환 + 최근 문서 + 전역 검색 공통) ───
 //
@@ -121,8 +224,6 @@ export async function openDocumentData(
   // 내용 기반 판별 — 확장자를 믿지 않는다. 위장 바이너리를 파서 진입 전에 거부한다.
   const head = new Uint8Array(data, 0, Math.min(data.byteLength, 1024));
   const isPdf = hasPdfMagic(head);
-  let extractor: Extractor | null = null;
-  let zip: ZipIndex | null = null;
 
   if (!isPdf) {
     // 암호가 걸린 OOXML 은 zip 이 아니라 CFB 컨테이너다 — 여기서 전용 안내로 갈라낸다.
@@ -141,18 +242,9 @@ export async function openDocumentData(
       store.setError({ code: 'DOC_CORRUPT', message: t('doc.corrupt') } as AppError);
       return;
     }
-    try {
-      zip = openZip(data);
-    } catch (err) {
-      const code = (err as { code?: string }).code === 'DOC_TOO_LARGE' ? 'DOC_TOO_LARGE' : 'DOC_CORRUPT';
-      store.setError({ code, message: t(code === 'DOC_TOO_LARGE' ? 'doc.tooLarge' : 'doc.corrupt') } as AppError);
-      return;
-    }
-    extractor = resolveExtractor(zip);
-    if (!extractor) {
-      store.setError({ code: 'DOC_UNSUPPORTED', message: t('doc.unsupported', { list: SUPPORTED_LABEL }) } as AppError);
-      return;
-    }
+    // QA34(Low): zip 해제·포맷 판별은 여기(isParsing 이전)가 아니라 try 안의 openZipDocument 로
+    // 옮겼다. 종전엔 최대 300MB 동기 해제가 스피너도 없이 UI 를 얼리고 취소도 불가능했다.
+    // 부수효과: 손상 zip 드롭도 이제 진행 중 파싱을 abort-replace 한다 — 손상 PDF 드롭과 같다.
   }
   // 이미 파싱 진행 중이면 abort 후 새 파일로 교체.
   // 기존 가드는 "진행 중이면 무시" 였으나, 사용자가 다른 PDF를 드롭/Ctrl+O 했을 때
@@ -192,13 +284,11 @@ export async function openDocumentData(
     // 라 Vision 이 무음 no-op 이었는데, 텍스트-only PDF 의 정당한 0장과 구분할 수 없었다.
     // use-summarize 가 이 마커로 "재오픈 필요" 안내를 띄운다.
     const extractImagesEnabled = store.settings.enableImageAnalysis;
-    const doc = extractor && zip
-      ? toPdfDocument(
-          await extractor.extract(zip, {
-            extractImages: extractImagesEnabled,
-            signal: controller.signal,
-          }),
+    const doc = !isPdf
+      ? await openZipDocument(
+          data,
           { fileName: name, filePath },
+          { extractImages: extractImagesEnabled, signal: controller.signal },
         )
       : await parsePdf(data, name, filePath, {
           enableOcrFallback: store.settings.enableOcrFallback,
@@ -259,11 +349,7 @@ export async function openDocumentData(
     }
     // abort-replace 로 우리를 덮어쓴 새 파싱이 있는 경우, 에러 배너도 띄우지 않음.
     if (activeParseController !== controller) return;
-    const validCodes = new Set([
-      'PDF_PARSE_FAIL', 'PDF_NO_TEXT', 'PDF_TOO_MANY_PAGES', 'PDF_ENCRYPTED', 'OCR_FAIL',
-      'DOC_UNSUPPORTED', 'DOC_CORRUPT', 'DOC_ENCRYPTED', 'DOC_TOO_LARGE', 'DOC_NO_TEXT',
-    ]);
-    const code = (error.code && validCodes.has(error.code) ? error.code : 'PDF_PARSE_FAIL') as AppError['code'];
+    const code = (error.code && OPEN_ERROR_CODES.has(error.code) ? error.code : 'PDF_PARSE_FAIL') as AppError['code'];
     // Task10 fix round1(Important 3) + round2: docx.ts/zip.ts/xml.ts 는 개발자용 영어 메시지로
     // throw 한다(예: 'word/document.xml missing', 'unit count 501 exceeds 500') —
     // `error.message ||`가 그걸 먼저 집어 한국어 UI 에도 원문 영어가 그대로 노출됐다(AI 에러가

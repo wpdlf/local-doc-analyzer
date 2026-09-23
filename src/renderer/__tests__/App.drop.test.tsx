@@ -31,7 +31,7 @@ vi.mock('../lib/use-summarize', () => ({
 vi.mock('../lib/use-qa', () => ({ useRagBuilder: () => undefined }));
 vi.mock('../lib/use-session', () => ({ useSessionPersistence: () => undefined }));
 vi.mock('../lib/safe-markdown', () => ({ prefetchMarkdownRenderer: vi.fn() }));
-const openDocumentData = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+const openDocumentData = vi.hoisted(() => vi.fn((..._args: unknown[]) => Promise.resolve()));
 vi.mock('../lib/document-open', () => ({ openDocumentData, cancelDocumentParse: vi.fn() }));
 vi.mock('../assets/logo.png', () => ({ default: 'logo.png' }));
 
