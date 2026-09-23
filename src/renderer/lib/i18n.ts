@@ -117,7 +117,7 @@ export const _translations = {
   'app.otherFile': { ko: '✕ 문서 닫기', en: '✕ Close document' },
   'app.startSummary': { ko: '📝 요약 시작', en: '📝 Summarize' },
   'app.openPdf': { ko: '문서 열기', en: 'Open Document' },
-  'app.openPdfHint': { ko: 'PDF 열기 (Ctrl+O)', en: 'Open PDF (Ctrl+O)' },
+  'app.openPdfHint': { ko: '문서 열기 (Ctrl+O)', en: 'Open Document (Ctrl+O)' },
   'app.viewSummary': { ko: '📄 요약 보기 / Q&A 계속', en: '📄 View summary / Continue Q&A' },
   'app.reSummarize': { ko: '🔄 다시 요약', en: '🔄 Re-summarize' },
   'app.ollamaNotReady': { ko: 'Ollama가 실행 중이 아니거나 설치된 모델이 없습니다.', en: 'Ollama is not running or has no installed models.' },
