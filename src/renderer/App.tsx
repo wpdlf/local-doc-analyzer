@@ -13,13 +13,15 @@ import { SummaryTypeSelector } from './components/SummaryTypeSelector';
 import { StatusBar } from './components/StatusBar';
 import { SettingsPanel } from './components/SettingsPanel';
 import { OllamaSetupWizard } from './components/OllamaSetupWizard';
-import { handlePdfData, cancelPdfParse } from './lib/pdf-parser';
+import { openDocumentData, cancelDocumentParse } from './lib/document-open';
 import { applyTheme } from './lib/theme';
 import { useSummarize } from './lib/use-summarize';
 import { useRagBuilder } from './lib/use-qa';
 import { useSessionPersistence } from './lib/use-session';
 import { prefetchMarkdownRenderer } from './lib/safe-markdown';
 import { MAX_PDF_SIZE_BYTES } from '../shared/constants';
+// Task 9: 확장자·매직바이트 판별을 document-formats.ts 단일 출처로 모은다.
+import { isSupportedExtension, hasPdfMagic, hasZipMagic } from '../shared/document-formats';
 import { selectUpdateBanner, shouldResetDismiss, type UpdateBanner } from './lib/update-banner';
 import type { UpdateState } from '../shared/update-types';
 import logoImg from './assets/logo.png';
@@ -91,7 +93,7 @@ export default function App() {
 
   const { handleSummarize, handleAbort, getPartialRecovery } = useSummarize();
 
-  // H2(UX): 파일 열기 다이얼로그 단일 진입점 — Ctrl+O 와 헤더 "PDF 열기" 버튼이 공유.
+  // H2(UX): 파일 열기 다이얼로그 단일 진입점 — Ctrl+O 와 헤더 "문서 열기" 버튼이 공유.
   // dialogOpenRef 재진입 가드 + async throw 의 setError 수렴은 기존 Ctrl+O 경로와 동일.
   const openPdfDialog = useCallback(async () => {
     if (dialogOpenRef.current) return;
@@ -103,7 +105,7 @@ export default function App() {
         useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: result.error });
         return;
       }
-      await handlePdfData(result.data, result.name, result.path);
+      await openDocumentData(result.data, result.name, result.path);
       // QA18(D-LOW): 설정/설치 화면에서 열어도 문서가 보이지 않아 "먹통"으로 오인됐다
       // (파싱은 수행되지만 화면은 그대로 → 사용자가 재드롭 → abort-replace 재파싱).
       useAppStore.getState().setView('main');
@@ -253,7 +255,7 @@ export default function App() {
       // 거부가 unhandledrejection 이 되어 ErrorBoundary 도 못 잡고 배너도 안 뜬다.
       // 글로벌 drop / Ctrl+O 와 동일하게 setError 로 수렴.
       try {
-        await handlePdfData(file.data, file.name, file.path);
+        await openDocumentData(file.data, file.name, file.path);
         // QA18(D-LOW): 설정/설치 화면에서 열어도 문서가 보이지 않아 "먹통"으로 오인됐다
         // (파싱은 수행되지만 화면은 그대로 → 사용자가 재드롭 → abort-replace 재파싱).
         useAppStore.getState().setView('main');
@@ -303,8 +305,11 @@ export default function App() {
       const file = files[0];
       // noUncheckedIndexedAccess: files[0] 은 length 검사 후에도 T|undefined 로 좁혀지지 않음.
       if (!file) return;
-      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-      if (!isPdf) {
+      // QA33/Task9: MIME(file.type) 검사는 뺐다 — 드롭된 DOCX 는 브라우저·OS 에 따라 file.type
+      // 이 빈 문자열이 되기도 해 오탐 소지가 있다. 내용 기반 판별(§Task 10 sniff)이 진짜
+      // 게이트이고, 여기서는 확장자만 본다.
+      const isSupported = isSupportedExtension(file.name);
+      if (!isSupported) {
         useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: t('uploader.notPdf') });
         return;
       }
@@ -319,13 +324,17 @@ export default function App() {
         return;
       }
       try {
-        const headerBuf = await file.slice(0, 5).arrayBuffer();
+        // Task10 fix round1(Critical 1): 이 검사가 hasPdfMagic 만 봐서, 확장자 검사(:311)를
+        // 통과한 .docx 가 여기서 죽어 openDocumentData 에 도달하지 못했다 — "DOCX 개통"이
+        // 드래그드롭 경로에서는 거짓이었다. zip 매직도 받아들여 실제 포맷 판별(CFB 포함,
+        // 추출기 sniff 포함)은 openDocumentData 의 단일 dispatch 에 맡긴다 — 여긴 순수 쓰레기
+        // 바이너리를 전체 materialize 전에 조기 거부하는 것만 목적이다. 8바이트를 읽어
+        // (CFB 매직은 앞 8바이트) 나중에 CFB 조기 거부를 추가해도 슬라이스 크기를 또 안 건드려도
+        // 되게 한다 — 지금은 CFB 판별을 추가하지 않는다(그 분기는 document-open.ts 가 갖는다).
+        const headerBuf = await file.slice(0, 8).arrayBuffer();
         const header = new Uint8Array(headerBuf);
-        const isPdfMagic = header.length >= 5
-          && header[0] === 0x25 && header[1] === 0x50
-          && header[2] === 0x44 && header[3] === 0x46
-          && header[4] === 0x2D;
-        if (!isPdfMagic) {
+        // Task9/10: 매직바이트 판정도 document-formats.ts 단일 출처(hasPdfMagic/hasZipMagic)를 쓴다.
+        if (!hasPdfMagic(header) && !hasZipMagic(header)) {
           useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: t('uploader.notPdf') });
           return;
         }
@@ -352,7 +361,7 @@ export default function App() {
         if (realPath === file.name) {
           console.warn('[tabs] 드롭 파일의 실경로 획득 실패 — 파일명 fallback (전환 시 세션 복원 의존)', file.name);
         }
-        await handlePdfData(buffer, file.name, realPath);
+        await openDocumentData(buffer, file.name, realPath);
         // QA18(D-LOW): 설정/설치 화면에서 열어도 문서가 보이지 않아 "먹통"으로 오인됐다
         // (파싱은 수행되지만 화면은 그대로 → 사용자가 재드롭 → abort-replace 재파싱).
         useAppStore.getState().setView('main');
@@ -496,7 +505,7 @@ export default function App() {
           {tr('app.title')}
         </h1>
         <div className="flex items-center gap-2">
-          {/* H2(UX): 헤더에 상시 노출되는 PDF 열기 버튼 — 기존엔 전역 열기 진입점이 Ctrl+O(비가시)뿐이었다. */}
+          {/* H2(UX): 헤더에 상시 노출되는 문서 열기 버튼 — 기존엔 전역 열기 진입점이 Ctrl+O(비가시)뿐이었다. */}
           <button
             onClick={() => void openPdfDialog()}
             className="px-2.5 py-1.5 text-sm rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-200"
@@ -632,7 +641,7 @@ export default function App() {
           </span>
           <button
             type="button"
-            onClick={() => cancelPdfParse()}
+            onClick={() => cancelDocumentParse()}
             className="shrink-0 px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
             aria-label={t('uploader.cancelParse')}
           >

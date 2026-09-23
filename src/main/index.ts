@@ -20,6 +20,9 @@ import { probeInstaller } from './installer-probe';
 import type { UpdateState } from '../shared/update-types';
 import { generate, abortGenerate, abortAllRequests, checkAvailability, analyzeImage, analyzeImageForOcr, generateEmbeddings, checkEmbeddingAvailability, cleanupAiService, registerEmbedRequest, unregisterEmbedRequest, GEMINI_EMBED_MODEL } from './ai-service';
 import { MAX_PDF_SIZE_BYTES, isLocalhostHost, isValidOllamaUrl, UPDATER_CACHE_DIR_NAME } from '../shared/constants';
+// Task 9: 진입 게이트(드롭 URL·다이얼로그 필터·재읽기)가 확장자를 각자 알고 있던 것을
+// document-formats.ts 단일 출처로 모은다.
+import { isSupportedExtension, DIALOG_FILTERS } from '../shared/document-formats';
 import { validateSettingValue } from './settings-validate';
 // v0.18.19 patch R34 P2: settings 키 단일 출처. 이전엔 본 파일 두 곳에 별도 리터럴이 있었고
 // R33 Surface 4 P3 가 drift 가드 부재를 지적. settings-keys.ts 가 양쪽을 derive 함.
@@ -283,7 +286,13 @@ export function createWindow(): BrowserWindow {
   let dropAbortController: AbortController | null = null;
   win.webContents.on('will-navigate', (event, url) => {
     event.preventDefault();
-    if (url.startsWith('file://') && url.toLowerCase().endsWith('.pdf')) {
+    // fix-round1(item5): decodeURIComponent 는 손상된 퍼센트 인코딩(예: `%.pdf`)에 URIError 를
+    // 던진다 — try 밖에 있으면 동기 Electron 리스너 밖으로 던져져 process 의 uncaughtException
+    // 이 삼키고, 드롭은 사용자 피드백 없이 조용히 무시된다. 손상돼 있으면 아래 게이트를
+    // 통과할 수 없도록 null 로 처리해 드롭을 무시한다.
+    let decodedUrl: string | null = null;
+    try { decodedUrl = decodeURIComponent(url); } catch { /* 손상된 이스케이프 — 드롭 무시 */ }
+    if (decodedUrl !== null && url.startsWith('file://') && isSupportedExtension(decodedUrl)) {
       // UNC 경로 차단: file://remote-server/share/file.pdf 등 네트워크 읽기 방지
       try { if (new URL(url).hostname !== '') return; } catch { return; }
       const filePath = fileURLToPath(url);
@@ -1665,13 +1674,19 @@ export function registerIpcHandlers(): void {
     // rejection 대신 구조화된 error 로 변환됨 (호출자가 unhandled rejection 없이 처리 가능).
     try {
       const { filePaths } = await dialog.showOpenDialog({
-        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        filters: [...DIALOG_FILTERS],
         properties: ['openFile'],
       });
       if (filePaths.length === 0) return null;
       const filePath = filePaths[0];
       // noUncheckedIndexedAccess: length 검사 후에도 좁힘 안됨. 명시적 가드.
       if (!filePath) return null;
+      // fix-round1(item4): 다이얼로그 filters 는 사용자 선택을 안내할 뿐 강제하지 않는다 —
+      // "파일 형식" 드롭다운을 "모든 파일"로 바꾸거나 경로를 직접 타이핑하면 임의 확장자가
+      // 그대로 넘어온다. file:open-path 가 이미 하는 서버측 확장자 재검증을 여기도 건다.
+      if (!isSupportedExtension(filePath)) {
+        return { error: 'PDF · Word 파일만 열 수 있습니다.' };
+      }
       // drop 핸들러와 동일한 방어 — 심볼릭 링크/비정규 파일 거부.
       const lstat = await fsp.lstat(filePath);
       if (lstat.isSymbolicLink()) {
@@ -1711,8 +1726,8 @@ export function registerIpcHandlers(): void {
     if (typeof targetPath !== 'string' || targetPath.length === 0 || targetPath.length > 4096) {
       return { error: '잘못된 경로입니다.' };
     }
-    if (path.extname(targetPath).toLowerCase() !== '.pdf') {
-      return { error: 'PDF 파일만 열 수 있습니다.' };
+    if (!isSupportedExtension(targetPath)) {
+      return { error: 'PDF · Word 파일만 열 수 있습니다.' };
     }
     // QA20(B-MED): UNC(`\\server\share`) 차단 — 드롭 경로(will-navigate)는 "UNC 경로 차단:
     // 네트워크 읽기 방지"를 이미 하는데 이 경로만 빠져 있던 비대칭. 손상된 렌더러가 원격 경로를

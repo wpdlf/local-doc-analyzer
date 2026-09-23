@@ -34,6 +34,11 @@ const INDEX_BIN = 'index.bin';
 // (이 파일 없음)은 readSession 이 session.json 의 chunkMeta 로 fallback — 파괴적 마이그레이션 없음.
 const INDEX_META = 'index.meta.json';
 
+/** unitKind 는 리터럴 3종 외에는 신뢰하지 않는다 — 손상/구버전 렌더러 값은 부재(=`'page'`)로 폴백. */
+function safeUnitKind(v: unknown): 'page' | 'slide' | 'chapter' | undefined {
+  return v === 'page' || v === 'slide' || v === 'chapter' ? v : undefined;
+}
+
 /**
  * 세션 본문(session.json) 1건의 상한 — QA30(C-9, 형제 누락).
  *
@@ -113,6 +118,7 @@ function normalizeEntry(raw: unknown): SessionManifestEntry | null {
     embedModel: typeof e.embedModel === 'string' ? e.embedModel.slice(0, 128) : null,
     embedDim: typeof e.embedDim === 'number' && Number.isFinite(e.embedDim) ? e.embedDim : null,
     chunkCount: safeNum(e.chunkCount),
+    unitKind: safeUnitKind(e.unitKind),
     byteSize: safeNum(e.byteSize),
     createdAt: typeof e.createdAt === 'string' ? e.createdAt : lastAccessed,
     lastAccessed,
@@ -504,6 +510,7 @@ export async function writeSession(
       embedModel: typeof meta.embedModel === 'string' ? meta.embedModel.slice(0, 128) : null,
       embedDim: meta.embedDim === null ? null : safeNum(meta.embedDim),
       chunkCount: safeNum(meta.chunkCount),
+      unitKind: safeUnitKind(meta.unitKind),
       byteSize,
       createdAt: existing?.createdAt ?? nowIso,
       lastAccessed: nowIso,

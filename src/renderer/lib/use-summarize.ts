@@ -4,7 +4,7 @@ import { t } from './i18n';
 import { PROVIDER_LABELS, isCustomSummaryType } from '../types';
 import { AiClient } from './ai-client';
 import { chunkText, chunkChapters, estimateCharsPerToken } from './chunker';
-import { normalizeCitationPlacement, stripTrailingPartialCitation, CITATION_REGEX } from './citation';
+import { normalizeCitationPlacement, stripTrailingPartialCitation, CITATION_REGEX, formatPromptPageLabel } from './citation';
 import { enrichDocumentWithImages } from './enrich-doc';
 import { slicePdfDocumentByPageRange, isFullRange } from './page-range';
 import {
@@ -67,7 +67,11 @@ export function labelParagraphsWithPages(pageTexts: string[], startPageOffset = 
   const labeled: string[] = [];
   pageTexts.forEach((pageText, pageIdx) => {
     if (!pageText || !pageText.trim()) return;
-    const label = `[p.${startPageOffset + pageIdx + 1}]`;
+    // Task12: 프롬프트에 심는 라벨은 citation.ts 의 단일 통로(formatPromptPageLabel, 대괄호
+    // 포함 반환) 를 거친다 — 인라인으로 다시 조립해 두 곳이 따로 있으면, 이 자리만 나중에
+    // unitKind 를 반영하도록 고쳐질 위험이 생긴다(그러면 프롬프트에 `[슬라이드 3]` 이 들어가
+    // CITATION_REGEX 가 재매칭하지 못해 요약의 모든 인용이 조용히 평문으로 강등된다).
+    const label = formatPromptPageLabel(startPageOffset + pageIdx + 1);
     const paragraphs = pageText.split(/\n\n+/).map((p) => p.trim()).filter(Boolean);
     for (const para of paragraphs) {
       // QA23(C-MED): 라벨은 **단락 앞에 한 번만** 붙는다. 그런데 마크다운 표 위주의 OCR 페이지는

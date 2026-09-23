@@ -44,6 +44,11 @@ export const _translations = {
   // QA21(D-MED): 같은 이름의 문서가 둘 이상 열려 있으면 어느 쪽인지 판정할 수 없다 — 이전에는
   // 앞의 것으로 조용히 점프했다(활성 문서와 이름이 겹치면 활성 문서로). 표면화가 정답.
   'citation.ambiguousDoc': { ko: '{name} 이라는 이름의 문서가 여러 개 열려 있어 어느 문서인지 판정할 수 없습니다 — 하나를 닫으면 이동할 수 있습니다', en: 'Several open documents are named {name}, so the source cannot be determined — close one to navigate' },
+  // Task12: 표시용 인용 라벨(formatUnitLabel) 이 unitKind 별로 참조하는 키. AI 프롬프트에
+  // 주입되는 formatPromptPageLabel 의 `[p.N]` 과는 무관 — 이쪽은 화면에만 보인다.
+  'citation.unit.page': { ko: 'p.{n}', en: 'p.{n}' },
+  'citation.unit.slide': { ko: '슬라이드 {n}', en: 'Slide {n}' },
+  'citation.unit.chapter': { ko: '{n}장', en: 'Ch. {n}' },
   'pdfviewer.title': { ko: '원문 보기', en: 'Source Viewer' },
   'pdfviewer.close': { ko: '뷰어 닫기', en: 'Close viewer' },
   'pdfviewer.loading': { ko: 'PDF 로드 중...', en: 'Loading PDF...' },
@@ -111,8 +116,8 @@ export const _translations = {
   'app.removeFile': { ko: '현재 문서 닫기', en: 'Close current document' },
   'app.otherFile': { ko: '✕ 문서 닫기', en: '✕ Close document' },
   'app.startSummary': { ko: '📝 요약 시작', en: '📝 Summarize' },
-  'app.openPdf': { ko: 'PDF 열기', en: 'Open PDF' },
-  'app.openPdfHint': { ko: 'PDF 열기 (Ctrl+O)', en: 'Open PDF (Ctrl+O)' },
+  'app.openPdf': { ko: '문서 열기', en: 'Open Document' },
+  'app.openPdfHint': { ko: '문서 열기 (Ctrl+O)', en: 'Open Document (Ctrl+O)' },
   'app.viewSummary': { ko: '📄 요약 보기 / Q&A 계속', en: '📄 View summary / Continue Q&A' },
   'app.reSummarize': { ko: '🔄 다시 요약', en: '🔄 Re-summarize' },
   'app.ollamaNotReady': { ko: 'Ollama가 실행 중이 아니거나 설치된 모델이 없습니다.', en: 'Ollama is not running or has no installed models.' },
@@ -132,16 +137,42 @@ export const _translations = {
 
   // ─── PdfUploader ───
   'uploader.fileTooLarge': { ko: '파일이 너무 큽니다 ({size}MB). 최대 100MB까지 지원합니다.', en: 'File too large ({size}MB). Maximum 100MB supported.' },
-  'uploader.cannotRead': { ko: 'PDF를 읽을 수 없습니다.', en: 'Cannot read PDF.' },
+  'uploader.cannotRead': { ko: '문서를 읽을 수 없습니다.', en: 'Cannot read document.' },
   'uploader.multipleFiles': { ko: '한 번에 하나의 PDF만 처리할 수 있습니다. 첫 번째 파일({name})만 열었습니다.', en: 'Only one PDF can be processed at a time. Opening the first file ({name}) only.' },
-  'uploader.notPdf': { ko: 'PDF 파일만 지원됩니다.', en: 'Only PDF files are supported.' },
-  // ─── handlePdfData 진입 가드(모든 파일 열기 경로 공통) ───
+  'uploader.notPdf': { ko: 'PDF · Word 파일만 지원됩니다.', en: 'Only PDF and Word files are supported.' },
+  // ─── openDocumentData 진입 가드(모든 파일 열기 경로 공통) ───
   'pdf.busyGenerating': { ko: '요약 진행 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while summarizing.' },
   'pdf.busyQa': { ko: 'Q&A 답변 생성 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while answering Q&A.' },
   'pdf.busyCollection': { ko: '컬렉션 요약 진행 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while summarizing a collection.' },
   'pdf.busyCollectionOpen': { ko: '컬렉션을 여는 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while opening a collection.' },
-  'pdf.invalidFile': { ko: '유효한 PDF 파일이 아닙니다.', en: 'Not a valid PDF file.' },
   'pdf.encrypted': { ko: '암호로 보호된 PDF입니다. 암호를 해제한 후 다시 시도해주세요.', en: 'This PDF is password-protected. Please remove the password and try again.' },
+  // Task10: document-open.ts 의 포맷 dispatch 가 쓰는 코드. `doc.unsupported` 는 이 지점에
+  // 도달했을 때 실제로 "우리가 모르는 컨테이너"인 경우(zip 이지만 sniff 가 매칭하는 추출기가
+  // 없음)에만 쓴다 — 확장자는 진입 게이트 5곳이 이미 걸렀으므로 도달 시점엔 항상 지원 목록
+  // 안이다. list 는 SUPPORTED_FORMATS 라벨 조합("PDF · Word")을 주입한다.
+  'doc.unsupported': {
+    ko: '지원하지 않는 파일 형식입니다. 지원 형식: {list}',
+    en: 'Unsupported file format. Supported formats: {list}',
+  },
+  // 확장자는 지원 포맷인데(진입 게이트가 이미 확인) 내용이 zip/pdf 매직과 맞지 않거나(위장·손상)
+  // zip 자체가 깨진 경우. "지원 형식: PDF" 라고 답하면 `.pdf` 로 드롭한 사용자가 "내 건 .pdf 인데?"
+  // 가 된다 — 손상/형식 불일치로 정확히 안내한다.
+  // Task10 fix round1(Minor 6): 형제 3종(unsupported/encrypted/tooLarge)은 전부 다음 행동을
+  // 알려주는데 이것만 상태만 말하고 끝났다 — 다른 파일로 재시도하라고 맺는다.
+  'doc.corrupt': {
+    ko: '파일이 손상되었거나 다른 형식일 수 있습니다. 다른 파일로 다시 시도해주세요.',
+    en: 'The file may be corrupted or in a different format. Please try a different file.',
+  },
+  'doc.encrypted': { ko: '암호로 보호된 문서입니다. 암호를 해제한 후 다시 시도해주세요.', en: 'This document is password-protected. Please remove the password and try again.' },
+  'doc.tooLarge': { ko: '압축을 해제하면 너무 커지는 파일입니다. 더 작은 파일로 다시 시도해주세요.', en: 'This file expands to an excessive size when decompressed. Please try a smaller file.' },
+  // Task10 fix round1(Important 3): docx.ts 의 DOC_NO_TEXT(문서에 추출할 텍스트가 없음)를
+  // 사용자에게 안내하는 문구. 추출기 내부 throw 는 개발자용 영어('no text in document')라
+  // document-open.ts 의 catch 가 이 키로 덮어쓴다(uploader.noText 는 OCR 안내가 섞여 있어
+  // OCR 이 없는 비-PDF 포맷에는 맞지 않는다).
+  'doc.noText': {
+    ko: '문서에서 텍스트를 추출할 수 없습니다. 파일 내용을 확인해주세요.',
+    en: 'No text could be extracted from the document. Please check the file contents.',
+  },
   // QA22(B-LOW): 챕터 감지 실패 시 페이지 분할 제목. 한국어 하드코딩이라 영어 UI 에서도
   // 요약 헤딩(`## 1~10 페이지`)과 진행률에 그대로 노출됐다.
   'pdf.pageRangeChapter': { ko: '{start}~{end} 페이지', en: 'Pages {start}–{end}' },
@@ -177,9 +208,9 @@ export const _translations = {
   'uploader.ocrProgress': { ko: '스캔 PDF 텍스트 인식 중...', en: 'Recognizing scanned PDF text...' },
   'uploader.ocrLabel': { ko: 'OCR 진행', en: 'OCR progress' },
   'uploader.ocrDesc': { ko: 'Vision 모델로 텍스트를 추출하고 있습니다', en: 'Extracting text with Vision model' },
-  'uploader.reading': { ko: 'PDF를 읽고 있습니다...', en: 'Reading PDF...' },
+  'uploader.reading': { ko: '문서를 읽고 있습니다...', en: 'Reading document...' },
   'uploader.wait': { ko: '잠시만 기다려주세요', en: 'Please wait' },
-  'uploader.dragDrop': { ko: 'PDF 파일을 여기에 드래그하거나', en: 'Drag PDF file here or' },
+  'uploader.dragDrop': { ko: '문서를 여기에 드래그하거나', en: 'Drag document here or' },
   'uploader.clickSelect': { ko: '클릭하여 선택', en: 'click to select' },
   'uploader.selectFile': { ko: '파일 선택', en: 'Select file' },
   'uploader.orShortcut': { ko: '또는 Ctrl+O', en: 'or press Ctrl+O' },

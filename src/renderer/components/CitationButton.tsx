@@ -2,7 +2,7 @@
 // Plan SC: SC-02 (인용 토큰 → 클릭 가능), SC-03 (클릭 → 뷰어 스크롤)
 import { useAppStore } from '../lib/store';
 import { useT } from '../lib/i18n';
-import { clampCitationPage, sanitizeDocLabelName } from '../lib/citation';
+import { clampCitationPage, sanitizeDocLabelName, formatUnitLabel } from '../lib/citation';
 import { setCitationReturnFocus } from '../lib/citation-focus';
 import { switchToTab } from '../lib/tabs';
 
@@ -27,6 +27,7 @@ export function CitationButton({ page, docName }: CitationButtonProps) {
   const activeFilePath = useAppStore((s) => s.document?.filePath ?? null);
   const activeFileName = useAppStore((s) => s.document?.fileName ?? null);
   const activePageCount = useAppStore((s) => s.document?.pageCount ?? 0);
+  const activeUnitKind = useAppStore((s) => s.document?.unitKind);
 
   // QA21(D-MED): 라벨은 sanitizeDocLabelName 을 거친 값이므로 **탭 이름도 같은 함수로 정규화해
   // 비교**해야 한다. 이전엔 가공 전 원본 fileName 과 정확 일치를 요구해, 파일명에 `[ ] |`·연속
@@ -51,8 +52,13 @@ export function CitationButton({ page, docName }: CitationButtonProps) {
     (s) => validPage !== null && !isCrossDoc && s.citationTarget?.page === validPage
   );
 
-  // 라벨: 교차 문서는 출처를 함께 표기 (`[문서명 p.N]`), 단일 문서는 기존 `[p.N]`
-  const label = isCrossDoc && docName ? `[${docName} p.${page}]` : `[p.${page}]`;
+  // 라벨: 교차 문서는 출처를 함께 표기 (`[문서명 p.N]`), 단일 문서는 기존 `[p.N]`.
+  // unitKind 는 **대상 탭**(교차 문서) 또는 활성 문서 것을 쓴다 — 활성 문서 것을 쓰면 PPTX 를
+  // PDF 에서 인용할 때 '슬라이드 3' 이어야 할 것이 'p.3' 으로 보인다.
+  const unitKind = (isCrossDoc ? targetTab?.unitKind : activeUnitKind) ?? 'page';
+  const label = isCrossDoc && docName
+    ? `[${docName} ${formatUnitLabel(page, unitKind)}]`
+    : `[${formatUnitLabel(page, unitKind)}]`;
 
   // 교차 문서인데 해당 탭이 닫혀 있거나 모호하거나 범위를 벗어나면 클릭 불가.
   // ambiguous 는 활성 문서와 이름이 겹치는 경우도 포함하므로 isCrossDoc 과 독립적으로 검사한다

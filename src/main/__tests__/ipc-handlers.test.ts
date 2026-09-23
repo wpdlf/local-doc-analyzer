@@ -849,6 +849,33 @@ describe('file:open-path (최근목록 재오픈 보안 가드)', () => {
   });
 });
 
+// fix-round1(item4): file:open-pdf 는 다이얼로그 filters 만 확장자 방어로 두고 있었다 —
+// filters 는 안내일 뿐 강제가 아니라(사용자가 "모든 파일"로 바꾸거나 경로를 직접 타이핑하면
+// 우회된다), file:open-path 가 이미 하는 서버측 재검증을 여기도 걸었다. 리뷰가 지목한
+// 생존 뮤테이션(`filters: [...DIALOG_FILTERS]` → `filters: []`)이 테스트 무변화였던 지점.
+describe('file:open-pdf (다이얼로그 우회 방어)', () => {
+  beforeEach(() => {
+    H.fsp.lstat.mockResolvedValue({ isSymbolicLink: () => false });
+    H.fsp.stat.mockResolvedValue({ isFile: () => true, size: 1000 });
+    H.fsp.readFile.mockResolvedValue(Buffer.from('%PDF-1.4 test'));
+  });
+
+  it('다이얼로그가 .pdf 아닌 경로를 돌려주면 거부한다 (fs 접근 없음)', async () => {
+    H.dialog.showOpenDialog.mockResolvedValue({ filePaths: ['/x/secret.txt'] });
+    H.fsp.lstat.mockClear();
+    const r = await invoke('file:open-pdf') as { error: string };
+    expect(r.error, 'filters 우회(직접 타이핑·"모든 파일") 시에도 서버측이 막아야 한다').toBeTruthy();
+    expect(H.fsp.lstat, '확장자 재검증은 fs 접근 이전이어야 한다').not.toHaveBeenCalled();
+  });
+
+  it('유효한 .pdf 는 그대로 통과한다 (회귀 방지)', async () => {
+    H.dialog.showOpenDialog.mockResolvedValue({ filePaths: ['/docs/lecture.pdf'] });
+    const r = await invoke('file:open-pdf') as { path: string; name: string; data: ArrayBuffer };
+    expect(r.path).toBe('/docs/lecture.pdf');
+    expect(r.data).toBeInstanceOf(ArrayBuffer);
+  });
+});
+
 // 첫 실행 언어 감지: localeAwareDefaults 가 OS 로캘 기반 uiLanguage/summaryLanguage 기본값을
 // settings-store loadSettings 의 defaults 인자로 전달하는지 검증. 저장된 설정이 있으면
 // settings-store 의 spread 가 defaults 를 덮으므로(settings-store.test 에서 가드) 기존 사용자 무영향.

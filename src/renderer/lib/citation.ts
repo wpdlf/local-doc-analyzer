@@ -1,5 +1,7 @@
 // Design Ref: §3.3.2 parseCitations — 단일 진실원, 순수 함수
 // Plan SC: SC-01 (청크 page 메타데이터), SC-02 (인용 토큰), SC-05 (legacy 호환)
+import type { UnitKind } from '../types';
+import { t, type TranslationKey } from './i18n';
 
 /**
  * 페이지 인용 토큰 정규식.
@@ -265,10 +267,45 @@ export function normalizeCitationPlacement(text: string): string {
  * `-7]` 에서 매칭에 실패해 인용이 일반 텍스트로 렌더되며 소실됐다. 범위→단일 변환을
  * 로컬 소형 모델의 지시 준수에 의존한 것이 citation 매치율 88.8% 미달의 1차 원인이었다.
  * 라벨 생성 단계에서 청크 body 시작 페이지로 고정해 근본 원인을 제거한다.
+ *
+ * Task12 계획 결함 정정: 이 함수는 표시용이 아니다 — `use-qa.ts` 가 이 반환값을 **그대로
+ * AI 프롬프트 컨텍스트에 주입**하고, LLM 이 그것을 베껴 응답에 실으면 `CITATION_REGEX` 가
+ * 다시 그 문자열을 파싱해 클릭 가능한 인용으로 되살린다. 이 왕복 계약 때문에 반환값은
+ * **언제나 ASCII `[p.N]`** 이어야 하고, UI 언어나 문서의 `unitKind`(page/slide/chapter)에
+ * 따라 달라지면 절대 안 된다 — 조금이라도 갈리면 그 순간부터 정규식이 매칭에 실패해
+ * 모든 Q&A 답변의 인용이 조용히 평문으로 강등된다. 표시용 라벨은 `formatUnitLabel` 이
+ * 별도로 맡는다. 이름을 개명한 이유도 이것이다: 이전 이름(`formatPageLabel`)이 "표시
+ * 라벨"처럼 들려서, 이 함수를 표시 지점(unitKind 대응)으로 오인해 교체하려던 시도가
+ * 있었다 — 프롬프트/정규식이 그대로라는 전제와 정면 충돌하는 변경이었다.
  */
-export function formatPageLabel(page?: number): string {
+export function formatPromptPageLabel(page?: number): string {
   if (!page || page < 1) return '';
   return `[p.${Math.floor(page)}]`;
+}
+
+/**
+ * 인용 라벨의 **표시용 단일 통로**.
+ *
+ * 내부 표현은 언제나 정수 N 이고(프롬프트도 `[p.N]` 그대로, `formatPromptPageLabel` 참조),
+ * 갈리는 것은 **화면에 보이는 문구**뿐이다.
+ *
+ * 대괄호는 붙이지 않는다 — 교차문서 라벨(`[문서명 p.N]`)처럼 대괄호 안에 다른 내용과 함께
+ * 조합해야 하는 호출부가 있어, 대괄호 부착은 호출부(`CitationButton`)의 책임으로 둔다.
+ *
+ * source-scan 가드(`source-scan.test.ts`)가 여기를 거치지 않은 'p.' **문자열 리터럴/템플릿
+ * 조립**을 잡는다 — 열거하면 사각이 생기므로(QA33 I3) 위치를 나열하지 않고 소스 전체에서
+ * 도출한다. **주의**: 그 가드는 소스 텍스트 패턴만 본다. `t('search.page')`(GlobalSearch
+ * 검색 스니펫)처럼 **i18n 키 참조**를 거쳐 라벨을 내는 자리는 코드 상 'p.' 문자열이 전혀
+ * 없으므로 이 가드로는 원천적으로 못 잡는다 — 실제로 `search.page` 키는 `unitKind` 와
+ * 무관하게 항상 `'p.{page}'` 를 반환해 이 함수를 우회하고 있다(알려진 상태, Task12 코디네이터
+ * 판단으로 보류 — 고치려면 검색 결과에 `unitKind` 를 실어야 하는데 main 프로세스 검색
+ * 인덱스/IPC 스키마까지 건드리는 별도 작업이다). 가드가 지키는 범위를 부풀려 적으면, 이번
+ * 태스크의 계획 결함(함수 이름이 "표시용"처럼 들려서 프롬프트 계약을 깬 시도로 이어진 것)과
+ * 같은 실패 형태 — 보호를 약속하는 주석이 실제로는 보호하지 않는 것 — 를 반복하게 된다.
+ */
+export function formatUnitLabel(page?: number, unitKind: UnitKind = 'page'): string {
+  if (page === undefined || !Number.isFinite(page)) return '';
+  return t(`citation.unit.${unitKind}` as TranslationKey, { n: String(page) });
 }
 
 /**

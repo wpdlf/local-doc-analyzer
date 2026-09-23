@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
-// PdfUploader 행위 — 기본 드롭존(파일 선택) / 선택→openPdf→handlePdfData /
-// openPdf 에러·취소(null)·throw 처리 / 파싱 중 읽기 UI·취소(cancelPdfParse) /
+// PdfUploader 행위 — 기본 드롭존(파일 선택) / 선택→openPdf→openDocumentData /
+// openPdf 에러·취소(null)·throw 처리 / 파싱 중 읽기 UI·취소(cancelDocumentParse) /
 // OCR 진행 표시 / 동시 다이얼로그 가드(dialogOpenRef).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -10,12 +10,12 @@ import userEvent from '@testing-library/user-event';
 
 const M = vi.hoisted(() => ({
   openPdf: vi.fn(),
-  handlePdfData: vi.fn(() => Promise.resolve()),
-  cancelPdfParse: vi.fn(),
+  openDocumentData: vi.fn(() => Promise.resolve()),
+  cancelDocumentParse: vi.fn(),
 }));
-vi.mock('../../lib/pdf-parser', () => ({
-  handlePdfData: M.handlePdfData,
-  cancelPdfParse: M.cancelPdfParse,
+vi.mock('../../lib/document-open', () => ({
+  openDocumentData: M.openDocumentData,
+  cancelDocumentParse: M.cancelDocumentParse,
 }));
 
 vi.stubGlobal('window', Object.assign(window, {
@@ -45,32 +45,32 @@ describe('PdfUploader', () => {
     expect(screen.getByRole('button', { name: '파일 선택' })).toBeTruthy();
   });
 
-  it('파일 선택 → openPdf → handlePdfData(data,name,path)', async () => {
+  it('파일 선택 → openPdf → openDocumentData(data,name,path)', async () => {
     const user = userEvent.setup();
     render(<PdfUploader />);
     await user.click(screen.getByRole('button', { name: '파일 선택' }));
     expect(M.openPdf).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(M.handlePdfData).toHaveBeenCalledWith(expect.anything(), 'a.pdf', '/d/a.pdf'));
+    await waitFor(() => expect(M.openDocumentData).toHaveBeenCalledWith(expect.anything(), 'a.pdf', '/d/a.pdf'));
     expect(useAppStore.getState().error).toBeNull();
   });
 
-  it('openPdf 에러 객체 → PDF_PARSE_FAIL 배너 + handlePdfData 미호출', async () => {
+  it('openPdf 에러 객체 → PDF_PARSE_FAIL 배너 + openDocumentData 미호출', async () => {
     M.openPdf.mockResolvedValue({ error: '암호화된 PDF' });
     const user = userEvent.setup();
     render(<PdfUploader />);
     await user.click(screen.getByRole('button', { name: '파일 선택' }));
     await waitFor(() => expect(useAppStore.getState().error?.code).toBe('PDF_PARSE_FAIL'));
     expect(useAppStore.getState().error?.message).toBe('암호화된 PDF');
-    expect(M.handlePdfData).not.toHaveBeenCalled();
+    expect(M.openDocumentData).not.toHaveBeenCalled();
   });
 
-  it('openPdf 취소(null 반환) → 에러 없음, handlePdfData 미호출', async () => {
+  it('openPdf 취소(null 반환) → 에러 없음, openDocumentData 미호출', async () => {
     M.openPdf.mockResolvedValue(null);
     const user = userEvent.setup();
     render(<PdfUploader />);
     await user.click(screen.getByRole('button', { name: '파일 선택' }));
     await waitFor(() => expect(M.openPdf).toHaveBeenCalled());
-    expect(M.handlePdfData).not.toHaveBeenCalled();
+    expect(M.openDocumentData).not.toHaveBeenCalled();
     expect(useAppStore.getState().error).toBeNull();
   });
 
@@ -83,13 +83,13 @@ describe('PdfUploader', () => {
     expect(useAppStore.getState().error?.message).toBe('IPC 실패');
   });
 
-  it('파싱 중 → 읽기 안내 + 취소 버튼(cancelPdfParse)', async () => {
+  it('파싱 중 → 읽기 안내 + 취소 버튼(cancelDocumentParse)', async () => {
     useAppStore.setState({ isParsing: true });
     const user = userEvent.setup();
     render(<PdfUploader />);
-    expect(screen.getByText(/PDF를 읽고 있습니다/)).toBeTruthy();
+    expect(screen.getByText(/문서를 읽고 있습니다/)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'PDF 처리 취소' }));
-    expect(M.cancelPdfParse).toHaveBeenCalledTimes(1);
+    expect(M.cancelDocumentParse).toHaveBeenCalledTimes(1);
   });
 
   it('파싱 중 + OCR 진행 → OCR 라벨 + 진행 카운트', () => {
@@ -103,7 +103,7 @@ describe('PdfUploader', () => {
     useAppStore.setState({ isParsing: true });
     render(<PdfUploader />);
     // 파싱 중 외곽 presentation div onClick 은 undefined — openPdf 미호출
-    fireEvent.click(screen.getByText(/PDF를 읽고 있습니다/));
+    fireEvent.click(screen.getByText(/문서를 읽고 있습니다/));
     expect(M.openPdf).not.toHaveBeenCalled();
   });
 

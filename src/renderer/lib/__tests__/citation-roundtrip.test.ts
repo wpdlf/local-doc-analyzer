@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { formatPageLabel, parseCitations, CITATION_REGEX } from '../citation';
+import { formatPromptPageLabel, parseCitations, CITATION_REGEX } from '../citation';
 import { chunkTextWithOverlapByPage } from '../chunker';
 
 /**
- * R35 회귀 가드 — 생산(formatPageLabel) ↔ 소비(CITATION_REGEX/parseCitations) 포맷 정합성.
+ * R35 회귀 가드 — 생산(formatPromptPageLabel) ↔ 소비(CITATION_REGEX/parseCitations) 포맷 정합성.
  *
- * 배경: 기존 단위 테스트는 formatPageLabel 과 parseCitations 를 *따로* 검증할 뿐,
+ * 배경: 기존 단위 테스트는 formatPromptPageLabel 과 parseCitations 를 *따로* 검증할 뿐,
  * "RAG 컨텍스트 라벨로 생산된 문자열이 최종 출력 파서를 통과해 클릭 가능한 인용으로
  * 살아남는가" 라는 **왕복(round-trip)** 은 검증하지 않았다. 바로 이 생산-소비 포맷
  * 드리프트(생산: `[p.N-M]` 범위 라벨 / 소비: 단일 `[p.N]` 만 인식)가 citation 매치율
@@ -14,12 +14,12 @@ import { chunkTextWithOverlapByPage } from '../chunker';
  *
  * 데이터 흐름 재현 (use-qa.ts:357 ragSearch 라벨 빌드 → ai-service 프롬프트 → LLM 응답 →
  * safe-markdown parseCitations):
- *   chunk.pageStart → formatPageLabel(pageStart) → 프롬프트 컨텍스트 라벨
+ *   chunk.pageStart → formatPromptPageLabel(pageStart) → 프롬프트 컨텍스트 라벨
  *   → LLM 이 라벨을 문장 끝에 verbatim 복사 → parseCitations 가 클릭 가능한 citation 으로 파싱
  */
 describe('R35 round-trip: 라벨 생산 ↔ 인용 소비 포맷 정합성', () => {
   // ragSearch(use-qa.ts:357) 의 라벨 빌드를 동일하게 재현: 항상 단일 인자.
-  const buildContextLabel = (pageStart?: number): string => formatPageLabel(pageStart);
+  const buildContextLabel = (pageStart?: number): string => formatPromptPageLabel(pageStart);
 
   // LLM 이 컨텍스트 라벨을 문장 끝에 그대로 복사하는 동작을 시뮬레이션.
   const llmEchoesLabel = (label: string): string => `핵심 사실 서술입니다${label}.`;
@@ -36,7 +36,7 @@ describe('R35 round-trip: 라벨 생산 ↔ 인용 소비 포맷 정합성', () 
   });
 
   it('멀티페이지 청크(pageStart≠pageEnd)라도 단일 라벨로 왕복한다 (핵심 회귀)', () => {
-    // 과거: formatPageLabel(5, 7) → "[p.5-7]" → LLM 이 복사 → parseCitations 가 단일 [p.5] 만
+    // 과거: formatPromptPageLabel(5, 7) → "[p.5-7]" → LLM 이 복사 → parseCitations 가 단일 [p.5] 만
     //       매칭하려다 "-7]" 에서 실패 → 인용 소실. 이제 생산 측이 단일만 방출.
     const label = buildContextLabel(5); // pageEnd(7) 은 라벨에 영향을 주지 않는다
     expect(label).toBe('[p.5]');
@@ -48,9 +48,9 @@ describe('R35 round-trip: 라벨 생산 ↔ 인용 소비 포맷 정합성', () 
     expect(citations[0]?.page).toBe(5);
   });
 
-  it('formatPageLabel 의 모든 유효 출력은 CITATION_REGEX 로 재매칭된다 (포맷 계약)', () => {
+  it('formatPromptPageLabel 의 모든 유효 출력은 CITATION_REGEX 로 재매칭된다 (포맷 계약)', () => {
     for (const page of [1, 7, 12, 100, 999]) {
-      const label = formatPageLabel(page);
+      const label = formatPromptPageLabel(page);
       const re = new RegExp(CITATION_REGEX.source, CITATION_REGEX.flags);
       const matches = Array.from(label.matchAll(re));
       expect(matches).toHaveLength(1);
@@ -85,7 +85,7 @@ describe('R35 round-trip: 라벨 생산 ↔ 인용 소비 포맷 정합성', () 
   it('소비 측 한계 문서화: 범위 라벨은 단일 인용으로 파싱되지 않는다 (생산 측이 범위를 내면 안 되는 이유)', () => {
     // 이 테스트는 "왜 생산 측을 단일로 고정해야 하는가" 를 인코딩한다.
     // 범위 라벨이 LLM 출력에 들어오면 parseCitations 는 이를 클릭 가능한 인용으로
-    // 복원하지 못한다(소비 측 계약). 따라서 생산 측(formatPageLabel)이 범위를 방출하지
+    // 복원하지 못한다(소비 측 계약). 따라서 생산 측(formatPromptPageLabel)이 범위를 방출하지
     // 않는 것이 유일하게 견고한 해법이다.
     const segments = parseCitations('범위 라벨 사례[p.5-7].');
     const citations = segments.filter((s) => s.type === 'citation');

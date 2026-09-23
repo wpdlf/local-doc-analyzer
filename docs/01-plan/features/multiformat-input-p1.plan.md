@@ -66,7 +66,7 @@
 |---|---|
 | `src/renderer/types/index.ts` | `PdfDocument.unitKind?` · `PersistedSession.unitKind?` |
 | `src/shared/session-types.ts` | `SessionManifestEntry.unitKind?` |
-| `src/renderer/lib/citation.ts:269` | `formatPageLabel` 이 `unitKind` 를 받는다 |
+| `src/renderer/lib/citation.ts` | 표시 전용 `formatUnitLabel(page, unitKind)` 신설. 기존 `formatPageLabel` 은 **프롬프트용**이라 건드리지 않고 `formatPromptPageLabel` 로 개명 |
 | `src/renderer/lib/store.ts` | `openTabs` 항목에 `unitKind` |
 | `src/renderer/lib/pdf-parser.ts` | `handlePdfData` 제거(이동), `parsePdf` 는 그대로 |
 | `src/main/index.ts` | 게이트 3곳이 `document-formats.ts` 참조 |
@@ -980,14 +980,34 @@ describe('docxExtractor.extract', () => {
   });
 
   it('extractImages:false 면 그림을 수집하지 않는다', async () => {
+    // 그림 문단 앞에 텍스트를 둔다 — 그림만 있는 문단은 빈 블록이라 paginate 가 버리고,
+    // units 가 비어 DOC_NO_TEXT 가 먼저 발화한다(아래 별도 테스트로 고정). 실제 DOCX 도
+    // 그림 옆에 본문이 있다.
     const zip = zipOf({
-      'word/document.xml': doc(`<w:p><w:r><w:drawing><a:blip r:embed="rId6"/></w:drawing></w:r></w:p>`),
+      'word/document.xml': doc(
+        para('앞') + `<w:p><w:r><w:drawing><a:blip r:embed="rId6"/></w:drawing></w:r></w:p>`,
+      ),
       'word/_rels/document.xml.rels':
         `<?xml version="1.0"?><Relationships xmlns="urn:rel"><Relationship Id="rId6" Type="urn:x/image" Target="media/image1.png"/></Relationships>`,
       'word/media/image1.png': PNG,
     });
     const ex = await docxExtractor.extract(zip, { extractImages: false });
     expect(ex.images).toEqual([]);
+  });
+
+  it('텍스트가 없고 그림만 있으면 DOC_NO_TEXT 다', async () => {
+    // 의도된 동작이다. 텍스트가 0 이면 인용 [p.N] 이 가리킬 자리도, RAG 가 색인할 것도,
+    // 요약이 근거로 삼을 것도 없다. PDF 의 PDF_NO_TEXT 와 같은 판단이며, PDF 에 있는 OCR
+    // 폴백은 DOCX 에 없다(P1 범위 밖). 사용자는 "텍스트가 없다"는 명확한 안내를 받는다.
+    const zip = zipOf({
+      'word/document.xml': doc(`<w:p><w:r><w:drawing><a:blip r:embed="rId6"/></w:drawing></w:r></w:p>`),
+      'word/_rels/document.xml.rels':
+        `<?xml version="1.0"?><Relationships xmlns="urn:rel"><Relationship Id="rId6" Type="urn:x/image" Target="media/image1.png"/></Relationships>`,
+      'word/media/image1.png': PNG,
+    });
+    await expect(docxExtractor.extract(zip, {})).rejects.toThrowError(
+      expect.objectContaining({ code: 'DOC_NO_TEXT' }),
+    );
   });
 
   it('document.xml 이 없으면 DOC_CORRUPT 다', async () => {
@@ -1209,7 +1229,7 @@ export const docxExtractor: Extractor = {
 - [ ] **Step 4: 테스트가 통과하는지 확인**
 
 Run: `npx vitest run src/renderer/lib/extract/__tests__/docx.test.ts`
-Expected: PASS (11 tests)
+Expected: PASS (13 tests)
 
 - [ ] **Step 5: 커밋**
 
@@ -1897,7 +1917,11 @@ export function resolveExtractor(zip: ZipIndex): Extractor | null {
       return;
     }
     if (!hasZipMagic(head)) {
-      store.setError({ code: 'DOC_UNSUPPORTED', message: t('doc.unsupported', { list: SUPPORTED_LABEL }) } as AppError);
+      // 여기 도달했다는 것은 **확장자는 지원 포맷인데 내용이 아니라는** 뜻이다 — 진입 게이트
+      // 5곳이 확장자를 앞에서 거르므로 이 지점의 확장자는 항상 지원 목록 안이다.
+      // 그러므로 "지원하지 않는 형식"이 아니라 손상/불일치로 안내해야 정확하다.
+      // (`fake.pdf` 에 쓰레기를 넣고 "지원 형식: PDF" 라고 답하면 사용자는 "내 건 .pdf 인데?" 가 된다.)
+      store.setError({ code: 'DOC_CORRUPT', message: t('doc.corrupt') } as AppError);
       return;
     }
     try {
@@ -2121,10 +2145,11 @@ git commit -m "feat: unitKind 를 세션·매니페스트·탭 형제 셋에 전
 
 ---
 
-## Task 12: 인용 라벨 (`formatPageLabel` + i18n + `CitationButton`)
+## Task 12: 인용 라벨 (`formatUnitLabel` + i18n + `CitationButton`)
 
 **Files:**
-- Modify: `src/renderer/lib/citation.ts:269` (`formatPageLabel`)
+- Modify: `src/renderer/lib/citation.ts` (표시용 `formatUnitLabel` 신설 + 기존 함수를 `formatPromptPageLabel` 로 개명)
+- Modify: `src/renderer/lib/use-qa.ts` (개명 반영 — 호출부 2곳)
 - Modify: `src/renderer/lib/i18n.ts` (신규 키 3쌍 + 에러 문구 4쌍)
 - Modify: `src/renderer/components/CitationButton.tsx`
 - Modify: `src/shared/__tests__/source-scan.test.ts` (라벨 가드 추가)
@@ -2132,7 +2157,7 @@ git commit -m "feat: unitKind 를 세션·매니페스트·탭 형제 셋에 전
 
 **Interfaces:**
 - Consumes: Task 11 `openTabs[].unitKind` · `PdfDocument.unitKind`
-- Produces: `formatPageLabel(page: number | undefined, unitKind?: UnitKind): string`
+- Produces: `formatUnitLabel(page: number | undefined, unitKind?: UnitKind): string`
 
 **배경:** AI 프롬프트는 건드리지 않는다. 모델은 계속 `[p.N]` 을 출력하고 `CITATION_REGEX` 도 그대로다. **교차문서 인용은 대상 탭의 `unitKind`** 를 써야 한다 — PPTX 를 인용하는데 활성 문서가 PDF 라고 `p.3` 이 되면 안 된다.
 
@@ -2141,31 +2166,31 @@ git commit -m "feat: unitKind 를 세션·매니페스트·탭 형제 셋에 전
 `src/renderer/lib/__tests__/citation.test.ts` 끝에 추가:
 
 ```ts
-import { formatPageLabel } from '../citation';
+import { formatUnitLabel } from '../citation';
 import { useAppStore } from '../store';
 
-describe('formatPageLabel — 표시 라벨만 포맷별로 갈린다', () => {
+describe('formatUnitLabel — 표시 라벨만 포맷별로 갈린다', () => {
   beforeEach(() => { useAppStore.setState({ uiLanguage: 'ko' }); });
 
   it('기본(page)은 종전과 같다', () => {
-    expect(formatPageLabel(3, 'page')).toBe('p.3');
-    expect(formatPageLabel(3)).toBe('p.3');
+    expect(formatUnitLabel(3, 'page')).toBe('p.3');
+    expect(formatUnitLabel(3)).toBe('p.3');
   });
 
   it('슬라이드와 장은 한국어 라벨이다', () => {
-    expect(formatPageLabel(3, 'slide')).toBe('슬라이드 3');
-    expect(formatPageLabel(3, 'chapter')).toBe('3장');
+    expect(formatUnitLabel(3, 'slide')).toBe('슬라이드 3');
+    expect(formatUnitLabel(3, 'chapter')).toBe('3장');
   });
 
   it('영어 UI 에서는 영어 라벨이다', () => {
     useAppStore.setState({ uiLanguage: 'en' });
-    expect(formatPageLabel(3, 'slide')).toBe('Slide 3');
-    expect(formatPageLabel(3, 'chapter')).toBe('Ch. 3');
-    expect(formatPageLabel(3, 'page')).toBe('p.3');
+    expect(formatUnitLabel(3, 'slide')).toBe('Slide 3');
+    expect(formatUnitLabel(3, 'chapter')).toBe('Ch. 3');
+    expect(formatUnitLabel(3, 'page')).toBe('p.3');
   });
 
   it('페이지가 없으면 빈 문자열이다 (기존 동작 유지)', () => {
-    expect(formatPageLabel(undefined, 'slide')).toBe('');
+    expect(formatUnitLabel(undefined, 'slide')).toBe('');
   });
 });
 ```
@@ -2173,7 +2198,7 @@ describe('formatPageLabel — 표시 라벨만 포맷별로 갈린다', () => {
 - [ ] **Step 2: 테스트가 실패하는지 확인**
 
 Run: `npx vitest run src/renderer/lib/__tests__/citation.test.ts`
-Expected: FAIL — `formatPageLabel` 이 두 번째 인자를 받지 않는다
+Expected: FAIL — `formatUnitLabel` 이 아직 없다
 
 - [ ] **Step 3: i18n 키 추가**
 
@@ -2201,9 +2226,23 @@ Expected: FAIL — `formatPageLabel` 이 두 번째 인자를 받지 않는다
   },
 ```
 
-- [ ] **Step 4: `formatPageLabel` 구현**
+- [ ] **Step 4: 표시용 `formatUnitLabel` 신설 + 기존 함수 개명**
 
-`src/renderer/lib/citation.ts:269` 의 `formatPageLabel` 을 교체한다:
+> ⚠️ **계획 결함 정정(Task 12 착수 시 발견).** 초안은 기존 `formatPageLabel` 을 unitKind·i18n
+> 대상으로 "교체"하라고 했는데, 그 함수는 **표시 함수가 아니다.** `[p.5]` 처럼 대괄호까지 붙여
+> 반환하고, 유일한 프로덕션 소비자인 `use-qa.ts:510,676` 이 그 출력을 **AI 프롬프트 컨텍스트에
+> 주입**한다. LLM 이 라벨을 그대로 베껴 쓰고 `CITATION_REGEX` 가 그것을 되읽는 왕복 계약이며,
+> `citation-roundtrip.test.ts` 가 존재하는 이유가 바로 그 계약이다.
+> 초안대로 했다면 프롬프트에 `[슬라이드 3]` 이 들어가고 → LLM 이 그대로 응답 →
+> 정규식 매칭 실패 → **모든 Q&A 답변의 인용이 조용히 평문으로 전락**한다.
+> 이름이 거짓말을 하고 있었다. 그래서 둘을 갈라놓는다.
+
+**① 기존 함수를 `formatPromptPageLabel` 로 개명한다** — 동작은 한 글자도 바꾸지 않는다.
+`use-qa.ts` 호출부 2곳과 `citation.test.ts` · `citation-roundtrip.test.ts` 의 참조를 함께 고친다.
+개명 이유를 함수 주석에 남긴다: 이 값은 프롬프트로 나가 LLM 이 되돌려주고 `CITATION_REGEX` 가
+재매칭하므로 **언제나 ASCII `[p.N]`** 이어야 하며, 언어·단위 종류에 따라 달라지면 안 된다.
+
+**② 표시 전용 함수를 새로 만든다** — 대괄호 없이 라벨만 낸다(대괄호는 `CitationButton` 이 붙인다):
 
 ```ts
 /**
@@ -2213,7 +2252,7 @@ Expected: FAIL — `formatPageLabel` 이 두 번째 인자를 받지 않는다
  * 여기를 거치지 않고 'p.' 를 조립하면 source-scan 가드가 실패한다 — 표시 지점은 검색 스니펫·
  * 마인드맵·StatusBar 등에 흩어져 있어서, 열거하면 사각이 생긴다(QA33 I3).
  */
-export function formatPageLabel(page?: number, unitKind: UnitKind = 'page'): string {
+export function formatUnitLabel(page?: number, unitKind: UnitKind = 'page'): string {
   if (page === undefined || !Number.isFinite(page)) return '';
   return t(`citation.unit.${unitKind}`, { n: String(page) });
 }
@@ -2230,8 +2269,8 @@ export function formatPageLabel(page?: number, unitKind: UnitKind = 'page'): str
   // ... targetTab 결정 이후
   const unitKind = (isCrossDoc ? targetTab?.unitKind : activeUnitKind) ?? 'page';
   const label = isCrossDoc && docName
-    ? `[${docName} ${formatPageLabel(page, unitKind)}]`
-    : `[${formatPageLabel(page, unitKind)}]`;
+    ? `[${docName} ${formatUnitLabel(page, unitKind)}]`
+    : `[${formatUnitLabel(page, unitKind)}]`;
 ```
 
 - [ ] **Step 6: 라벨 가드 추가**
@@ -2239,7 +2278,7 @@ export function formatPageLabel(page?: number, unitKind: UnitKind = 'page'): str
 `src/shared/__tests__/source-scan.test.ts` 에 추가한다:
 
 ```ts
-describe("인용 라벨은 formatPageLabel 밖에서 조립하지 않는다", () => {
+describe("인용 라벨은 formatUnitLabel 밖에서 조립하지 않는다", () => {
   const ALLOWED = new Set([
     'src/renderer/lib/citation.ts',
     'src/renderer/lib/i18n.ts',
@@ -2256,7 +2295,7 @@ describe("인용 라벨은 formatPageLabel 밖에서 조립하지 않는다", ()
         if (/['"`]p\.\s*(\$\{|["'`+])/.test(line)) offenders.push(`${norm}:${i + 1}`);
       }
     }
-    expect(offenders, '라벨은 formatPageLabel 을 거친다').toEqual([]);
+    expect(offenders, '라벨은 formatUnitLabel 을 거친다').toEqual([]);
   });
 });
 ```
@@ -2264,7 +2303,7 @@ describe("인용 라벨은 formatPageLabel 밖에서 조립하지 않는다", ()
 - [ ] **Step 7: 전체 테스트**
 
 Run: `npx vitest run`
-Expected: PASS. 라벨 가드가 잡은 자리를 전부 `formatPageLabel` 로 바꾼다.
+Expected: PASS. 라벨 가드가 잡은 자리를 전부 `formatUnitLabel` 로 바꾼다.
 
 - [ ] **Step 8: Task 11 Step 6 의 뮤테이션 재확인**
 
@@ -2384,7 +2423,7 @@ Expected: FAIL — `Failed to resolve import "../DocTextViewer"`
 ```tsx
 import { useEffect, useRef } from 'react';
 import { useAppStore } from '../lib/store';
-import { formatPageLabel } from '../lib/citation';
+import { formatUnitLabel } from '../lib/citation';
 // 원문은 신뢰할 수 없는 문서에서 온 텍스트다. 에러 경계와 안전 컴포넌트가 붙은 SafeMarkdown 을
 // 쓴다(markdown-renderer 의 기본 내보내기는 경계 없이 raw 렌더한다).
 import { SafeMarkdown } from '../lib/safe-markdown';
@@ -2432,7 +2471,7 @@ export function DocTextViewerPanel() {
           <section
             key={page}
             id={`unit-${page}`}
-            aria-label={formatPageLabel(page, unitKind)}
+            aria-label={formatUnitLabel(page, unitKind)}
             className={`mb-6 scroll-mt-2 rounded-lg border p-3 transition-colors ${
               isTarget
                 ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
@@ -2440,7 +2479,7 @@ export function DocTextViewerPanel() {
             }`}
           >
             <h3 className="mb-2 text-xs font-semibold text-gray-600 dark:text-gray-400">
-              {formatPageLabel(page, unitKind)}
+              {formatUnitLabel(page, unitKind)}
             </h3>
             <SafeMarkdown content={text} />
           </section>

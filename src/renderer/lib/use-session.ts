@@ -490,6 +490,7 @@ async function doPersistCurrentSession(flush = false): Promise<void> {
       pageTexts: doc.pageTexts,
       chapters: doc.chapters,
       isOcr: doc.isOcr,
+      unitKind: doc.unitKind,
       imagesSkipped: doc.imagesSkipped,
       // QA27(A-Important): 이미지가 **있었다는 사실**을 함께 남긴다 — 복원 문서는 images:[] 라
       // imagesSkipped 만으로는 텍스트-only PDF 와 구분되지 않는다(types/index.ts 주석 참조).
@@ -513,6 +514,7 @@ async function doPersistCurrentSession(flush = false): Promise<void> {
       embedModel,
       embedDim,
       chunkCount: chunkMeta.length,
+      unitKind: doc.unitKind,
     };
     // QA21(C-MED): 열린 탭의 docHash 를 함께 보내 LRU evict 에서 제외(pin)한다. 비활성 탭의
     // 요약·Q&A 는 메모리에 없고 디스크 세션에만 있어(탭 전환 시 setSummary(null)/clearQa()),

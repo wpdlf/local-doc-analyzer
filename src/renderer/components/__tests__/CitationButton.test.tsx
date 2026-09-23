@@ -239,6 +239,29 @@ describe('CitationButton — 교차 문서 인용 (multi-doc Phase 2)', () => {
     expect(el.getAttribute('aria-disabled')).toBe('true');
   });
 
+  // fix-round1(코디네이터 지적, Important 1): unitKind **선택 자체**가 무보호였다 — 이 파일의
+  // 기존 테스트는 활성 문서·탭을 전부 unitKind 없이 만들어, `?? 'page'` 가 차이를 흡수한다.
+  // 그래서 CitationButton.tsx 의 `(isCrossDoc ? targetTab?.unitKind : activeUnitKind)` 를
+  // 그냥 `activeUnitKind` 로 바꿔도(대상 탭 대신 항상 활성 문서 것을 쓰도록 되돌려도) 전체
+  // 스위트가 그대로 그린이었다 — Task11 이 이미 지켜둔 "탭이 unitKind 를 싣는다" 는 배선과,
+  // 이 태스크가 지켜야 할 "라벨이 어느 쪽 unitKind 를 따르는가" 는 서로 다른 이음매(seam)다.
+  // 활성 문서(PDF, unitKind 없음=page)와 대상 탭(PPTX, unitKind:'slide')을 서로 다르게 줘서
+  // 라벨이 **대상 탭**을 따르는지 직접 고정한다 — 실패 시나리오: PDF 를 보다가 컬렉션
+  // 질문 답변이 슬라이드 덱을 인용하면 버튼이 `[Deck.pptx p.3]` 이 아니라
+  // `[Deck.pptx 슬라이드 3]` 이어야 한다.
+  it('교차 문서 라벨은 활성 문서가 아니라 대상 탭의 unitKind 를 따른다', () => {
+    useAppStore.setState({
+      openTabs: [
+        { filePath: '/d/Alpha.pdf', fileName: 'Alpha.pdf', pageCount: 5, docHash: 'a'.repeat(64) },
+        { filePath: '/d/Deck.pptx', fileName: 'Deck.pptx', pageCount: 9, docHash: 'd'.repeat(64), unitKind: 'slide' },
+      ],
+    });
+    // 활성 문서(Alpha.pdf)는 unitKind 미설정 — PDF 는 'page' 로 취급된다(활성 문서 것을
+    // 그대로 썼다면 이 인용도 'p.3' 이 됐을 것).
+    render(<CitationButton page={3} docName="Deck.pptx" />);
+    expect(screen.getByText('[Deck.pptx 슬라이드 3]')).toBeTruthy();
+  });
+
   // QA21(D-MED): 라벨은 sanitizeDocLabelName 을 거친 값인데 해석은 원본 fileName 과 정확 일치를
   // 요구해, 파일명에 파서 예약문자가 있으면 **열려 있는 문서로의 인용이 전부 사망**했다.
   it('파일명에 예약문자([ ])가 있어도 sanitize 된 라벨로 탭을 찾는다', async () => {

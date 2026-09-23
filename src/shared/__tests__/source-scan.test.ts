@@ -12,6 +12,20 @@ import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { stripJsComments, stripYamlComments, stripHtmlComments, readGeneratedText } from './helpers/source-scan';
 
+/**
+ * 소스 트리를 재귀 순회해 패턴에 맞는 파일을 모은다 — 여러 스캔 가드가 공유하는 단일 워커.
+ * 가드마다 따로 두면 그 자체가 이 저장소 최다 결함 형태(형제 누락)를 반복하는 셈이다.
+ */
+function walkSourceFiles(dir: string, pattern: RegExp): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(resolve(dir), { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkSourceFiles(p, pattern));
+    else if (pattern.test(entry.name)) out.push(p);
+  }
+  return out;
+}
+
 describe('stripJsComments — 주석은 지우고 코드는 남긴다', () => {
   it('줄 주석과 블록 주석을 지운다', () => {
     const s = stripJsComments('const a = 1; // 주석 안의 secretToken\n/* 여러 줄\n secretToken */\nconst b = 2;');
@@ -173,15 +187,6 @@ x
 describe('소스 스캔 가드는 전부 공용 제거기를 쓴다 (열거 금지)', () => {
   const SRC_ROOT = resolve(import.meta.dirname, '../..');
 
-  function walk(dir: string, out: string[] = []): string[] {
-    for (const e of readdirSync(dir, { withFileTypes: true })) {
-      const p = join(dir, e.name);
-      if (e.isDirectory()) walk(p, out);
-      else if (/\.(test|spec)\.tsx?$/.test(e.name)) out.push(p);
-    }
-    return out;
-  }
-
   /**
    * 소스(.ts/.tsx/.mts/.yml)를 텍스트로 읽는 테스트인가 — 경로 리터럴 형태와 readdir 필터 형태 둘 다.
    * QA30(D2): `.mts` 를 추가했다. `vitest.config.mts` 를 읽는 가드(coverage-drift.test)가
@@ -208,7 +213,7 @@ describe('소스 스캔 가드는 전부 공용 제거기를 쓴다 (열거 금�
   // derived() 기계도 원본을 읽는다. 자기 자신을 파생 집합에 넣으면 그 read 사이트들이 위반으로
   // 잡힌다(QA31 에서 실제로 밟았다). 예외는 여기 한 곳뿐이며 이름으로 못박는다.
   const META_GUARD = 'shared/__tests__/source-scan.test.ts';
-  const derived = () => walk(SRC_ROOT)
+  const derived = () => walkSourceFiles(SRC_ROOT, /\.(test|spec)\.tsx?$/)
     .filter((f) => rel(f) !== META_GUARD)
     .filter((f) => scansSource(readFileSync(f, 'utf8')));
 
@@ -271,5 +276,185 @@ describe('readGeneratedText — 소스가 아님을 확장자로 증명한 읽�
     const p = join(mkdtempSync(join(tmpdir(), 'src-scan-')), 'step-summary.md');
     writeFileSync(p, '# 요약\n');
     expect(readGeneratedText(p)).toBe('# 요약\n');
+  });
+});
+
+/** 경로에 `__tests__` 세그먼트가 있는가 — 테스트 픽스처는 파일명·바이트를 값으로 다뤄도 된다. */
+function isTestPath(file: string): boolean {
+  return /(^|[\\/])__tests__[\\/]/.test(file);
+}
+
+/**
+ * fix-round1(item1): 스캔 대상이 조용히 좁혀져도 두 신규 가드가 그린으로 남는 문제의 대책.
+ * `walkSourceFiles('src', …)` 를 `'src/shared'` 처럼 좁혀도 offender 목록은 여전히 빈 채라
+ * 통과한다 — 이 저장소에 이미 출시된 적 있는 실패 형태(스캔 범위 붕괴)다. 개수 하한만으로는
+ * "src/renderer 전체" 처럼 큰 단일 디렉터리로 좁혀져도 통과하므로, main·renderer 대표성을
+ * 함께 요구한다(§263 의 read-사이트 하한과 같은 모양).
+ */
+function assertScanIsWide(files: readonly string[]): void {
+  const rel = files.map((f) => f.replace(/\\/g, '/'));
+  expect(rel.length, '스캔 대상이 너무 적다 — walkSourceFiles 범위가 좁혀진 것은 아닌지 확인').toBeGreaterThan(50);
+  expect(rel.some((f) => f.startsWith('src/main/')), 'src/main 이 스캔 대상에 없다 — 범위가 좁혀졌다').toBe(true);
+  expect(rel.some((f) => f.startsWith('src/renderer/')), 'src/renderer 가 스캔 대상에 없다 — 범위가 좁혀졌다').toBe(true);
+  // fix I1: 파일-타입 패턴이 `.tsx` 를 빼도 위 3개 단언은 여전히 초록이었다(렌더러 컴포넌트가
+  // 전부 .tsx 라 스캔에서 통째로 빠져도 안 걸림). `.tsx` 대표성을 직접 못박는다.
+  expect(rel.some((f) => f.endsWith('.tsx')), '.tsx 가 스캔 대상에 없다 — 파일-타입 패턴이 좁혀졌다').toBe(true);
+}
+
+describe('확장자 리터럴은 document-formats.ts 밖에 두지 않는다', () => {
+  /**
+   * 진입 게이트가 흩어져 있으면 포맷이 늘 때 한 곳이 안 따라간다. 새 게이트가 생기는 순간
+   * 여기서 실패하게 만들어 지점을 **도출**한다(열거하면 사각이 생긴다 — QA33 I3).
+   *
+   * Task9(controller ruling 2): `__tests__` 는 스캔에서 뺀다. 테스트는 파일명을 값으로
+   * 구성해도 정당하다(예: 긴 파일명 회귀 픽스처 `'x'.repeat(200) + '.pdf'`) — 프로덕션
+   * 경로는 여전히 전수 스캔한다.
+   */
+  // fix I1: '__tests__/document-formats.test.ts' 와 '__tests__/source-scan.test.ts' 는
+  // isTestPath() 가 이미 걸러내서(아래 continue) 여기 있어도 절대 참조되지 않는 죽은 항목이라
+  // 지운다 — 실제로 없는 예외 범위를 광고하고 있었다.
+  const ALLOWED = new Set([
+    'src/shared/document-formats.ts',
+  ]);
+  // 내보내기 저장 다이얼로그(file:save / file:export-pdf)는 **출력** 확장자라 이 가드의 대상이
+  // 아니다. 핸들러 단위로 스코프한다 — 이전엔 같은 줄에 키워드가 있어야 했는데, 필터 배열과
+  // 확장자 비교가 다른 줄에 있는 file:export-pdf 핸들러(main/index.ts)에서 실패했다.
+  //
+  // fix-round1(item2): 스코프를 **닫아야** 한다. 이전 구현은 "다음 ipcMain.handle(" 이 나올
+  // 때만 currentHandler 를 해제해서, file:export-pdf 의 닫는 `});` 부터 다음 핸들러 선언
+  // 전까지의 **모듈 레벨 코드**(예: ALLOWED_EXTERNAL_HOSTS 상수)까지 면제 구간에 들어갔다.
+  // 더 심각하게는, 그 틈에 `ipcMain.on('file:import-path', …)` 처럼 `.handle` 이 아닌 형태의
+  // 새 게이트가 추가되면 HANDLER_DECL 에 안 걸려 **영원히 면제**된 채로 남는다 — 이 가드가
+  // 막으려는 여섯 번째 게이트가 정확히 이 구멍에 빠진다.
+  //
+  // 이 파일의 모든 `ipcMain.handle(` 은 2-스페이스 들여쓰기(레지스터 함수 최상위 문)로 시작해
+  // 콜백이 끝나는 지점의 `  });`(같은 2-스페이스)로 정확히 1:1 닫힌다(내부 중첩 블록은 전부
+  // 그보다 깊게 들여써진다 — 실측: 40개 핸들러 전부 이 규칙으로 정확히 짝지어졌다). 그
+  // 닫는 줄을 만나면 currentHandler 를 해제해 스코프를 닫는다.
+  const OUTPUT_ONLY_HANDLERS = new Set(['file:save', 'file:export-pdf']);
+  const HANDLER_DECL = /^ {2}ipcMain\.handle\(\s*['"]([\w:-]+)['"]/;
+  const HANDLER_CLOSE = /^ {2}\}\);\s*$/;
+
+  it("'.pdf'/'.docx' 리터럴이 단일 출처 밖에 없다", () => {
+    const scanned = walkSourceFiles('src', /\.(ts|tsx)$/);
+    assertScanIsWide(scanned);
+    const offenders: string[] = [];
+    for (const file of scanned) {
+      const rel = file.replace(/\\/g, '/');
+      if (ALLOWED.has(rel) || isTestPath(file)) continue;
+      const src = stripJsComments(readFileSync(file, 'utf-8'));
+      let currentHandler: string | null = null;
+      for (const [i, line] of src.split('\n').entries()) {
+        const handlerMatch = line.match(HANDLER_DECL);
+        if (handlerMatch?.[1]) currentHandler = handlerMatch[1];
+        const isOutputOnly = currentHandler !== null && OUTPUT_ONLY_HANDLERS.has(currentHandler);
+        if (HANDLER_CLOSE.test(line)) currentHandler = null;
+        if (isOutputOnly) continue;
+        if (/['"`]\.?(pdf|docx)['"`]/i.test(line)) offenders.push(`${file}:${i + 1}`);
+      }
+    }
+    expect(offenders, '확장자는 document-formats.ts 에서만 안다').toEqual([]);
+  });
+});
+
+describe('PDF/CFB 매직바이트는 document-formats.ts 밖에 두지 않는다', () => {
+  /**
+   * Task8 이 찾은 사각: pdf-parser.ts 의 `%PDF-` 검사가 16진 배열([0x25, 0x50, 0x44, 0x46, ...])
+   * 이라 위 문자열 리터럴 가드에 안 걸린다. 같은 시퀀스가 또 다른 진입 게이트를 단일 출처
+   * 밖에 만드는 것을 막는다(App.tsx 의 DOM 드롭 매직바이트 검사가 실제로 이 형태였다 — Task9).
+   *
+   * Task10: 매직 검사가 document-open.ts 로 옮겨지며 hasPdfMagic() 기반 sniff 로 대체됐다 —
+   * pdf-parser.ts 의 한시적 허용을 제거한다.
+   *
+   * Task10 fix round1(Important 4): CFB 컨테이너 매직([0xd0, 0xcf, 0x11, 0xe0, ...])도 같은
+   * 사각이 있었다 — document-open.ts 가 이 시퀀스를 인라인 배열로 갖고 있었는데(암호 걸린
+   * OOXML 판별용) 위 정규식이 %PDF 시퀀스만 봐서 걸리지 않았다. hasCfbMagic() 신설과 함께
+   * 가드도 두 시퀀스 모두를 본다.
+   */
+  const ALLOWED = new Set([
+    'src/shared/document-formats.ts',
+  ]);
+  const PDF_MAGIC_BYTES = /0x25\s*,\s*0x50\s*,\s*0x44\s*,\s*0x46/i;
+  const CFB_MAGIC_BYTES = /0xd0\s*,\s*0xcf\s*,\s*0x11\s*,\s*0xe0/i;
+
+  it('0x25,0x50,0x44,0x46 (%PDF) · 0xd0,0xcf,0x11,0xe0 (CFB) 바이트열이 단일 출처 밖에 없다', () => {
+    const scanned = walkSourceFiles('src', /\.(ts|tsx)$/);
+    assertScanIsWide(scanned);
+    const offenders: string[] = [];
+    for (const file of scanned) {
+      const rel = file.replace(/\\/g, '/');
+      if (ALLOWED.has(rel) || isTestPath(file)) continue;
+      const src = stripJsComments(readFileSync(file, 'utf-8'));
+      for (const [i, line] of src.split('\n').entries()) {
+        if (PDF_MAGIC_BYTES.test(line) || CFB_MAGIC_BYTES.test(line)) offenders.push(`${file}:${i + 1}`);
+      }
+    }
+    expect(offenders, 'PDF/CFB 매직바이트는 document-formats.ts 에서만 안다').toEqual([]);
+  });
+});
+
+describe('인용 표시 라벨은 formatUnitLabel 밖에서 조립하지 않는다 (Task12)', () => {
+  /**
+   * 이 가드는 **표시** 라벨(화면에 보이는 'p.3'/'슬라이드 3'/'3장')만 다룬다. 표시 지점은
+   * 검색 스니펫·마인드맵·StatusBar 등에 흩어져 있어 열거하면 사각이 생긴다(QA33 I3) —
+   * 그래서 위치를 나열하지 않고 소스 전체에서 'p.' 조립 패턴을 도출한다.
+   *
+   * `formatPromptPageLabel`(citation.ts) 은 이 가드가 잡아선 안 되는 **의도된 예외**다 — 그
+   * 반환값은 화면이 아니라 AI 프롬프트로 나가 LLM 이 되돌려주고 `CITATION_REGEX` 가 재매칭하는
+   * 값이라 언제나 ASCII `[p.N]` 이어야 한다(citation.ts 함수 주석 참조, citation-roundtrip.test.ts
+   * 가 그 계약을 별도로 고정한다). 이 예외를 정규식을 헐겁게 써서 우연히 비켜가게 하지 않고,
+   * 파일 단위 ALLOWED 로 **명시**해 둔다 — citation.ts 안에 또 다른 위반이 생겨도 파일째
+   * 면제되는 트레이드오프는 있지만, 그 파일은 이 가드가 지키려는 개념(단일 통로) 자체를
+   * 정의하는 곳이라 정당한 예외다. i18n.ts 는 번역 사전 값 자체(`'p.{n}'` 등)가 이 파일에
+   * 있어야 하므로 함께 면제한다.
+   */
+  const ALLOWED = new Set([
+    'src/renderer/lib/citation.ts',
+    'src/renderer/lib/i18n.ts',
+  ]);
+
+  /**
+   * `p.${n}` (대괄호로 감싸인 `[p.${n}]` 포함) / `'p.' + n` / `"p." + n` 형태를 모두 잡는다.
+   * 원안(따옴표가 'p.' 바로 앞에 와야 함, `/['"`]p\.\s*(\$\{|["'`+])/`)은 `` `[p.${n}]` ``
+   * 처럼 앞에 다른 문자(`[`)가 끼면 못 잡는 사각이 있었다(실측: use-summarize.ts 의 기존
+   * 프롬프트 라벨 조립이 원안 정규식으로는 안 걸렸다 — fix-round1 이전 report 참조) — 그
+   * 사각을 닫으려고 따옴표 인접 요구를 없앴다.
+   *
+   * 좌측 경계 `(?<![A-Za-z0-9_])`: 위 완화의 대가로 `` `group.${x}` ``/`` `top.${i}` ``/
+   * `` `step.${n}` `` 처럼 "p." 로 **끝나는 식별자**(group/top/step)까지 오탐할 여지가
+   * 생겼다 — "p." 바로 앞이 영숫자/밑줄이면(=식별자의 일부) 배제한다. fix-round1(코디네이터
+   * 지적, Minor 3): 지금은 이 형태를 실제로 쓰는 코드가 없어 무해했지만, 오탐은 "시끄러운
+   * 실패"가 아니라 가드를 무시하게 만드는 소음이라 방어해 둔다.
+   */
+  const P_LABEL_RE = /(?<![A-Za-z0-9_])p\.\s*(\$\{|['"`]\s*\+|\+\s*['"`])/;
+
+  it("'p.' 템플릿 리터럴/문자열 조립이 단일 통로 밖에 없다", () => {
+    const scanned = walkSourceFiles('src', /\.tsx?$/);
+    assertScanIsWide(scanned);
+    const offenders: string[] = [];
+    for (const file of scanned) {
+      const norm = file.replace(/\\/g, '/');
+      if (ALLOWED.has(norm) || isTestPath(file)) continue;
+      const src = stripJsComments(readFileSync(file, 'utf-8'));
+      for (const [i, line] of src.split('\n').entries()) {
+        if (P_LABEL_RE.test(line)) offenders.push(`${norm}:${i + 1}`);
+      }
+    }
+    expect(offenders, '표시 라벨은 formatUnitLabel 을 거친다').toEqual([]);
+  });
+
+  /**
+   * fix-round1(코디네이터 지적, Important 2): 위 본 가드는 "패턴이 걸린 자리가 0개" 만
+   * 확인한다 — 패턴 자체가 조용히 원안(따옴표 인접 요구)으로 되돌아가도 초록으로 남는다.
+   * 그러면 이 태스크가 처음에 발견한 사각(대괄호로 감싼 `[p.${n}]` 을 못 잡음)이 말없이
+   * 부활한다. 패턴이 실제로 그 형태를 잡는지를 **양성 샘플**로 직접 고정한다.
+   */
+  it('가드 패턴 자체가 대괄호로 감싼 [p.${n}] / [${doc} p.${n}] 형태를 실제로 잡는다', () => {
+    expect(P_LABEL_RE.test('const label = `[p.${page}]`;')).toBe(true);
+    expect(P_LABEL_RE.test('const label = `[${docName} p.${page}]`;')).toBe(true);
+    // 좌측 경계 회귀 가드: "p." 로 끝나는 식별자는 오탐하지 않는다(fix-round1 Minor 3).
+    expect(P_LABEL_RE.test('const label = `group.${x}`;')).toBe(false);
+    expect(P_LABEL_RE.test('const label = `top.${i}`;')).toBe(false);
+    expect(P_LABEL_RE.test('const label = `step.${n}`;')).toBe(false);
   });
 });

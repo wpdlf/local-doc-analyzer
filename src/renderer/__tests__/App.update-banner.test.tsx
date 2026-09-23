@@ -36,7 +36,7 @@ vi.mock('../lib/use-summarize', () => ({
 vi.mock('../lib/use-qa', () => ({ useRagBuilder: () => undefined }));
 vi.mock('../lib/use-session', () => ({ useSessionPersistence: () => undefined }));
 vi.mock('../lib/safe-markdown', () => ({ prefetchMarkdownRenderer: vi.fn() }));
-vi.mock('../lib/pdf-parser', () => ({ handlePdfData: vi.fn(), cancelPdfParse: vi.fn() }));
+vi.mock('../lib/document-open', () => ({ openDocumentData: vi.fn(), cancelDocumentParse: vi.fn() }));
 vi.mock('../assets/logo.png', () => ({ default: 'logo.png' }));
 
 /** main 이 방출하는 update 상태를 테스트가 직접 밀어 넣기 위한 콜백 홀더. */

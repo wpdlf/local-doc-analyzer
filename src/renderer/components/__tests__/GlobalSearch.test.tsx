@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 // GlobalSearch 행위 — persistSessions 게이트 / 검색 호출·결과 렌더 / 결과 없음 / 결과 클릭 시
-// openPath→handlePdfData / 하이라이트. handlePdfData 는 목 격리.
+// openPath→openDocumentData / 하이라이트. openDocumentData 는 목 격리.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
@@ -12,11 +12,11 @@ const M = vi.hoisted(() => ({
   search: vi.fn(),
   openPath: vi.fn(),
   restoreFromSession: vi.fn(() => Promise.resolve(false)),
-  handlePdfData: vi.fn(() => Promise.resolve()),
+  openDocumentData: vi.fn(() => Promise.resolve()),
   semantic: vi.fn(),
 }));
 
-vi.mock('../../lib/pdf-parser', () => ({ handlePdfData: M.handlePdfData }));
+vi.mock('../../lib/document-open', () => ({ openDocumentData: M.openDocumentData }));
 vi.mock('../../lib/tabs', () => ({ openFromSessionOnly: M.restoreFromSession }));
 vi.mock('../../lib/semantic-search', () => ({ searchSessionsSemantic: M.semantic }));
 
@@ -92,7 +92,7 @@ describe('GlobalSearch', () => {
     expect(status.textContent).toContain('2'); // "검색 결과 2건"
   });
 
-  it('결과 클릭 → file.openPath(filePath) + handlePdfData', async () => {
+  it('결과 클릭 → file.openPath(filePath) + openDocumentData', async () => {
     M.search.mockResolvedValue([result({})]);
     const user = userEvent.setup();
     render(<GlobalSearch />);
@@ -101,7 +101,7 @@ describe('GlobalSearch', () => {
     await waitFor(() => expect(screen.getByText(/lecture\.pdf/)).toBeTruthy());
     await user.click(screen.getByText(/lecture\.pdf/));
     expect(M.openPath).toHaveBeenCalledWith('/x/lecture.pdf');
-    await waitFor(() => expect(M.handlePdfData).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(M.openDocumentData).toHaveBeenCalledTimes(1));
   });
 
   it('결과 클릭 시 openPath 에러 → recent.openFail 배너', async () => {
@@ -114,7 +114,7 @@ describe('GlobalSearch', () => {
     await waitFor(() => expect(screen.getByText(/lecture\.pdf/)).toBeTruthy());
     await user.click(screen.getByText(/lecture\.pdf/));
     await waitFor(() => expect(useAppStore.getState().error?.code).toBe('PDF_PARSE_FAIL'));
-    expect(M.handlePdfData).not.toHaveBeenCalled();
+    expect(M.openDocumentData).not.toHaveBeenCalled();
   });
 
   it('의미 모드 전환 → searchSessionsSemantic 호출(키워드 search 미호출) + 결과 렌더', async () => {
@@ -236,7 +236,7 @@ describe('GlobalSearch', () => {
     await waitFor(() => expect(screen.getByText(/lecture\.pdf/)).toBeTruthy());
     await user.click(screen.getByText(/lecture\.pdf/));
     await waitFor(() => expect(useAppStore.getState().error?.code).toBe('PDF_PARSE_FAIL'));
-    expect(M.handlePdfData).not.toHaveBeenCalled();
+    expect(M.openDocumentData).not.toHaveBeenCalled();
   });
 });
 
@@ -264,7 +264,7 @@ describe('GlobalSearch — 원본 파일 부재 시 세션 폴백 (QA26)', () =>
     );
     expect(useAppStore.getState().error).toBeNull();
     expect(useAppStore.getState().notice?.message).toBeTruthy();
-    expect(M.handlePdfData).not.toHaveBeenCalled();
+    expect(M.openDocumentData).not.toHaveBeenCalled();
   });
 
   it('파일도 세션도 없으면 그때 에러 배너를 띄운다', async () => {

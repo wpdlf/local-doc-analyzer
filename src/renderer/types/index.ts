@@ -1,3 +1,6 @@
+import type { UnitKind } from '../lib/extract/types';
+export type { UnitKind };
+
 // 페이지별 추출 이미지
 export interface PageImage {
   pageIndex: number;
@@ -61,6 +64,14 @@ export interface PdfDocument {
    * 표식(세션에 저장하지 않음 — 파싱 직후 1회 고지 용도).
    */
   imageBudgetExceeded?: boolean;
+  /**
+   * 단위의 성격. 표시 라벨만 갈린다(`[p.3]` / `[슬라이드 3]` / `[3장]`).
+   *
+   * 내부 표현은 언제나 정수 N 이다 — CITATION_REGEX·clampCitationPage·pageTexts·RAG 청크 메타가
+   * 전부 그 위에 서 있어서, 여기에 배열이나 문자열을 끼우면 계약이 번진다. 부재는 'page' 다
+   * (기존 PDF 문서·구버전 세션이 곧 그 값이므로 마이그레이션이 필요 없다).
+   */
+  unitKind?: UnitKind;
 }
 
 // 챕터 (페이지 기반 분할)
@@ -263,7 +274,14 @@ export type AppErrorCode =
   | 'COLLECTION_OPEN_FAIL'
   | 'COLLECTION_SAVE_FAIL'
   | 'COLLECTION_DELETE_FAIL'
-  | 'COLLECTION_SUMMARY_FAIL';
+  | 'COLLECTION_SUMMARY_FAIL'
+  // Task10: 비-PDF 문서(DOCX 등) 진입 경로의 전용 코드. PDF_* 재사용은 의미를 오도한다
+  // (예: DOC_ENCRYPTED 는 CFB 컨테이너 판별이지 PDF PasswordException 이 아니다).
+  | 'DOC_UNSUPPORTED'
+  | 'DOC_CORRUPT'
+  | 'DOC_ENCRYPTED'
+  | 'DOC_TOO_LARGE'
+  | 'DOC_NO_TEXT';
 
 export interface AppError {
   code: AppErrorCode;
@@ -301,6 +319,11 @@ export interface OpenTab {
    * 영속 세션에서 직접 복원하는 전환 fallback 의 키 (뷰어만 비활성, 분석은 전부 복원).
    */
   docHash?: string;
+  /**
+   * 단위의 성격. 교차문서 인용은 **대상 탭의** 값을 써야 한다 — 활성 문서 것을 쓰면 PPTX 를
+   * 인용하는데 활성 문서가 PDF 라고 `p.3` 이 되는 오류가 난다(Task 12 CitationButton).
+   */
+  unitKind?: UnitKind;
 }
 
 // ─── 다중 문서 컬렉션 Q&A (multi-doc Phase 2) ───
@@ -393,6 +416,8 @@ export interface PersistedSession {
   pageTexts: string[];
   chapters: Chapter[];
   isOcr?: boolean;
+  /** 단위의 성격. 부재는 'page' — 기존 PDF 세션이 곧 그 값이라 마이그레이션이 필요 없다. */
+  unitKind?: UnitKind;
   /**
    * QA26(C-Medium): 파싱 당시 이미지 추출을 스킵했다는 마커를 세션에도 싣는다.
    *
