@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, act } from '@testing-library/react';
 import { DocTextViewerPanel } from '../DocTextViewer';
 import { useAppStore } from '../../lib/store';
 
@@ -52,6 +52,24 @@ describe('DocTextViewerPanel', () => {
     useAppStore.setState({ citationTarget: { page: 2 } });
     render(<DocTextViewerPanel />);
     expect(spy).toHaveBeenCalled();
+  });
+
+  /**
+   * fix1(Minor 3): 첫 렌더 전에 대상을 지정하는 위 테스트만으로는 effect 의 deps 배열이
+   * `[citationTarget]` 이든 `[]` 이든 통과한다(마운트 시 1회는 항상 발화하므로). 실제로 두 번째
+   * 인용을 클릭해 대상이 바뀌는 경로를 재현해야 deps 누락(재스크롤 불능 회귀)을 잡는다.
+   */
+  it('마운트 후 citationTarget 이 다른 단위로 바뀌면 그 새 단위로 다시 스크롤한다', () => {
+    setDoc(['a', 'b', 'c']);
+    const scrolledIds: string[] = [];
+    window.HTMLElement.prototype.scrollIntoView = vi.fn(function (this: HTMLElement) {
+      scrolledIds.push(this.id);
+    });
+    useAppStore.setState({ citationTarget: { page: 1 } });
+    render(<DocTextViewerPanel />);
+    expect(scrolledIds).toEqual(['unit-1']);
+    act(() => { useAppStore.setState({ citationTarget: { page: 3 } }); });
+    expect(scrolledIds).toEqual(['unit-1', 'unit-3']);
   });
 
   it('배율을 글꼴 크기로 매핑한다', () => {

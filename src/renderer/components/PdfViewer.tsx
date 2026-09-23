@@ -8,10 +8,12 @@ import { loadPdfjs, isReReadablePath } from '../lib/pdf-parser';
 import { restoreCitationFocus } from '../lib/citation-focus';
 import { extractOutline, type OutlineNode } from '../lib/pdf-outline';
 import {
-  ZOOM_MIN, ZOOM_MAX, ZOOM_STEP_BUTTON, ZOOM_STEP_WHEEL,
-  stepZoom, composeRenderScale, formatZoomPercent, findScrollAnchor, scrollTopForAnchor,
+  ZOOM_MAX, ZOOM_STEP_BUTTON,
+  composeRenderScale, findScrollAnchor, scrollTopForAnchor,
   maxUsableZoom, scrollLeftForRatio,
 } from '../lib/viewer-zoom';
+import { useZoomControls, isEditableFocused } from '../lib/use-zoom-controls';
+import { ZoomControls } from './ZoomControls';
 
 /**
  * 배율 변경이 무거운 재렌더로 이어지기까지의 대기 (QA33 H4). 폭 변경 경로의 200ms 와 같은
@@ -80,21 +82,7 @@ interface PdfViewerProps {
 
 // 자동 fit 의 0.6~2.0 clamp 와 배율 합성은 lib/viewer-zoom.ts(composeRenderScale) 로 이동(v1.6.0).
 
-/**
- * 편집 요소에 포커스가 있는가 — window 레벨 단축키(Escape 닫기·Ctrl+배율)가 입력을 가로채지 않도록.
- * v0.18.5 L1: Shadow DOM 내부에 포커스가 있을 때 `document.activeElement` 는 shadow 호스트를
- * 반환하므로 shadowRoot.activeElement 를 재귀적으로 따라가 실제 포커스 element 를 찾는다.
- * (현재 코드에 shadow DOM 위젯은 없으나, 서드파티/네이티브 위젯 도입 대비 future-proof.)
- */
-function isEditableFocused(): boolean {
-  let active = document.activeElement as Element | null;
-  while (active?.shadowRoot?.activeElement) {
-    active = active.shadowRoot.activeElement;
-  }
-  if (!active) return false;
-  const tag = active.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (active as HTMLElement).isContentEditable;
-}
+// isEditableFocused: Ctrl+배율 핸들러와 공유하기 위해 lib/use-zoom-controls.ts 로 이동(Task13 fix1).
 // 렌더 lookahead 윈도우: 뷰포트 위/아래 1배 분 미리 렌더.
 const RENDER_ROOT_MARGIN = '100% 0px';
 // canvas 유지(LRU) 윈도우: 뷰포트 위/아래 2배 분까지 canvas 보존, 그 밖은 placeholder 로 해제.
@@ -140,11 +128,10 @@ export function PdfViewer({ pdfBytes, targetPage, jumpNonce = 0, onClose }: PdfV
   };
   // 마지막으로 렌더된 width — 미세한 변동(스크롤바 등)에 반복 재렌더 방지
   const lastRenderedWidthRef = useRef<number>(0);
-  // v1.6.0 수동 배율 — 앱 전체 하나(store, 재시작 후 유지). 렌더 effect 의존성이라 바뀌면 재렌더.
-  const zoom = useAppStore((s) => s.pdfViewerZoom);
-  const setZoom = useAppStore((s) => s.setPdfViewerZoom);
   // 직전 렌더의 배율 — 배율 변경(비율≠1)과 폭 변경·문서 교체(비율 1)를 정리 단계에서 구분한다.
-  const lastRenderedZoomRef = useRef<number>(zoom);
+  // (zoom 은 아래 useZoomControls 가 store 에서 읽으므로, 초기값은 store 를 직접 스냅샷한다 —
+  // 같은 렌더 패스 안에서 store 가 바뀌지 않으므로 값은 동일하다.)
+  const lastRenderedZoomRef = useRef<number>(useAppStore.getState().pdfViewerZoom);
   /**
    * QA33(I1·I2): 이 문서에서 **실제로 반영되는** 최대 배율. 큰 페이지(도면·A0)는 캔버스 면적
    * 상한에 먼저 걸리는데, 종전에는 배율만 계속 올라가 툴바가 "300%" 라고 주장하는 동안 캔버스는
@@ -152,6 +139,10 @@ export function PdfViewer({ pdfBytes, targetPage, jumpNonce = 0, onClose }: PdfV
    * 페이지 크기에서 도달 가능한 값을 구해 배율 자체를 거기서 멈춘다 — 숫자가 늘 참이 되도록.
    */
   const [maxZoom, setMaxZoom] = useState(ZOOM_MAX);
+  // v1.6.0 수동 배율 — 앱 전체 하나(store, 재시작 후 유지). Ctrl+휠·Ctrl+키 배선은
+  // DocTextViewer 와 공유하는 훅으로 뺐다(Task13 fix1) — maxZoom 은 이 문서의 캔버스 면적
+  // 상한(위 주석)에서 도출된 값을 그대로 넘긴다.
+  const { zoom, zoomBy, setZoom } = useZoomControls(containerRef, maxZoom);
   /**
    * QA33(H4): 렌더에 반영된 배율. `zoom` 은 즉시 바뀌어 툴바 숫자가 따라오지만, 무거운
    * 재렌더(전 슬롯 teardown + pdfjs 재렌더)는 디바운스한다. Ctrl+휠 한 제스처는 초당 수십 건이
@@ -164,18 +155,6 @@ export function PdfViewer({ pdfBytes, targetPage, jumpNonce = 0, onClose }: PdfV
     const id = setTimeout(() => setRenderZoom(zoom), ZOOM_RENDER_DEBOUNCE_MS);
     return () => clearTimeout(id);
   }, [zoom, renderZoom]);
-  const zoomBy = (direction: 1 | -1, step: number) => {
-    const next = stepZoom(useAppStore.getState().pdfViewerZoom, direction, step);
-    // 도달 불가능한 값으로는 올리지 않는다 — 올려 봐야 렌더는 그대로이고 숫자만 거짓이 된다.
-    setZoom(Math.min(next, maxZoomRef.current));
-  };
-  // 이벤트 리스너(마운트 1회 등록)가 최신 상한을 보도록 ref 로도 들고 있는다.
-  const maxZoomRef = useRef(maxZoom);
-  useEffect(() => {
-    maxZoomRef.current = maxZoom;
-    // 저장된 배율이 이 문서에서 도달 불가능하면(큰 페이지) 즉시 내린다 — 화면과 숫자를 맞춘다.
-    if (useAppStore.getState().pdfViewerZoom > maxZoom) setZoom(maxZoom);
-  }, [maxZoom, setZoom]);
 
   // 1. pdfjs 로 문서 로드 (pdfBytes 가 바뀔 때마다 재실행)
   useEffect(() => {
@@ -589,41 +568,8 @@ export function PdfViewer({ pdfBytes, targetPage, jumpNonce = 0, onClose }: PdfV
     };
   }, [loadState, totalPages, renderVersion, renderZoom]);
 
-  // v1.6.0 Ctrl+휠 배율. React 의 onWheel 은 passive 로 등록돼 preventDefault 가 먹지 않으므로
-  // 네이티브 리스너(passive:false). preventDefault 는 Chromium 의 페이지 줌(앱 전체 확대)으로
-  // 새는 것을 막는다. Ctrl 없는 휠은 손대지 않는다(스크롤).
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const handler = (e: WheelEvent) => {
-      if (!e.ctrlKey || e.deltaY === 0) return;
-      e.preventDefault();
-      zoomBy(e.deltaY < 0 ? 1 : -1, ZOOM_STEP_WHEEL);
-    };
-    container.addEventListener('wheel', handler, { passive: false });
-    return () => container.removeEventListener('wheel', handler);
-    // zoomBy 는 store setter 만 닫아 두므로 안정 — 의존성 불필요.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // v1.6.0 Ctrl+(=|+|-|0) — 뷰어가 열려 있는 동안 window 레벨(Escape 와 같은 방식). 뷰어 영역
-  // 핸들러로 두면 인용 버튼을 누른 직후(포커스가 요약 쪽)엔 키가 닿지 않는다(E2E 실측). 편집
-  // 요소 포커스 중에는 무시 — 입력창의 Ctrl+- 같은 조합을 가로채지 않는다.
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (!e.ctrlKey || e.altKey || e.metaKey) return;
-      if (isEditableFocused()) return;
-      if (e.key === '=' || e.key === '+') zoomBy(1, ZOOM_STEP_BUTTON);
-      else if (e.key === '-') zoomBy(-1, ZOOM_STEP_BUTTON);
-      else if (e.key === '0') setZoom(1);
-      else return;
-      e.preventDefault();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-    // zoomBy/setZoom 은 store setter 만 닫아 두므로 안정.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Ctrl+휠·Ctrl+(=|+|-|0) 배율 배선: useZoomControls(containerRef, maxZoom) 가 위에서 이미
+  // 등록했다(Task13 fix1 — DocTextViewer 와 공유).
 
   // 3. targetPage 변경 시 해당 페이지로 scrollIntoView
   //    해당 페이지가 아직 렌더 안됐으면 폴링으로 대기 (최대 3초)
@@ -718,43 +664,17 @@ export function PdfViewer({ pdfBytes, targetPage, jumpNonce = 0, onClose }: PdfV
           </span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {/* v1.6.0 배율 — 버튼의 접근성 이름은 동작(확대/축소/맞춤)이고, 현재 배율은 아래 status 가 통지한다. */}
-          <button
-            type="button"
-            onClick={() => zoomBy(-1, ZOOM_STEP_BUTTON)}
-            disabled={zoom <= ZOOM_MIN}
-            aria-label={t('pdfviewer.zoomOut')}
-            title={`${t('pdfviewer.zoomOut')} (Ctrl+-)`}
-            className="inline-flex items-center justify-center min-w-[24px] min-h-[24px] text-sm rounded text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-40 disabled:hover:text-gray-500"
-          >
-            −
-          </button>
-          <button
-            type="button"
-            onClick={() => setZoom(1)}
-            // QA33(M): 접근성 이름에 **보이는 텍스트**(현재 배율)를 포함한다. 종전에는 화면에
-            // "160%" 가 보이는데 이름은 "화면 맞춤으로 되돌리기" 뿐이라, 음성 조작 사용자가 보이는
-            // 대로 부를 수 없었다(WCAG 2.5.3 Label in Name).
-            aria-label={`${formatZoomPercent(zoom)} — ${t('pdfviewer.zoomReset')}`}
-            title={`${t('pdfviewer.zoomReset')} (Ctrl+0)`}
-            className="min-w-[44px] min-h-[24px] text-xs tabular-nums rounded text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100"
-          >
-            {formatZoomPercent(zoom)}
-          </button>
-          <button
-            type="button"
-            onClick={() => zoomBy(1, ZOOM_STEP_BUTTON)}
-            // QA33(I1): 도달 가능한 상한에서 멈춘다 — 그 위로는 눌러도 렌더가 그대로다.
-            disabled={zoom >= maxZoom}
-            aria-label={t('pdfviewer.zoomIn')}
-            title={`${t('pdfviewer.zoomIn')} (Ctrl + '+')`}
-            className="inline-flex items-center justify-center min-w-[24px] min-h-[24px] text-sm rounded text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-40 disabled:hover:text-gray-500"
-          >
-            +
-          </button>
-          {/* QA33(L): 통지는 **렌더에 반영된** 배율로 — `zoom` 에 묶으면 Ctrl+휠 한 제스처에
-              수십 번 발화한다. 디바운스된 값이라 스크린리더는 멈춘 뒤 한 번만 듣는다. */}
-          <span role="status" className="sr-only">{t('pdfviewer.zoomLevel', { percent: formatZoomPercent(renderZoom) })}</span>
+          {/* Task13 fix1: 버튼 3개 + 라이브 리전은 ZoomControls 로 뺐다(PdfViewer·DocTextViewer
+              공유). 통지는 **렌더에 반영된** 배율로 — `zoom` 에 묶으면 Ctrl+휠 한 제스처에 수십 번
+              발화한다. 디바운스된 값이라 스크린리더는 멈춘 뒤 한 번만 듣는다. */}
+          <ZoomControls
+            zoom={zoom}
+            maxZoom={maxZoom}
+            announceZoom={renderZoom}
+            onZoomOut={() => zoomBy(-1, ZOOM_STEP_BUTTON)}
+            onZoomIn={() => zoomBy(1, ZOOM_STEP_BUTTON)}
+            onZoomReset={() => setZoom(1)}
+          />
           <button
             type="button"
             onClick={onClose}

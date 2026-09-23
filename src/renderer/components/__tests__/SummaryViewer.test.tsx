@@ -27,6 +27,8 @@ vi.mock('../../lib/use-collection-summary', () => ({ abortCollectionGather: M.ab
 vi.mock('../../lib/citation-focus', () => ({ setCitationReturnFocus: M.setReturnFocus, restoreCitationFocus: vi.fn() }));
 vi.mock('../QaChat', () => ({ QaChat: () => <div data-testid="qachat" /> }));
 vi.mock('../PdfViewer', () => ({ PdfViewerPanel: () => <div data-testid="pdfviewer" /> }));
+// Task13 fix1(Important 2): PDF/비-PDF 분기(isCanvasRenderable)가 실제로 갈리는지 직접 본다.
+vi.mock('../DocTextViewer', () => ({ DocTextViewerPanel: () => <div data-testid="doctextviewer" /> }));
 // QA32 후속: 핸들이 둘이 됐다(좌우 = 인용 패널 / 세로 = 요약↔채팅). 축으로 구분한다 —
 // 개수로 판정하면 한쪽이 사라져도 다른 쪽이 대신 통과한다.
 vi.mock('../ResizeHandle', () => ({
@@ -327,6 +329,26 @@ describe('SummaryViewer', () => {
     render(<SummaryViewer />);
     expect(screen.getByTestId('pdfviewer')).toBeTruthy();
     expect(screen.getByTestId('resize-horizontal')).toBeTruthy();
+  });
+
+  /**
+   * Task13 fix1(Important 2): isCanvasRenderable 이 파일명으로 실제로 분기하는지 — 이전엔
+   * 이 스위트가 '.pdf' 픽스처만 써서 뮤테이션(`return true`)이 전량 그린으로 살아남았다.
+   * DOCX 는 canvas 로 그릴 원본 바이트가 없으므로, 분기가 깨지면 PdfViewerPanel 이 마운트돼
+   * 빈/깨진 canvas 로 이어진다 — 여기서 텍스트 패널이 뜨는지 직접 본다.
+   */
+  it('비-PDF 문서 + citationTarget 활성 → DocTextViewer 패널(PdfViewer 아님) 마운트', () => {
+    setState({ stream: '본문', citation: true, docName: 'notes.docx' });
+    render(<SummaryViewer />);
+    expect(screen.getByTestId('doctextviewer')).toBeTruthy();
+    expect(screen.queryByTestId('pdfviewer')).toBeNull();
+  });
+
+  it('PDF 문서 + citationTarget 활성 → PdfViewer 패널(DocTextViewer 아님) 마운트', () => {
+    setState({ stream: '본문', citation: true, docName: 'lecture.pdf' });
+    render(<SummaryViewer />);
+    expect(screen.getByTestId('pdfviewer')).toBeTruthy();
+    expect(screen.queryByTestId('doctextviewer')).toBeNull();
   });
 });
 

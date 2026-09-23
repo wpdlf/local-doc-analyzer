@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   SUPPORTED_FORMATS, SUPPORTED_EXTENSIONS, DIALOG_FILTERS,
-  isSupportedExtension, hasZipMagic, hasPdfMagic,
+  isSupportedExtension, hasZipMagic, hasPdfMagic, isCanvasRenderable,
 } from '../document-formats';
 
 describe('document-formats — 지원 포맷 단일 출처', () => {
@@ -45,5 +45,31 @@ describe('document-formats — 지원 포맷 단일 출처', () => {
     // 암호가 걸린 OOXML 은 CFB 컨테이너라 zip 이 아니다 — 여기서 갈린다
     expect(hasZipMagic(new Uint8Array([0xd0, 0xcf, 0x11, 0xe0]))).toBe(false);
     expect(hasZipMagic(new Uint8Array([0x50, 0x4b]))).toBe(false);
+  });
+
+  // Task13 fix1(Important 2): SummaryViewer 의 PDF/비-PDF 분기가 이 함수 하나에 의존한다.
+  // 이 함수가 뮤테이션으로 `return true` 가 돼도 SummaryViewer.test.tsx 는 항상 '.pdf' 픽스처만
+  // 써서 못 잡고, DocTextViewer.test.tsx 는 패널을 직접 렌더해 분기 자체를 우회한다 — 여기서
+  // 직접 계약을 못박는다.
+  describe('isCanvasRenderable — canvas(PDF) 렌더 대상 판정', () => {
+    it('.pdf 확장자는 canvas 렌더 대상이다', () => {
+      expect(isCanvasRenderable('report.pdf')).toBe(true);
+      expect(isCanvasRenderable('C:/x/scan.pdf')).toBe(true);
+    });
+
+    it('.docx 등 비-PDF 확장자는 canvas 렌더 대상이 아니다 — 텍스트 뷰어가 맡는다', () => {
+      expect(isCanvasRenderable('report.docx')).toBe(false);
+      expect(isCanvasRenderable('/tmp/a.pptx')).toBe(false);
+    });
+
+    it('대소문자를 가리지 않는다', () => {
+      expect(isCanvasRenderable('FILE.PDF')).toBe(true);
+      expect(isCanvasRenderable('Report.Docx')).toBe(false);
+    });
+
+    it('확장자가 없으면 canvas 렌더 대상이 아니다', () => {
+      expect(isCanvasRenderable('no-extension')).toBe(false);
+      expect(isCanvasRenderable('')).toBe(false);
+    });
   });
 });
