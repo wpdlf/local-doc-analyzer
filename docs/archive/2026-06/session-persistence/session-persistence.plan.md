@@ -4,7 +4,7 @@ version: 1.0
 feature: session-persistence
 date: 2026-06-09
 author: jjw
-project: local-pdf-analyzer (summary-lecture-material)
+project: local-doc-analyzer
 version_project: 0.18.26
 ---
 
@@ -12,7 +12,7 @@ version_project: 0.18.26
 
 > **Summary**: 문서별 요약·Q&A·임베딩 인덱스를 콘텐츠 해시 기준으로 영속화하여, 같은 문서를 다시 열면 재요약·재임베딩 없이 작업을 복원한다.
 >
-> **Project**: local-pdf-analyzer
+> **Project**: local-doc-analyzer
 > **Version**: 0.18.26
 > **Author**: jjw
 > **Date**: 2026-06-09

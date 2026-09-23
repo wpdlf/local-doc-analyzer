@@ -2,7 +2,7 @@
 
 > **Analysis Type**: Gap Analysis (Design vs Implementation)
 >
-> **Project**: summary-lecture-material
+> **Project**: local-doc-analyzer
 > **Version**: 0.1.0
 > **Analyst**: Claude (gap-detector)
 > **Date**: 2026-03-17

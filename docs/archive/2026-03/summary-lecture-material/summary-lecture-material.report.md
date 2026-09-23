@@ -6,7 +6,7 @@ variables:
   - feature: summary-lecture-material
   - date: 2026-03-31
   - author: Report Generator Agent
-  - project: summary-lecture-material
+  - project: local-doc-analyzer
   - version: 0.10.1
   - cycle_number: 4
 ---
@@ -15,7 +15,7 @@ variables:
 
 > **Status**: Complete
 >
-> **Project**: summary-lecture-material (PDF 자료 분석 데스크톱 앱)
+> **Project**: local-doc-analyzer (PDF 자료 분석 데스크톱 앱)
 > **Version**: 0.10.1
 > **Author**: Report Generator Agent
 > **Completion Date**: 2026-03-31

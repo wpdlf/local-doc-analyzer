@@ -4,7 +4,7 @@ version: 1.3
 feature: multi-doc-collection-qa
 date: 2026-06-15
 author: jjw
-project: local-pdf-analyzer (summary-lecture-material)
+project: local-doc-analyzer
 version_project: 0.22.0
 ---
 
@@ -12,7 +12,7 @@ version_project: 0.22.0
 
 > **Summary**: Phase 1(다중 문서 탭)이 문서를 개별로 다룬다면, Phase 2는 열린 문서들을 하나의 컬렉션으로 묶어 **여러 PDF에 걸친 통합 Q&A(교차 문서 RAG 검색)**를 제공한다. 무거운 인덱스는 활성 1개만 메모리에 유지하던 Phase 1 전략을 유지하면서, 컬렉션 Q&A 시점에만 멤버 인덱스를 **온디맨드로 로드 → 멤버별 검색 → 전역 score 병합**한다. (Architecture Option C — Pragmatic)
 >
-> **Project**: local-pdf-analyzer
+> **Project**: local-doc-analyzer
 > **Version**: 0.22.0
 > **Author**: jjw
 > **Date**: 2026-06-15

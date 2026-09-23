@@ -1,21 +1,21 @@
 🌐 [한국어](README.ko.md) | **English**
 
-# 📄 Local AI PDF Analyzer
+# 📄 Local Doc Analyzer
 
-**A local AI-powered PDF summarization tool that runs entirely on your PC.**
+**A local AI-powered document summarization tool that runs entirely on your PC.**
 
-Most AI summarization services require uploading your PDF to an external server — this app runs **the AI inside your own computer**.
+Most AI summarization services require uploading your documents to an external server — this app runs **the AI inside your own computer**. Currently supports **PDF and Word (.docx)**, with HWPX, PPTX, and EPUB planned.
 
-- **Fully offline operation** — the Ollama local AI engine runs directly on your PC, so your PDF files never leave your machine
+- **Fully offline operation** — the Ollama local AI engine runs directly on your PC, so your documents never leave your machine
 - **Unified text + image analysis** — analyzes not only text but also embedded charts, diagrams, and tables with Vision AI
 - **Scanned PDF OCR** — image-based scanned PDFs are recognized page by page with Vision AI
-- **RAG-based Q&A chat** — embedding-based semantic search finds the most relevant parts of your PDF, and answers are automatically verified against the source
-- **Page citations + PDF viewer with outline navigation** — summaries and answers carry `[p.12]` source citations; click one to open the original page instantly, or jump through the document's built-in table of contents from the viewer's outline sidebar
+- **RAG-based Q&A chat** — embedding-based semantic search finds the most relevant parts of your document, and answers are automatically verified against the source
+- **Page citations + document viewer** — summaries and answers carry `[p.12]` source citations; click one to open the original location instantly (a rendered page for PDFs, a text panel for Word documents). PDFs with a built-in table of contents (bookmarks) also get an outline sidebar for one-click navigation
 - **Summary mind-map** — flip any summary into an interactive mind-map of its heading structure; collapse/expand branches and click a node's `[p.N]` badge to jump to that page in the source viewer
 - **Formulas rendered as formulas** — mathematical notation the AI carries over from the source is typeset instead of left as raw LaTeX, in summaries, Q&A answers, and exported PDFs
-- **Multi-document tabs + cross-document Q&A** — open several PDFs as tabs and ask a single question across them; answers cite the source document and jump to the right page
+- **Multi-document tabs + cross-document Q&A** — open several documents as tabs and ask a single question across them; answers cite the source document and jump to the right page
 - **Collections + cross-document summaries** — save a set of documents as a named collection and reopen the whole tab set later; generate a unified summary or a comparison across the selected documents
-- **Automatic session save & restore** — reopen an analyzed PDF and your summary, Q&A history, and search index are restored instantly, with no re-summarization or re-embedding
+- **Automatic session save & restore** — reopen an analyzed document and your summary, Q&A history, and search index are restored instantly, with no re-summarization or re-embedding
 - **Search across all saved documents** — find a keyword across every saved document at once (page text + summaries + filenames) and jump straight to the matching page
 - **Safe for sensitive material** — exam papers, internal documents, paper drafts and other private files can be summarized with confidence
 - **Korean/English UI · external AI option** — switch to Claude/OpenAI/Gemini API easily when you need higher quality
@@ -32,8 +32,10 @@ This document has two parts — **[User Guide](#user-guide)** (install · usage 
 
 | Platform | File |
 |---|---|
-| **Windows** | `Local-PDF-Analyzer-Setup-x.x.x.exe` |
+| **Windows** | `Local-Doc-Analyzer-Setup-x.x.x.exe` |
 | **macOS** | _temporarily unavailable_ (will return once code signing/notarization credentials are in place — in the meantime, build from source with `npm run package`) |
+
+> **Note**: Releases before v1.8.0 shipped the installer as `Local-PDF-Analyzer-Setup-x.x.x.exe` (pre-rename name). If you're verifying an older download, use that filename instead.
 
 1. Download the Windows installer from the link above
 2. Run the downloaded file to install
@@ -62,25 +64,27 @@ Each release ships with the installer's **SHA-256 hash** (`SHA256SUMS-windows.tx
 
 ```bash
 # Windows (PowerShell) — compare the hash
-Get-FileHash -Algorithm SHA256 .\Local-PDF-Analyzer-Setup-x.x.x.exe
+Get-FileHash -Algorithm SHA256 .\Local-Doc-Analyzer-Setup-x.x.x.exe
 
 # Verify the Sigstore attestation via GitHub CLI (optional)
-gh attestation verify ./Local-PDF-Analyzer-Setup-x.x.x.exe --repo wpdlf/local-doc-analyzer
+gh attestation verify ./Local-Doc-Analyzer-Setup-x.x.x.exe --repo wpdlf/local-doc-analyzer
 ```
+
+> For a release before v1.8.0, substitute `Local-PDF-Analyzer-Setup-x.x.x.exe` in the commands above.
 
 ## How to Use
 
-### 1. Upload a PDF
-- **Drag & drop** a PDF onto the app window, click **Select File**, or press **Ctrl+O**
-- Previously analyzed PDFs appear in the **Recent Documents** list at the bottom of the upload screen; reopening the same PDF **automatically restores** its summary, Q&A, and search index
+### 1. Upload a Document
+- **Drag & drop** a PDF or Word (.docx) file onto the app window, click **Select File**, or press **Ctrl+O**
+- Previously analyzed documents appear in the **Recent Documents** list at the bottom of the upload screen; reopening the same document **automatically restores** its summary, Q&A, and search index
 - **Search across saved documents** — the search bar on the upload screen finds a keyword across every saved session (page text, summaries, filenames); results show matching pages with highlighted snippets — click one to open
-- **Multiple documents as tabs** — opening another PDF adds a tab at the top; click tabs to move between documents and continue each one's summary and Q&A (auto-saved and restored on switch). Use the `＋` button to add a document
+- **Multiple documents as tabs** — opening another document adds a tab at the top; click tabs to move between documents and continue each one's summary and Q&A (auto-saved and restored on switch). Use the `＋` button to add a document
 
 ### 2. Choose a Summary Type
 
 | Type | Description |
 |------|-------------|
-| **Full Summary** | Summarizes the entire PDF in one pass |
+| **Full Summary** | Summarizes the entire document in one pass |
 | **Chapter Summary** | Splits the document into chapters/sections and summarizes each |
 | **Keyword Extraction** | Extracts key terms with explanations in a table |
 | **Custom Templates** | Define your own summary prompts in **Settings**; they appear here alongside the built-in types. Each template runs as a **single pass** (fast) or **chunk & integrate** across the whole document (covers long files), with page citations preserved |
@@ -93,20 +97,20 @@ gh attestation verify ./Local-PDF-Analyzer-Setup-x.x.x.exe --repo wpdlf/local-do
 - Closing the summary is non-destructive — it collapses to the document screen, and **View summary / Continue Q&A** reopens it with the Q&A thread intact
 
 ### 4. Q&A Chat (RAG Semantic Search)
-- A **RAG vector index** is built automatically when a PDF loads (progress in the header → **RAG** badge when ready). If the index no longer matches the embedding model in use — after installing or removing an Ollama embedding model while the app is open — the header reports it instead of quietly falling back to keyword search behind a green badge
-- Ask a question and the AI answers using the most relevant parts of the PDF found via embedding similarity (up to 10 turns of conversation context)
+- A **RAG vector index** is built automatically when a document loads (progress in the header → **RAG** badge when ready). If the index no longer matches the embedding model in use — after installing or removing an Ollama embedding model while the app is open — the header reports it instead of quietly falling back to keyword search behind a green badge
+- Ask a question and the AI answers using the most relevant parts of the document found via embedding similarity (up to 10 turns of conversation context)
 - Without an embedding model, Q&A falls back to keyword search automatically (same feature, lower accuracy)
-- **Automatic answer verification** — each sentence of the answer is checked against the PDF embeddings; if too many sentences lack grounding, the answer is automatically refined once more (can be disabled in Settings)
-- **Cross-document Q&A (collection mode)** — with two or more documents open, toggle **"Ask across documents"** to search several PDFs at once. Pick members with checkboxes; the question is searched across each selected document's index and merged **without re-embedding**. Answers cite the source document (e.g. `[Service Discovery.pdf p.5]`); click a citation to switch to that document and jump to the page. Documents indexed with a different embedding model are automatically excluded with a reason. A citation that cannot be resolved to exactly one document (two open files sharing a filename) is shown as unavailable with the reason, instead of confidently jumping to the wrong one.
+- **Automatic answer verification** — each sentence of the answer is checked against the document embeddings; if too many sentences lack grounding, the answer is automatically refined once more (can be disabled in Settings)
+- **Cross-document Q&A (collection mode)** — with two or more documents open, toggle **"Ask across documents"** to search several documents at once. Pick members with checkboxes; the question is searched across each selected document's index and merged **without re-embedding**. Answers cite the source document (e.g. `[Service Discovery.pdf p.5]`); click a citation to switch to that document and jump to the page. Documents indexed with a different embedding model are automatically excluded with a reason. A citation that cannot be resolved to exactly one document (two open files sharing a filename) is shown as unavailable with the reason, instead of confidently jumping to the wrong one.
 - **Cross-document summary / comparison** — in collection mode, the **Unified summary** and **Compare** buttons synthesize the selected documents. Each document's existing summary is reused, and any document not yet summarized is summarized on the fly and saved back to it (reused next time). The result appears in the Q&A thread, attributed by document.
 - **Save & reopen collections** — **Save collection** stores the current document set with a name; on the upload screen, a **Saved collections** list lets you reopen the whole tab set at once (restored from sessions, no re-parsing).
 - **Summary ↔ chat height** — drag the divider between the summary body and the Q&A chat, or use the keyboard (Tab focus then `↑`/`↓`, `Home`/`End`), to set the split between 20–80%; the ratio is saved across restarts. Collection-wide unified summaries and comparisons render into the chat, so widening it helps when the result is long
 - `Enter`: send / `Shift+Enter`: new line
 
-### 5. Page Citations + PDF Viewer
+### 5. Page Citations + Document Viewer
 - Every key fact in summaries and Q&A answers gets an automatic **`[p.12]`-style page citation**
-- **Click** a citation to open the **PDF viewer panel** on the right at that exact page — verify potential AI hallucinations with one click
-- **Outline navigation** — when the PDF carries a built-in table of contents (bookmarks), a ☰ button in the viewer opens an outline sidebar; click any heading to jump to its page (re-clicking the current section re-scrolls to it)
+- **Click** a citation to open the **document viewer panel** on the right at that exact location — a rendered page for PDFs, or a text panel scrolled to the matching section for Word documents — verify potential AI hallucinations with one click
+- **Outline navigation (PDF only)** — when a PDF carries a built-in table of contents (bookmarks), a ☰ button in the viewer opens an outline sidebar; click any heading to jump to its page (re-clicking the current section re-scrolls to it)
 - **Zoom** — `−` / `+` buttons in the viewer header (25% steps), `Ctrl`+mouse wheel (10% steps), or `Ctrl`+`=` / `Ctrl`+`-` / `Ctrl`+`0` while the viewer is open; 50–300%, click the percentage (or `Ctrl`+`0`) to return to fit-to-width (on very large pages such as engineering drawings the ceiling drops below 300% to protect memory, and the percentage shown is the scale actually rendered). The page you were reading stays in place when the scale changes, and the level is remembered across restarts — useful for small-print papers and scanned documents
 - Drag the center divider (or use the keyboard: Tab focus then `←`/`→`, `Home`/`End`) to adjust the split between 20–80%; the ratio is saved across restarts
 - Close the panel with `ESC` or the ✕ button
@@ -138,12 +142,12 @@ To use an external AI:
 
 > Q&A still works without an embedding model via keyword search. RAG is an optional accuracy booster.
 
-## PDF Image Analysis
+## Document Image Analysis
 
-Charts, diagrams, tables, and photos embedded in PDFs are analyzed automatically by Vision AI and incorporated into the summary.
+Charts, diagrams, tables, and photos embedded in PDF and Word documents are analyzed automatically by Vision AI and incorporated into the summary.
 
-- Images are extracted per page and semantically analyzed by a Vision model
-- Analysis results are merged into the page text, improving summary quality
+- Images are extracted from the document and semantically analyzed by a Vision model
+- Analysis results are merged into the surrounding text, improving summary quality
 - Image analysis can be toggled on/off in Settings
 
 | Provider | Vision model | Notes |
@@ -177,10 +181,10 @@ For image-based/scanned PDFs where text extraction fails, Vision AI recognizes t
 ## Key Features
 
 **Analysis quality**
-- Korean-optimized — improved Korean PDF text extraction, chunk sizing adapts to the Korean-text ratio
+- Korean-optimized — improved Korean PDF text extraction, chunk sizing adapts to the Korean-text ratio across all supported formats
 - Clean summaries — greetings, commentary, and conversational filler are removed via prompt constraints plus a post-processing filter
-- Large PDF support — long documents are split, processed in parallel batches, and merged into a unified summary (up to 500 pages)
-- Automatic answer verification — Q&A answers are checked sentence-by-sentence against PDF embeddings and refined when grounding is weak
+- Large document support — long documents are split, processed in parallel batches, and merged into a unified summary (up to 500 pages)
+- Automatic answer verification — Q&A answers are checked sentence-by-sentence against document embeddings and refined when grounding is weak
 
 **Usability**
 - Real-time streaming — summaries appear as they are generated, with auto-scroll (pauses when you scroll manually)
@@ -189,8 +193,8 @@ For image-based/scanned PDFs where text extraction fails, Vision AI recognizes t
 - File swap during parsing — dropping another file cancels the previous job and switches immediately
 - Export summaries — Markdown, formatted PDF (native, dependency-free), or clipboard; individual Q&A answers can be copied too
 - Search across all saved documents — keyword search over page text, summaries, and filenames with highlighted snippets and one-click open
-- Multi-document tabs — keep several PDFs open and switch between them; only the active document's heavy state stays in memory (instant restore on switch). Collection mode searches across the open documents in a single question, with source-attributed citations; save a set as a named collection and generate unified/comparison summaries across it
-- PDF outline navigation — documents with a built-in table of contents get a collapsible outline sidebar in the viewer for one-click jump to any section
+- Multi-document tabs — keep several documents open and switch between them; only the active document's heavy state stays in memory (instant restore on switch). Collection mode searches across the open documents in a single question, with source-attributed citations; save a set as a named collection and generate unified/comparison summaries across it
+- PDF outline navigation — PDF documents with a built-in table of contents get a collapsible outline sidebar in the viewer for one-click jump to any section
 - Viewer zoom — 50–300% via header buttons, `Ctrl`+wheel, or `Ctrl`+`=`/`-`/`0`; keeps your place while rescaling and remembers the level across restarts
 - Summary mind-map — a Text/Mind-map toggle renders the summary's heading hierarchy as a collapsible tree; each node carries its page citation as a `[p.N]` badge for one-click jump to the source page (keyboard- and screen-reader-friendly, no extra dependencies)
 - Mathematical notation — formulas are typeset in summaries, Q&A answers, and exported PDFs via the browser engine's built-in mathematical layout, so no webfonts are downloaded and screen readers read an equation's structure rather than its source. Currency amounts such as `$100` are never mistaken for mathematics
@@ -214,7 +218,7 @@ For image-based/scanned PDFs where text extraction fails, Vision AI recognizes t
 - **Windows 10 or later**, or **macOS 12 (Monterey) or later**
 - At least 4GB free disk space (default AI models, when using Ollama — about 9GB with the Korean-specialized model)
 - Internet connection (first-time setup and paid API use)
-- PDF limits: max 100MB, max 500 pages (split larger documents)
+- Document limits: max 100MB, max 500 pages (split larger documents)
 
 ## Troubleshooting
 
@@ -229,14 +233,14 @@ For image-based/scanned PDFs where text extraction fails, Vision AI recognizes t
 | Text extraction fails | Make sure "Scanned PDF OCR" is enabled in Settings; a Vision model (llava, Claude, GPT-4o, Gemini) is required |
 | OCR results are inaccurate | Ollama llava has low Korean accuracy; switching to Claude, OpenAI, or Gemini improves it significantly |
 | OCR takes too long | Use the "■ Cancel" button to stop; cloud providers offer faster throughput. If the Vision model stops responding altogether, the app gives up on its own rather than waiting out every remaining page |
-| PDF exceeds 500 pages | Split the document and upload again; the cap prevents resource exhaustion |
+| Document exceeds 500 pages | Split the document and upload again; the cap prevents resource exhaustion |
 | Image analysis doesn't work | With Ollama, a Vision model such as llava is required — install it in Settings |
 | Image analysis reports a failure instead of skipping | A Vision request that comes back empty, or that a provider's safety filter blocked, is now reported rather than dropped silently — previously those images vanished from the summary while you were still billed for them. Try another Vision model, or turn off image analysis in Settings |
 | API key error | Verify the key format in Settings. Claude: `sk-ant-...`, OpenAI: `sk-...`, Gemini: `AIza...` |
 | Claude/OpenAI/Gemini unavailable | Save the API key first, then select the provider |
 | Settings shows "Cannot verify key" | The key file could not be read at that moment — usually antivirus or a search indexer holding it briefly. The key has not been lost; reopen Settings in a moment. This is deliberately distinct from "no key saved" so a locked file never looks like a missing key |
 | Gemini "response was blocked" error | Gemini's safety filter blocked the document content, or the output budget was exhausted. Try another model (e.g. gemini-2.5-pro) or split the document |
-| Gemini "rate limit exceeded" | The free tier has a low per-minute request limit. The app automatically lowers concurrency and retries up to twice with backoff; if it persists, retry shortly or disable image analysis for image-heavy PDFs |
+| Gemini "rate limit exceeded" | The free tier has a low per-minute request limit. The app automatically lowers concurrency and retries up to twice with backoff; if it persists, retry shortly or disable image analysis for image-heavy documents |
 | Q&A can't answer | If the RAG badge is missing, install the embedding model with `ollama pull nomic-embed-text`. In keyword mode, include specific terms in your question |
 | RAG indexing doesn't run | Make sure first-run setup completed (nomic-embed-text auto-install). Manual install: `ollama pull nomic-embed-text` |
 | The header says the search index doesn't match the embedding model | The index was built with a different embedding model than the one now in use (typically an Ollama embedding model installed or removed while the app was open). Reopen the document to rebuild the index with the current model |

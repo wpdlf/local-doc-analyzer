@@ -1697,7 +1697,7 @@ export function registerIpcHandlers(): void {
         return { error: '일반 파일이 아닙니다.' };
       }
       if (stat.size > MAX_PDF_SIZE) {
-        return { error: 'PDF 파일이 너무 큽니다 (최대 100MB).' };
+        return { error: '파일이 너무 큽니다 (최대 100MB).' };
       }
       const buffer = await fsp.readFile(filePath);
       const arrayBuf = buffer.byteOffset === 0 && buffer.byteLength === buffer.buffer.byteLength
@@ -1712,7 +1712,7 @@ export function registerIpcHandlers(): void {
       const code = (err as NodeJS.ErrnoException).code;
       const friendly = code === 'ENOENT' ? '파일을 찾을 수 없습니다.'
         : code === 'EPERM' || code === 'EACCES' ? '파일에 접근할 수 없습니다.'
-        : 'PDF 파일을 열 수 없습니다.';
+        : '파일을 열 수 없습니다.';
       console.error('[file:open-pdf] failed:', err);
       return { error: friendly };
     }
@@ -1741,7 +1741,7 @@ export function registerIpcHandlers(): void {
       if (lstat.isSymbolicLink()) return { error: '심볼릭 링크는 열 수 없습니다.' };
       const stat = await fsp.stat(targetPath);
       if (!stat.isFile()) return { error: '일반 파일이 아닙니다.' };
-      if (stat.size > MAX_PDF_SIZE) return { error: 'PDF 파일이 너무 큽니다 (최대 100MB).' };
+      if (stat.size > MAX_PDF_SIZE) return { error: '파일이 너무 큽니다 (최대 100MB).' };
       const buffer = await fsp.readFile(targetPath);
       const arrayBuf = buffer.byteOffset === 0 && buffer.byteLength === buffer.buffer.byteLength
         ? buffer.buffer
@@ -1751,7 +1751,7 @@ export function registerIpcHandlers(): void {
       const code = (err as NodeJS.ErrnoException).code;
       const friendly = code === 'ENOENT' ? '파일을 찾을 수 없습니다 (이동/삭제되었을 수 있습니다).'
         : code === 'EPERM' || code === 'EACCES' ? '파일에 접근할 수 없습니다.'
-        : 'PDF 파일을 열 수 없습니다.';
+        : '파일을 열 수 없습니다.';
       console.error('[file:open-path] failed:', err);
       return { error: friendly };
     }

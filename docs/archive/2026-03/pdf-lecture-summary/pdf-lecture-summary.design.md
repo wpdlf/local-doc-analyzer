@@ -2,7 +2,7 @@
 
 > **Summary**: Electron + Ollama 기반 PDF 강의자료 자동 요약 데스크톱 앱의 기술 설계
 >
-> **Project**: summary-lecture-material
+> **Project**: local-doc-analyzer
 > **Version**: 0.1.0
 > **Author**: jjw
 > **Date**: 2026-03-17

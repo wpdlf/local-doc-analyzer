@@ -4,7 +4,7 @@ version: 1.3
 feature: page-citation-viewer
 date: 2026-04-14
 author: jjw
-project: local-pdf-analyzer
+project: local-doc-analyzer
 projectVersion: 0.16.2
 status: Draft
 ---
@@ -13,7 +13,7 @@ status: Draft
 
 > **Summary**: Option C (Pragmatic) — 얼라인 유틸리티 + 신규 컴포넌트. 청커/벡터스토어에 page 메타데이터를 옵셔널로 확장, `citation.ts` 단일 유틸리티에서 인용 파싱/라벨링을 일원화, 신규 `PdfViewer`/`CitationButton` 컴포넌트 추가.
 >
-> **Project**: local-pdf-analyzer
+> **Project**: local-doc-analyzer
 > **Version**: 0.16.2
 > **Author**: jjw
 > **Date**: 2026-04-14

@@ -3,7 +3,7 @@ template: analysis
 feature: session-persistence
 date: 2026-06-09
 author: jjw
-project: local-pdf-analyzer
+project: local-doc-analyzer
 phase: check
 ---
 

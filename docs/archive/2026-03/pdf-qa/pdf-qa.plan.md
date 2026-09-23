@@ -2,7 +2,7 @@
 
 > **Summary**: 업로드된 PDF 강의자료의 내용에 대해 사용자가 자연어로 질문하면, PDF 텍스트 범위 내에서 AI가 답변하는 대화형 Q&A 기능
 >
-> **Project**: summary-lecture-material
+> **Project**: local-doc-analyzer
 > **Feature**: pdf-qa
 > **Version**: 0.10.0
 > **Author**: jjw

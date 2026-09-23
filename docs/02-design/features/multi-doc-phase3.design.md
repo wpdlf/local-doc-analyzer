@@ -4,7 +4,7 @@ version: 1.3
 feature: multi-doc-phase3
 date: 2026-06-15
 author: jjw
-project: local-pdf-analyzer (summary-lecture-material)
+project: local-doc-analyzer
 version_project: 0.23.2
 ---
 
@@ -15,7 +15,7 @@ version_project: 0.23.2
 > 저장된 요약을 재사용하는 map-reduce, 재요약 최소화). **(B) 컬렉션 영속화** — 함께 본 문서 묶음을
 > 이름과 함께 저장/복원해 탭 세트를 한 번에 다시 연다. 둘 다 Phase 2 의 멤버 해석·세션 인프라를 재사용한다.
 >
-> **Project**: local-pdf-analyzer
+> **Project**: local-doc-analyzer
 > **Version**: 0.23.2
 > **Author**: jjw
 > **Date**: 2026-06-15
