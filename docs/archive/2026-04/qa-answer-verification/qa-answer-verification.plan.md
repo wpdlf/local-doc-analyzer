@@ -4,7 +4,7 @@ version: 1.0 (retroactive backfill)
 feature: qa-answer-verification
 date: 2026-04-20
 author: jjw
-project: local-pdf-analyzer
+project: local-doc-analyzer
 projectVersion: 0.18.0 (shipped 2026-04-20)
 phase: plan (retroactive)
 status: shipped

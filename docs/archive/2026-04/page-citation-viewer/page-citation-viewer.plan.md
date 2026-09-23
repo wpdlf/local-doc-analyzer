@@ -4,7 +4,7 @@ version: 1.3
 feature: page-citation-viewer
 date: 2026-04-14
 author: jjw
-project: local-pdf-analyzer (summary-lecture-material)
+project: local-doc-analyzer
 projectVersion: 0.16.2
 status: Draft
 ---
@@ -13,7 +13,7 @@ status: Draft
 
 > **Summary**: AI 요약/Q&A 답변에 페이지 인용 토큰(`[p.N]`)을 자동 부여하고, 클릭 시 우측 패널에 pdfjs 뷰어를 온디맨드로 띄워 해당 페이지로 스크롤한다.
 >
-> **Project**: local-pdf-analyzer
+> **Project**: local-doc-analyzer
 > **Version**: 0.16.2
 > **Author**: jjw
 > **Date**: 2026-04-14

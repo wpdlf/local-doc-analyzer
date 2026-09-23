@@ -4,7 +4,7 @@ version: 1.3
 feature: session-persistence
 date: 2026-06-09
 author: jjw
-project: local-pdf-analyzer (summary-lecture-material)
+project: local-doc-analyzer
 version_project: 0.18.26
 ---
 
@@ -12,7 +12,7 @@ version_project: 0.18.26
 
 > **Summary**: 콘텐츠 해시 기준으로 요약·Q&A는 JSON, 임베딩은 Float32 바이너리 블롭으로 영속화해, 동일 문서 재오픈 시 재요약·재임베딩 없이 복원한다. (Architecture Option C — Pragmatic)
 >
-> **Project**: local-pdf-analyzer
+> **Project**: local-doc-analyzer
 > **Version**: 0.18.26
 > **Author**: jjw
 > **Date**: 2026-06-09

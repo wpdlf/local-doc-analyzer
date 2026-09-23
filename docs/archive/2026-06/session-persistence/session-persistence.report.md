@@ -4,7 +4,7 @@ version: 1.1
 feature: session-persistence
 date: 2026-06-09
 author: jjw
-project: local-pdf-analyzer (summary-lecture-material)
+project: local-doc-analyzer
 version_project: 0.18.26
 ---
 
@@ -12,7 +12,7 @@ version_project: 0.18.26
 
 > **Status**: Complete
 >
-> **Project**: local-pdf-analyzer
+> **Project**: local-doc-analyzer
 > **Version**: 0.18.26 (미릴리즈 누적 — 차기 v0.18.27 후보)
 > **Author**: jjw
 > **Completion Date**: 2026-06-09

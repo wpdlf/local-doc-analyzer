@@ -4,7 +4,7 @@ version: 1.1
 feature: page-citation-viewer
 date: 2026-04-20
 author: jjw
-project: local-pdf-analyzer
+project: local-doc-analyzer
 projectVersion: 0.16.2 → 0.18.0 (shipped)
 phase: check
 status: resolved

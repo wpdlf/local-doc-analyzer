@@ -2,7 +2,7 @@
 
 > **Summary**: PDF 형식의 대학교 강의자료를 업로드하면 AI가 핵심 내용을 자동 요약해주는 데스크톱 애플리케이션
 >
-> **Project**: summary-lecture-material
+> **Project**: local-doc-analyzer
 > **Version**: 0.1.0
 > **Author**: jjw
 > **Date**: 2026-03-17

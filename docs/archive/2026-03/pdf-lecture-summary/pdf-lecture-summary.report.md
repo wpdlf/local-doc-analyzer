@@ -2,7 +2,7 @@
 
 > **Summary**: Electron + Ollama 기반 PDF 강의자료 자동 요약 데스크톱 앱 PDCA 사이클 완료
 >
-> **Project**: summary-lecture-material
+> **Project**: local-doc-analyzer
 > **Feature**: pdf-lecture-summary
 > **Project Level**: Starter
 > **Author**: jjw
