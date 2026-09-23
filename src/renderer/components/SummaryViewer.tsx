@@ -9,8 +9,10 @@ import { setCitationReturnFocus } from '../lib/citation-focus';
 import { ProgressBar } from './ProgressBar';
 import { QaChat } from './QaChat';
 import { PdfViewerPanel } from './PdfViewer';
+import { DocTextViewerPanel } from './DocTextViewer';
 import { ResizeHandle } from './ResizeHandle';
 import { Toast } from './Toast';
+import { isCanvasRenderable } from '../../shared/document-formats';
 
 interface SummaryViewerProps {
   onAbort?: () => void;
@@ -25,6 +27,10 @@ export function SummaryViewer({ onAbort }: SummaryViewerProps) {
   const setError = useAppStore((s) => s.setError);
   // page-citation-viewer: citationTarget 존재 시 우측 패널 슬롯에 PdfViewer 마운트
   const citationTarget = useAppStore((s) => s.citationTarget);
+  // PDF 만 canvas 로 그린다. 비-PDF 는 추출된 단위를 텍스트로 보여준다.
+  // unitKind === 'page' 만으로는 갈리지 않는다 — DOCX 도 'page' 다(document-formats.ts 참고).
+  const isPdfDocument = useAppStore((s) => (s.document?.unitKind ?? 'page') === 'page'
+    && s.document?.fileName !== undefined && isCanvasRenderable(s.document.fileName));
   // DR-01: 사용자 조정 가능한 패널 너비 비율 (우측 PdfViewer 가 차지할 비율)
   const panelRatio = useAppStore((s) => s.citationPanelWidth);
   const setCitationPanelWidth = useAppStore((s) => s.setCitationPanelWidth);
@@ -366,7 +372,7 @@ export function SummaryViewer({ onAbort }: SummaryViewerProps) {
             className="min-w-0 h-full"
             style={{ flexBasis: rightFlexBasis, flexGrow: 0, flexShrink: 1 }}
           >
-            <PdfViewerPanel />
+            {isPdfDocument ? <PdfViewerPanel /> : <DocTextViewerPanel />}
           </div>
         </>
       )}

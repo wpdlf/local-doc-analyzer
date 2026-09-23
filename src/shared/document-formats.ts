@@ -59,6 +59,15 @@ export function isSupportedExtension(filePath: string): boolean {
   return SUPPORTED_EXTENSIONS.some((ext) => lower.endsWith(ext) && base.length > ext.length);
 }
 
+/**
+ * canvas 렌더 대상(PDF)인가. 나머지(DOCX 등)는 텍스트 뷰어(`DocTextViewerPanel`)가 맡는다.
+ *
+ * `unitKind === 'page'` 만으로는 갈리지 않는다 — DOCX 도 `'page'` 단위를 쓴다(Task13).
+ */
+export function isCanvasRenderable(fileName: string): boolean {
+  return fileName.toLowerCase().endsWith('.pdf');
+}
+
 /** zip 로컬 파일 헤더 `PK\x03\x04`. 암호가 걸린 OOXML 은 CFB 라 여기서 갈린다. */
 export function hasZipMagic(head: Uint8Array): boolean {
   return head.length >= 4 && head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
