@@ -1,6 +1,6 @@
 {
   "name": "local-doc-analyzer",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "description": "로컬 LLM 기반 문서 분석 데스크톱 앱",
   "license": "MIT",
   "main": "./out/main/index.js",
