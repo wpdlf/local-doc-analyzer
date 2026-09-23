@@ -70,7 +70,7 @@ async function makePdf(): Promise<Buffer> {
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const page = pdf.addPage([600, 800]);
   const lines = [
-    'Packaged asar smoke test document for the local PDF analyzer.',
+    'Packaged asar smoke test document for the local document analyzer.',
     'This paragraph exists so that the extracted text comfortably exceeds',
     'the minimum character threshold used to detect scanned documents.',
   ];
@@ -147,9 +147,9 @@ test.describe('패키징 앱 스모크 (win-unpacked 필요)', () => {
       args: [],
       env: {
         ...process.env,
-        PDF_ANALYZER_USER_DATA: userDataDir,
+        DOC_ANALYZER_USER_DATA: userDataDir,
         // 실 Ollama 결합 차단 — 죽은 포트로 격리(다른 결정적 스펙과 동일 계약).
-        PDF_ANALYZER_OLLAMA_URL: 'http://127.0.0.1:59999',
+        DOC_ANALYZER_OLLAMA_URL: 'http://127.0.0.1:59999',
       },
     });
 

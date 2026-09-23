@@ -31,8 +31,8 @@ const SEED = { provider: 'claude', uiLanguage: 'ko', summaryLanguage: 'ko', them
 test('세션 영속 → 앱 재시작 후 최근 문서에서 재오픈', async () => {
   // 콜드 Electron 2회 기동 + 파싱 대기가 기본 60s 에 근접할 수 있어 여유 부여.
   test.setTimeout(120000);
-  const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-restore-'));
-  const docsDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-restore-docs-'));
+  const userDataDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-restore-'));
+  const docsDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-restore-docs-'));
   // temp 디렉터리 정리는 어느 단계에서 throw 하더라도 항상 도달하도록 바깥 finally 에 둔다.
   try {
     const pathA = join(docsDir, 'alpha.pdf');
@@ -95,8 +95,8 @@ test('세션 영속 → 앱 재시작 후 최근 문서에서 재오픈', async 
 // 이제 "파일이 없으면 세션으로 열고 뷰어 불가만 안내한다" 를 단언한다.
 test('최근 문서 재오픈 — 원본 파일이 사라져도 세션으로 복원(뷰어만 비활성)', async () => {
   test.setTimeout(120000);
-  const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-restore-'));
-  const docsDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-restore-docs-'));
+  const userDataDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-restore-'));
+  const docsDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-restore-docs-'));
   try {
     const pathA = join(docsDir, 'gamma.pdf');
     const pathB = join(docsDir, 'delta.pdf');

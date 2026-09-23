@@ -30,7 +30,7 @@ async function makeEmptyPdf(): Promise<Buffer> {
 
 test('텍스트 없는 PDF + OCR 비활성 → PDF_NO_TEXT 에러 배너', async () => {
   test.setTimeout(90000);
-  const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-err1-'));
+  const userDataDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-err1-'));
   const r = await launchElectron(userDataDir, {
     provider: 'claude', uiLanguage: 'ko', theme: 'light', enableOcrFallback: false,
   });
@@ -50,7 +50,7 @@ test('텍스트 없는 PDF + OCR 비활성 → PDF_NO_TEXT 에러 배너', async
 
 test('매직바이트 불일치(위장 바이너리) → 손상/형식불일치 거부 배너', async () => {
   test.setTimeout(90000);
-  const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-err2-'));
+  const userDataDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-err2-'));
   const r = await launchElectron(userDataDir, { provider: 'claude', uiLanguage: 'ko', theme: 'light' });
   try {
     await expect(r.page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });

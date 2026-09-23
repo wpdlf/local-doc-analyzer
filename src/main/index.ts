@@ -84,8 +84,8 @@ process.on('uncaughtException', (error) => {
 // 디렉토리를 주입해 실사용자의 settings.json/sessions/api-keys.enc 를 오염시키지 않는다.
 // 아래 settingsPath/sessionsDir 등 모듈 상수가 userData 를 읽기 전에 실행돼야 하므로 최상단 배치.
 // 일반 실행에는 영향 없음(env 미설정 시 no-op).
-if (process.env.PDF_ANALYZER_USER_DATA) {
-  app.setPath('userData', process.env.PDF_ANALYZER_USER_DATA);
+if (process.env.DOC_ANALYZER_USER_DATA) {
+  app.setPath('userData', process.env.DOC_ANALYZER_USER_DATA);
 }
 
 const ollamaManager = new OllamaManager();

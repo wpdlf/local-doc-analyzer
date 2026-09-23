@@ -34,10 +34,10 @@ export async function launchElectron(userDataDir: string, seedSettings?: Record<
     ],
     env: {
       ...process.env,
-      PDF_ANALYZER_USER_DATA: userDataDir,
+      DOC_ANALYZER_USER_DATA: userDataDir,
       // 호스트에 실제 Ollama 가 실행 중이어도(개발 머신) 죽은 포트로 격리 —
       // 콜드 스타트 위자드 노출 등 Ollama 상태 의존 시나리오를 결정적으로 만든다.
-      PDF_ANALYZER_OLLAMA_URL: 'http://127.0.0.1:59999',
+      DOC_ANALYZER_OLLAMA_URL: 'http://127.0.0.1:59999',
     },
   });
   const page = await app.firstWindow();
