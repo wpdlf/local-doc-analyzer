@@ -82,11 +82,39 @@ function hasPageBreakBefore(p: Element): boolean {
   return false;
 }
 
-/** 표 → 행렬. 셀 안의 문단을 줄바꿈으로 이어 한 셀로 만든다. */
+/**
+ * `w:sdt`(구조적 콘텐츠 컨트롤)를 그 `w:sdtContent` 자식들로 재귀 치환해 평평한 자식
+ * 목록을 만든다 — 순서는 그대로 보존한다. 본문 순회와 표 셀 순회가 이 규칙을 공유한다.
+ * 따로 두면 한쪽만 sdt 를 풀고 다른 쪽은 잊는 사각이 생긴다 — 이 파일이 이미 그 대가를
+ * 치렀다(본문에서 한 번, 표 셀에서 또 한 번, 같은 실수).
+ */
+function expandSdt(children: Element[]): Element[] {
+  const out: Element[] = [];
+  for (const child of children) {
+    if (localName(child) === 'sdt') {
+      const content = childrenNamed(child, 'sdtContent')[0];
+      if (content) out.push(...expandSdt(Array.from(content.children)));
+      continue;
+    }
+    out.push(child);
+  }
+  return out;
+}
+
+/**
+ * 표 → 행렬. 셀 안의 문단을 줄바꿈으로 이어 한 셀로 만든다.
+ *
+ * fix-round2(I3 후속): 셀 안 문단이 `w:sdt` 로 감싸여 있으면(Korean 업무 서식이 흔히 이
+ * 형태다) 직계 자식만 보는 `childrenNamed(tc, 'p')` 가 그 문단을 통째로 놓쳤다 — expandSdt
+ * 로 먼저 풀어서 본문 순회와 같은 규칙을 적용한다.
+ */
 function tableRows(tbl: Element): string[][] {
   return childrenNamed(tbl, 'tr').map((tr) =>
     childrenNamed(tr, 'tc').map((tc) =>
-      childrenNamed(tc, 'p').map((p) => paragraphPieces(p).map((piece) => piece.text).join('\n')).join('\n'),
+      expandSdt(Array.from(tc.children))
+        .filter((el) => localName(el) === 'p')
+        .map((p) => paragraphPieces(p).map((piece) => piece.text).join('\n'))
+        .join('\n'),
     ),
   );
 }
@@ -123,18 +151,12 @@ export const docxExtractor: Extractor = {
 
     // body 직계 자식을 처리한다. `w:sdt`(구조적 콘텐츠 컨트롤 — 생성 목차나 템플릿 섹션
     // 전체를 감싸는 데 흔히 쓰인다)는 그 자신이 문단/표가 아니라 `w:sdtContent` 안에
-    // 그것들을 담으므로, 만나면 그 안의 자식들을 같은 규칙으로 재귀 처리한다 — sdt 안에
-    // 또 sdt 가 와도(중첩) 특별 취급 없이 풀린다.
+    // 그것들을 담으므로, expandSdt 로 먼저 풀어서 본다(중첩 sdt 도 재귀로 풀린다) — 이
+    // 규칙은 tableRows 의 셀 순회와 공유한다(expandSdt 정의부 주석 참조).
     function walkChildren(children: Element[]): void {
-      for (const child of children) {
+      for (const child of expandSdt(children)) {
         throwIfAborted(opts.signal);
         const name = localName(child);
-
-        if (name === 'sdt') {
-          const content = childrenNamed(child, 'sdtContent')[0];
-          if (content) walkChildren(Array.from(content.children));
-          continue;
-        }
 
         if (name === 'tbl') {
           const blockIndex = blocks.length;

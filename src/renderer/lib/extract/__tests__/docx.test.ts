@@ -221,6 +221,25 @@ describe('docxExtractor.extract', () => {
     expect(ex.units).toEqual(['첫째\n\n둘째']);
   });
 
+  it('표 셀 안 문단이 w:sdt 로 감싸여 있어도 추출한다 (업무 서식이 흔히 이 형태다)', async () => {
+    const body =
+      `<w:tbl><w:tr><w:tc><w:sdt><w:sdtContent>${para('내용')}</w:sdtContent></w:sdt></w:tc>` +
+      `<w:tc>${para('둘째칸')}</w:tc></w:tr></w:tbl>`;
+    const zip = zipOf({ 'word/document.xml': doc(body) });
+    const ex = await docxExtractor.extract(zip, { extractImages: false });
+    expect(ex.units[0]).toBe('| 내용 | 둘째칸 |\n| --- | --- |');
+  });
+
+  it('한 셀 안에 sdt 로 감싼 문단과 감싸지 않은 문단이 섞여도 순서대로 합친다', async () => {
+    const body =
+      `<w:tbl><w:tr><w:tc>${para('위')}<w:sdt><w:sdtContent>${para('아래')}</w:sdtContent></w:sdt></w:tc></w:tr></w:tbl>`;
+    const zip = zipOf({ 'word/document.xml': doc(body) });
+    const ex = await docxExtractor.extract(zip, { extractImages: false });
+    // GFM 셀 직렬화(cell())가 줄바꿈을 공백으로 접는다 — "위 아래" 순서가 뒤집히면(예: sdt
+    // 파싱이 먼저 온 감싸지 않은 문단을 건너뛰거나 순서를 바꾸면) 이 값이 어긋난다.
+    expect(ex.units[0]).toBe('| 위 아래 |\n| --- |');
+  });
+
   it('단위 수가 상한을 넘으면 PDF_TOO_MANY_PAGES 다', async () => {
     const paragraphs = Array.from({ length: 501 }, (_, i) => para(`p${i}`, { breakBefore: i > 0 }));
     const zip = zipOf({ 'word/document.xml': doc(paragraphs.join('')) });
