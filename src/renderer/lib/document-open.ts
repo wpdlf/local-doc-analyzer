@@ -62,6 +62,14 @@ export const OPEN_ERROR_CODES: ReadonlySet<string> = new Set<string>([
   ...Object.keys(EXTRACTOR_ERROR_MESSAGE_KEYS),
 ]);
 
+/**
+ * OOXML 은 그림을 `<파트>/media/` 에 둔다(word/media · ppt/media). 본문 XML·rels 는 절대 여기
+ * 들어오지 않으므로 이 경로만 거르면 이미지 분석 OFF 에서 텍스트 추출은 그대로다.
+ */
+export function isNotMediaPart(name: string): boolean {
+  return !/^[^/]+\/media\//i.test(name);
+}
+
 /** 추출기 체인 lazy 로드 — import 절 주석 참조. */
 async function loadExtractChain() {
   const [zip, registry, normalize, errors] = await Promise.all([
@@ -115,9 +123,9 @@ async function openZipDocument(
   try {
     await yieldForPaint();
     throwIfAborted(opts.signal);
-    // zip.ts 소유 에이전트에 요청: 이미지 분석 OFF 면 word/media/ 를 풀 필요가 없다 — openZip 에
-    // 엔트리 filter 옵션이 생기면 여기서 넘긴다(현재 OpenZipOptions 는 maxUnzippedBytes 뿐).
-    const zip = chain.openZip(data);
+    // 이미지 분석 OFF 면 그림 파트는 풀지 않는다 — 추출기가 어차피 버리는 바이트를 해제하느라
+    // 사진 많은 문서에서 해제 시간·메모리를 쓰던 것(QA34).
+    const zip = chain.openZip(data, opts.extractImages ? undefined : { filter: isNotMediaPart });
     throwIfAborted(opts.signal);
     const extractor: Extractor | null = chain.resolveExtractor(zip);
     if (!extractor) {

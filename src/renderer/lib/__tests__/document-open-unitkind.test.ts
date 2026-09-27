@@ -193,6 +193,24 @@ describe('document-open.ts — zip 해제 순서·취소 (QA34)', () => {
     expect(s.isParsing).toBe(false);
   });
 
+  it('이미지 분석 OFF 면 그림 파트를 풀지 않는 필터를 넘기고, ON 이면 넘기지 않는다', async () => {
+    const setImages = (on: boolean) =>
+      useAppStore.setState((s) => ({ settings: { ...s.settings, enableImageAnalysis: on } }));
+
+    setImages(false);
+    await openDocumentData(makeZipBytes(), 'a.docx', '/x/a.docx');
+    const filter = (openZipMock.mock.calls.at(-1)?.[1] as { filter?: (n: string) => boolean } | undefined)?.filter;
+    expect(filter, 'OFF 인데 필터가 없다').toBeTypeOf('function');
+    expect(filter!('word/media/image1.png')).toBe(false);
+    expect(filter!('ppt/media/image2.jpeg')).toBe(false);
+    expect(filter!('word/document.xml')).toBe(true);
+    expect(filter!('word/_rels/document.xml.rels')).toBe(true);
+
+    setImages(true);
+    await openDocumentData(makeZipBytes(), 'b.docx', '/x/b.docx');
+    expect(openZipMock.mock.calls.at(-1)?.[1]?.filter, 'ON 이면 그림을 풀어야 한다').toBeUndefined();
+  });
+
   it('해제 도중 취소되면 추출기를 부르지 않는다', async () => {
     const real = openZipMock.getMockImplementation() as (d: ArrayBuffer) => unknown;
     openZipMock.mockImplementationOnce((data: ArrayBuffer) => {
