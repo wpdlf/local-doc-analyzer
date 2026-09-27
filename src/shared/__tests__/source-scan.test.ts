@@ -11,6 +11,7 @@ import { readFileSync, readdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { stripJsComments, stripYamlComments, stripHtmlComments, readGeneratedText } from './helpers/source-scan';
+import { SUPPORTED_FORMATS } from '../document-formats';
 
 /**
  * 소스 트리를 재귀 순회해 패턴에 맞는 파일을 모은다 — 여러 스캔 가드가 공유하는 단일 워커.
@@ -335,6 +336,27 @@ describe('확장자 리터럴은 document-formats.ts 밖에 두지 않는다', (
   const HANDLER_DECL = /^ {2}ipcMain\.handle\(\s*['"]([\w:-]+)['"]/;
   const HANDLER_CLOSE = /^ {2}\}\);\s*$/;
 
+  // QA34(L8): 확장자 목록을 SUPPORTED_FORMATS 에서 **도출**한다 — 손으로 쓴 `(pdf|docx)` 는
+  // 포맷이 늘 때 따라가지 않고, `docx` 를 지워도 아무 테스트도 실패하지 않았다(양성 샘플 부재).
+  const EXT_LITERAL_RE = new RegExp(
+    `['"\`]\\.?(${SUPPORTED_FORMATS.map((f) => f.ext.slice(1)).join('|')})['"\`]`, 'i',
+  );
+
+  /** 한 파일(주석 제거본)에서 위반 줄 번호(1-based)를 낸다 — 출력 전용 핸들러 스코프는 건너뛴다. */
+  function scanExtensionLiterals(src: string): number[] {
+    const hits: number[] = [];
+    let currentHandler: string | null = null;
+    for (const [i, line] of src.split('\n').entries()) {
+      const handlerMatch = line.match(HANDLER_DECL);
+      if (handlerMatch?.[1]) currentHandler = handlerMatch[1];
+      const isOutputOnly = currentHandler !== null && OUTPUT_ONLY_HANDLERS.has(currentHandler);
+      if (HANDLER_CLOSE.test(line)) currentHandler = null;
+      if (isOutputOnly) continue;
+      if (EXT_LITERAL_RE.test(line)) hits.push(i + 1);
+    }
+    return hits;
+  }
+
   it("'.pdf'/'.docx' 리터럴이 단일 출처 밖에 없다", () => {
     const scanned = walkSourceFiles('src', /\.(ts|tsx)$/);
     assertScanIsWide(scanned);
@@ -343,17 +365,37 @@ describe('확장자 리터럴은 document-formats.ts 밖에 두지 않는다', (
       const rel = file.replace(/\\/g, '/');
       if (ALLOWED.has(rel) || isTestPath(file)) continue;
       const src = stripJsComments(readFileSync(file, 'utf-8'));
-      let currentHandler: string | null = null;
-      for (const [i, line] of src.split('\n').entries()) {
-        const handlerMatch = line.match(HANDLER_DECL);
-        if (handlerMatch?.[1]) currentHandler = handlerMatch[1];
-        const isOutputOnly = currentHandler !== null && OUTPUT_ONLY_HANDLERS.has(currentHandler);
-        if (HANDLER_CLOSE.test(line)) currentHandler = null;
-        if (isOutputOnly) continue;
-        if (/['"`]\.?(pdf|docx)['"`]/i.test(line)) offenders.push(`${file}:${i + 1}`);
-      }
+      for (const n of scanExtensionLiterals(src)) offenders.push(`${file}:${n}`);
     }
     expect(offenders, '확장자는 document-formats.ts 에서만 안다').toEqual([]);
+  });
+
+  it('가드 패턴이 모든 지원 포맷의 확장자 리터럴을 잡는다 (양성 샘플)', () => {
+    expect(SUPPORTED_FORMATS.length).toBeGreaterThanOrEqual(2);
+    for (const f of SUPPORTED_FORMATS) {
+      expect(EXT_LITERAL_RE.test(`if (name.endsWith('${f.ext}')) {`), f.ext).toBe(true);
+      expect(EXT_LITERAL_RE.test(`const e = "${f.ext.slice(1).toUpperCase()}";`), f.ext).toBe(true);
+    }
+    expect(EXT_LITERAL_RE.test("const x = 'pdfjs-dist';")).toBe(false);
+  });
+
+  // QA34(L8): 스코프 **닫기**(HANDLER_CLOSE)를 지워도 초록이었다 — 실제 main/index.ts 에서 출력
+  // 전용 핸들러 뒤에 확장자 리터럴이 우연히 없기 때문이다. 합성 소스로 경계를 직접 본다.
+  it('출력 전용 핸들러 안은 면제, 닫힌 뒤의 모듈 코드·다른 핸들러는 검사한다', () => {
+    const src = [
+      'export function register() {',
+      "  ipcMain.handle('file:save', async () => {",
+      "    const filters = [{ extensions: ['pdf'] }];", // 3: 면제(출력)
+      '    if (x) {',
+      '    }',
+      '  });',
+      "  const LEAK = '.pdf';", // 7: 스코프 닫힌 뒤 — 잡아야 한다
+      "  ipcMain.handle('file:open', async () => {",
+      "    if (p.endsWith('.docx')) return;", // 9: 입력 게이트 — 잡아야 한다
+      '  });',
+      '}',
+    ].join('\n');
+    expect(scanExtensionLiterals(src)).toEqual([7, 9]);
   });
 });
 
@@ -377,6 +419,22 @@ describe('PDF/CFB 매직바이트는 document-formats.ts 밖에 두지 않는다
   const PDF_MAGIC_BYTES = /0x25\s*,\s*0x50\s*,\s*0x44\s*,\s*0x46/i;
   const CFB_MAGIC_BYTES = /0xd0\s*,\s*0xcf\s*,\s*0x11\s*,\s*0xe0/i;
 
+  // QA34(L8): 두 패턴 중 하나(CFB)를 지워도 초록이었다 — 현재 코드에 위반이 없으니 "0건" 단언은
+  // 패턴이 무엇이든 성립한다. 각 패턴이 실제 위반 형태를 잡는지 양성 샘플로 고정한다.
+  it('두 매직바이트 패턴이 인라인 배열 형태를 실제로 잡는다 (양성 샘플)', () => {
+    expect(PDF_MAGIC_BYTES.test('const sig = [0x25, 0x50, 0x44, 0x46, 0x2d];')).toBe(true);
+    expect(CFB_MAGIC_BYTES.test('ok([0xD0,0xCF,0x11,0xE0, 0xa1]);')).toBe(true);
+    expect(PDF_MAGIC_BYTES.test('const zip = [0x50, 0x4b, 0x03, 0x04];')).toBe(false);
+    expect(CFB_MAGIC_BYTES.test('const zip = [0x50, 0x4b, 0x03, 0x04];')).toBe(false);
+  });
+
+  // 위 양성 샘플은 패턴 **상수**만 본다 — 본 스캔 루프가 두 상수를 모두 쓰는지는 따로 확인한다.
+  const scanMagicLine = (line: string) => PDF_MAGIC_BYTES.test(line) || CFB_MAGIC_BYTES.test(line);
+  it('본 스캔 판정이 두 시퀀스 모두에 걸린다', () => {
+    expect(scanMagicLine('[0x25, 0x50, 0x44, 0x46]')).toBe(true);
+    expect(scanMagicLine('[0xd0, 0xcf, 0x11, 0xe0]')).toBe(true);
+  });
+
   it('0x25,0x50,0x44,0x46 (%PDF) · 0xd0,0xcf,0x11,0xe0 (CFB) 바이트열이 단일 출처 밖에 없다', () => {
     const scanned = walkSourceFiles('src', /\.(ts|tsx)$/);
     assertScanIsWide(scanned);
@@ -386,7 +444,7 @@ describe('PDF/CFB 매직바이트는 document-formats.ts 밖에 두지 않는다
       if (ALLOWED.has(rel) || isTestPath(file)) continue;
       const src = stripJsComments(readFileSync(file, 'utf-8'));
       for (const [i, line] of src.split('\n').entries()) {
-        if (PDF_MAGIC_BYTES.test(line) || CFB_MAGIC_BYTES.test(line)) offenders.push(`${file}:${i + 1}`);
+        if (scanMagicLine(line)) offenders.push(`${file}:${i + 1}`);
       }
     }
     expect(offenders, 'PDF/CFB 매직바이트는 document-formats.ts 에서만 안다').toEqual([]);
