@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useAppStore } from './store';
 import { t } from './i18n';
-import { hashDocumentText } from './session-hash';
+import { hashDocumentForSession } from './session-hash';
 import { VectorStore } from './vector-store';
 import type { PdfDocument, PersistedSession, Summary, ActiveSummaryType, SerializedIndex } from '../types';
 import { SESSION_SCHEMA_VERSION, type SessionSaveMeta } from '../../shared/session-types';
@@ -38,13 +38,14 @@ export async function restoreSessionForDocument(doc: PdfDocument): Promise<void>
   // 이 시도의 결과로 판정한다 — 직전 시도의 실패가 남아 저장을 영영 막지 않도록.
   store.setSessionRestoreFailed(false);
   try {
-    const docHash = await hashDocumentText(doc.extractedText);
+    // QA34: 저장 키(getCachedDocHash)와 같은 함수 — 비-PDF 는 단위 경계를 해시에 넣는다(session-hash.ts).
+    const docHash = await hashDocumentForSession(doc);
     // multi-doc Phase 1: 탭에 콘텐츠 해시 기록 — 파일 재읽기가 불가능한 탭(이름-경로/파일
     // 이동)도 영속 세션에서 직접 복원해 전환할 수 있게 하는 fallback 키 (tabs.ts).
     //
     // QA31 잔여: 여기는 **upsert 가 아니라 patch** 여야 한다. 이 함수는 호출부 셋 모두에서
     // `void` 로 띄워지므로(pdf-parser:1259 / tabs.ts:152) 호출부의 setTabSwitching 구간이
-    // 이미 끝난 뒤에도 계속 돈다 — 그 창에서는 closeTab 이 열려 있다. 위 `hashDocumentText`
+    // 이미 끝난 뒤에도 계속 돈다 — 그 창에서는 closeTab 이 열려 있다. 위 `hashDocumentForSession`
     // await 사이에 사용자가 이 탭을 닫으면 upsert 가 **닫은 탭을 되살렸다**. 탭 등록은 두
     // 호출부가 이 함수를 부르기 **전에** 이미 끝내 놓으므로(둘 다 upsert 후 호출), 여기서
     // 삽입이 일어날 정당한 경우는 없다. 아래 :48 의 소유권 검사와 같은 관심사이고, 그것이
@@ -213,16 +214,17 @@ export async function restoreSessionForDocument(doc: PdfDocument): Promise<void>
 // getState() 를 읽어 last-write-wins 가 보장된다.
 let persistChain: Promise<void> = Promise.resolve();
 
-// 성능(P1): docHash 는 로드된 문서(doc.id)에 대해 불변(extractedText 의 SHA-256)인데, 자동저장이
+// 성능(P1): docHash 는 로드된 문서(doc.id)에 대해 불변(hashDocumentForSession — PDF 는 extractedText,
+// 비-PDF 는 단위 경계 포함 pageTexts 의 SHA-256)인데, 자동저장이
 // Q&A 턴마다 호출돼 멀티MB 본문을 매번 재해시했다. doc.id 기준 메모로 재계산을 제거한다.
 // 탭 전환 왕복도 캐시되도록 작은 Map(상한 32, FIFO evict — 열린 탭 수보다 넉넉)을 둔다.
 const docHashCache = new Map<string, string>();
 const DOC_HASH_CACHE_MAX = 32;
-async function getCachedDocHash(docId: string, extractedText: string): Promise<string> {
-  const cached = docHashCache.get(docId);
+async function getCachedDocHash(doc: PdfDocument): Promise<string> {
+  const cached = docHashCache.get(doc.id);
   if (cached !== undefined) return cached;
-  const hash = await hashDocumentText(extractedText);
-  docHashCache.set(docId, hash);
+  const hash = await hashDocumentForSession(doc);
+  docHashCache.set(doc.id, hash);
   if (docHashCache.size > DOC_HASH_CACHE_MAX) {
     const oldest = docHashCache.keys().next().value;
     if (oldest !== undefined) docHashCache.delete(oldest);
@@ -345,7 +347,7 @@ async function doPersistCurrentSession(flush = false): Promise<void> {
   // 달라지지만 "지금 기록할 인덱스를 갖고 있는가"는 이것 하나로 결정된다.
   const preserveDiskIndex = indexing || !!s.ragState.error || s.ragIndex.size === 0;
   try {
-    const docHash = await getCachedDocHash(doc.id, doc.extractedText);
+    const docHash = await getCachedDocHash(doc);
     if (useAppStore.getState().document?.id !== doc.id) return; // 레이스
 
     const ragIndex = s.ragIndex;

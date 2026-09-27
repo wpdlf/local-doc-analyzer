@@ -193,6 +193,15 @@ describe('openDocumentData — 성공 오케스트레이션', () => {
     await openDocumentData(pdfBuf(), 'b.pdf', '/d/b.pdf');
     expect(P.getOperatorList).not.toHaveBeenCalled();
     expect(useAppStore.getState().document?.images).toEqual([]);
+    // QA34(Important): QA6-D 마커 — 이 줄이 없을 때 document-open 의 마커 설정 삭제가 살아남았다.
+    expect(useAppStore.getState().document?.imagesSkipped).toBe(true);
+  });
+
+  it('enableImageAnalysis=true 로 연 PDF 에는 imagesSkipped 마커가 없다', async () => {
+    useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, provider: 'ollama', enableOcrFallback: false, enableImageAnalysis: true } });
+    await openDocumentData(pdfBuf(), 'c.pdf', '/d/c.pdf');
+    expect(useAppStore.getState().document).not.toBeNull();
+    expect(useAppStore.getState().document?.imagesSkipped).not.toBe(true);
   });
 
   // QA22 백로그: 조립 로직을 순수 함수(assemblePageText)로 분리하면서, **그 함수가 실제로 파싱
