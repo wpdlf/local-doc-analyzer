@@ -11,7 +11,7 @@ import { launchElectron, cleanupDir, type LaunchResult as BaseLaunch } from './h
  * 사전 조건: `npm run build` (package.json 의 test:e2e 스크립트가 체인). AI 백엔드 불필요 —
  * Ollama 미설치 환경에서도 결정적으로 동작하는 경로만 사용한다.
  *
- * 격리: 각 테스트가 임시 userData(PDF_ANALYZER_USER_DATA env, main/index.ts 의 오버라이드)를
+ * 격리: 각 테스트가 임시 userData(DOC_ANALYZER_USER_DATA env, main/index.ts 의 오버라이드)를
  * 사용해 실사용자 설정/세션을 건드리지 않고, 테스트 간 상태도 공유하지 않는다.
  */
 
@@ -22,7 +22,7 @@ interface LaunchResult extends BaseLaunch {
 // 격리 계약(env/sandbox)은 e2e/helpers 의 launchElectron 단일 출처를 사용. 본 래퍼는 스모크가
 // 매 테스트 임시 userData 를 직접 만들어 teardown 에서 지우는 기존 호출 규약만 유지한다.
 async function launchApp(seedSettings?: Record<string, unknown>): Promise<LaunchResult> {
-  const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-e2e-'));
+  const userDataDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-e2e-'));
   const r = await launchElectron(userDataDir, seedSettings);
   return { ...r, userDataDir };
 }
@@ -50,7 +50,7 @@ async function makeSamplePdfBase64(marker: string): Promise<string> {
 }
 
 test('콜드 스타트 — 셋업 위자드 노출 + 언어 토글 동작', async () => {
-  // 설정 없음 → provider 기본 ollama. PDF_ANALYZER_OLLAMA_URL(죽은 포트)로 호스트의
+  // 설정 없음 → provider 기본 ollama. DOC_ANALYZER_OLLAMA_URL(죽은 포트)로 호스트의
   // 실제 Ollama 와 무관하게 running=false → 위자드가 결정적으로 노출된다.
   const r = await launchApp();
   try {

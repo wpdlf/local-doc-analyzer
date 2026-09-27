@@ -1853,7 +1853,7 @@ interface LangPrompts {
 }
 
 const PROMPTS_KO: LangPrompts = {
-  full: (text) => `당신은 PDF 문서 분석 및 요약 전문가입니다.
+  full: (text) => `당신은 문서 분석 및 요약 전문가입니다.
 반드시 한국어로 답변하세요. 원문이 영어라도 한국어로 요약합니다.
 
 다음 문서를 분석하여 구조적으로 요약해주세요.
@@ -1879,7 +1879,7 @@ const PROMPTS_KO: LangPrompts = {
 ---
 
 ${text}`,
-  chapter: (text) => `당신은 PDF 문서 분석 및 요약 전문가입니다.
+  chapter: (text) => `당신은 문서 분석 및 요약 전문가입니다.
 반드시 한국어로 답변하세요. 원문이 영어라도 한국어로 요약합니다.
 
 다음 문서의 이 섹션을 요약해주세요.
@@ -1916,7 +1916,7 @@ ${text}`,
 ---
 
 ${text}`,
-  qa: (text) => `당신은 PDF 문서 Q&A 도우미입니다.
+  qa: (text) => `당신은 문서 Q&A 도우미입니다.
 반드시 한국어로 답변하세요.
 
 ## 규칙
@@ -1932,7 +1932,7 @@ ${text}`,
 };
 
 const PROMPTS_EN: LangPrompts = {
-  full: (text) => `You are an expert PDF document analyst and summarizer.
+  full: (text) => `You are an expert document analyst and summarizer.
 You MUST write your ENTIRE response in English. Even if the source document is in Korean or another language, ALL output must be in English.
 
 Analyze and structurally summarize the following document.
@@ -1958,7 +1958,7 @@ Use markdown format.
 ---
 
 ${text}`,
-  chapter: (text) => `You are an expert PDF document analyst and summarizer.
+  chapter: (text) => `You are an expert document analyst and summarizer.
 You MUST write your ENTIRE response in English. Even if the source is in another language, ALL output must be in English.
 
 Summarize this section of the document.
@@ -1995,7 +1995,7 @@ Output only the table — no greetings, compliments, or conversational remarks.
 ---
 
 ${text}`,
-  qa: (text) => `You are a PDF document Q&A assistant.
+  qa: (text) => `You are a document Q&A assistant.
 You MUST write your ENTIRE response in English. Even if the document or question is in another language, answer in English.
 
 ## Rules
@@ -2011,7 +2011,7 @@ ${text}`,
 };
 
 const PROMPTS_JA: LangPrompts = {
-  full: (text) => `あなたはPDF文書の分析・要約の専門家です。
+  full: (text) => `あなたは文書の分析・要約の専門家です。
 回答は必ず全て日本語で書いてください。原文が韓国語や英語であっても、全ての出力は日本語でなければなりません。
 
 以下の文書を分析し、構造的に要約してください。
@@ -2037,7 +2037,7 @@ const PROMPTS_JA: LangPrompts = {
 ---
 
 ${text}`,
-  chapter: (text) => `あなたはPDF文書の分析・要約の専門家です。
+  chapter: (text) => `あなたは文書の分析・要約の専門家です。
 回答は必ず全て日本語で書いてください。原文が他の言語であっても日本語で出力してください。
 
 このセクションを要約してください。
@@ -2075,7 +2075,7 @@ ${text}`,
 ---
 
 ${text}`,
-  qa: (text) => `あなたはPDF文書のQ&Aアシスタントです。
+  qa: (text) => `あなたは文書のQ&Aアシスタントです。
 回答は必ず全て日本語で書いてください。
 
 ## ルール
@@ -2091,7 +2091,7 @@ ${text}`,
 };
 
 const PROMPTS_ZH: LangPrompts = {
-  full: (text) => `你是PDF文档分析和总结的专家。
+  full: (text) => `你是文档分析和总结的专家。
 你必须用中文撰写全部回答。即使原文是韩语、英语或其他语言，所有输出必须100%使用中文。
 
 请分析并结构化总结以下文档。
@@ -2117,7 +2117,7 @@ const PROMPTS_ZH: LangPrompts = {
 ---
 
 ${text}`,
-  chapter: (text) => `你是PDF文档分析和总结的专家。
+  chapter: (text) => `你是文档分析和总结的专家。
 你必须用中文撰写全部回答。即使原文是其他语言，也请用中文输出。
 
 请总结文档的这一部分。
@@ -2154,7 +2154,7 @@ ${text}`,
 ---
 
 ${text}`,
-  qa: (text) => `你是PDF文档Q&A助手。
+  qa: (text) => `你是文档Q&A助手。
 你必须用中文撰写全部回答。
 
 ## 规则
@@ -2170,7 +2170,7 @@ ${text}`,
 };
 
 const PROMPTS_AUTO: LangPrompts = {
-  full: (text) => `You are an expert PDF document analyst and summarizer.
+  full: (text) => `You are an expert document analyst and summarizer.
 Respond in the same language as the source document below.
 
 Analyze and structurally summarize the following document.
@@ -2192,7 +2192,7 @@ Use markdown format.
 ---
 
 ${text}`,
-  chapter: (text) => `You are an expert PDF document analyst and summarizer.
+  chapter: (text) => `You are an expert document analyst and summarizer.
 Respond in the same language as the source document below.
 
 Summarize this section.
@@ -2226,7 +2226,7 @@ Extract 10-30 keywords. Output only the table.
 ---
 
 ${text}`,
-  qa: (text) => `You are a PDF document Q&A assistant.
+  qa: (text) => `You are a document Q&A assistant.
 Respond in the same language as the source document.
 
 ## Rules

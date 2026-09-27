@@ -29,8 +29,8 @@ test('컬렉션 Phase 3 — 통합 요약 + 저장→재오픈 (로컬 전용)',
   await requireOllama('exaone3.5');
   test.setTimeout(360000);
 
-  const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-p3-'));
-  const docsDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-p3-docs-'));
+  const userDataDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-p3-'));
+  const docsDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-p3-docs-'));
   writeFileSync(join(userDataDir, 'settings.json'), JSON.stringify({
     provider: 'ollama', model: 'exaone3.5:latest', ollamaBaseUrl: 'http://localhost:11434',
     uiLanguage: 'ko', theme: 'light', persistSessions: true, enableAnswerVerification: false,
@@ -42,7 +42,7 @@ test('컬렉션 Phase 3 — 통합 요약 + 저장→재오픈 (로컬 전용)',
   writeFileSync(pathA, bufA);
   writeFileSync(pathB, bufB);
 
-  const app = await electron.launch({ args: ['.'], env: { ...process.env, PDF_ANALYZER_USER_DATA: userDataDir } });
+  const app = await electron.launch({ args: ['.'], env: { ...process.env, DOC_ANALYZER_USER_DATA: userDataDir } });
   const page = await app.firstWindow();
   const pageErrors: Error[] = [];
   page.on('pageerror', (e) => pageErrors.push(e));

@@ -30,8 +30,8 @@ test('컬렉션 Q&A — 두 문서 요약 → 모드 토글 → 교차 질문 (�
   await requireOllama('exaone3.5');
   test.setTimeout(300000);
 
-  const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-coll-'));
-  const docsDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-coll-docs-'));
+  const userDataDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-coll-'));
+  const docsDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-coll-docs-'));
   writeFileSync(join(userDataDir, 'settings.json'), JSON.stringify({
     provider: 'ollama', model: 'exaone3.5:latest', ollamaBaseUrl: 'http://localhost:11434',
     uiLanguage: 'ko', theme: 'light', persistSessions: true,
@@ -47,7 +47,7 @@ test('컬렉션 Q&A — 두 문서 요약 → 모드 토글 → 교차 질문 (�
 
   const app = await electron.launch({
     args: ['.'],
-    env: { ...process.env, PDF_ANALYZER_USER_DATA: userDataDir },
+    env: { ...process.env, DOC_ANALYZER_USER_DATA: userDataDir },
   });
   const page = await app.firstWindow();
   const pageErrors: Error[] = [];

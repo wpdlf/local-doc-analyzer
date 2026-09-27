@@ -33,8 +33,8 @@ const SEED = { provider: 'claude', uiLanguage: 'ko', summaryLanguage: 'ko', them
 
 test('요약 언어 설정 변경 → 앱 재시작 후에도 유지', async () => {
   test.setTimeout(120000);
-  const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-set-'));
-  const docsDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-set-docs-'));
+  const userDataDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-set-'));
+  const docsDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-set-docs-'));
   try {
     const pathA = join(docsDir, 'doc.pdf');
     const bufA = await makePdf('SETTINGS');

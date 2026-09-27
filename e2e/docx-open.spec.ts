@@ -112,6 +112,22 @@ test('DOCX 를 열면 쪽나눔으로 2단위가 나뉘고 표가 표로 렌더�
       // 표가 GFM 으로 직렬화돼 실제 <table> 로 렌더된다(2번째 단위 안에 있다).
       await expect(r2.page.locator('[data-testid="doc-text-viewer"] table')).toBeVisible({ timeout: 15000 });
 
+      // ── QA34(Low): 텍스트 뷰어 배율 — viewer-zoom.spec 은 Ollama 게이트라 CI 에서 늘 skip 이다.
+      // 비-PDF 뷰어의 배율 배선(버튼 → store → 본문 font-size)을 게이트 없는 이 스펙에서 지킨다.
+      const textViewer = r2.page.locator('[data-testid="doc-text-viewer"]');
+      const panel = textViewer.locator('xpath=..');
+      const fontPx = async (): Promise<number> =>
+        parseFloat(await textViewer.evaluate((el) => getComputedStyle(el).fontSize));
+      const reset = panel.getByRole('button', { name: '화면 맞춤(100%)으로 되돌리기', exact: false });
+      await expect(reset).toHaveText('100%');
+      const font100 = await fontPx();
+      await panel.getByRole('button', { name: '확대', exact: true }).click();
+      await expect(reset).toHaveText('125%');
+      await expect.poll(fontPx, { timeout: 5000 }).toBeCloseTo(font100 * 1.25, 1);
+      await reset.click();
+      await expect(reset).toHaveText('100%');
+      await expect.poll(fontPx, { timeout: 5000 }).toBeCloseTo(font100, 1);
+
       expect(r2.pageErrors.map((e) => e.message), '2차 렌더러 에러').toEqual([]);
     } finally {
       await r2.app.close().catch(() => { /* 이미 종료 */ });

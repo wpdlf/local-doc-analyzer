@@ -22,7 +22,7 @@ import { launchElectron, cleanupDir } from './helpers';
  *   더 높겠지" 라는 직관이 틀린다.
  */
 test('Electron 의 Chromium 이 MathML Core 를 레이아웃한다', async () => {
-  const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-e2e-math-'));
+  const userDataDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-e2e-math-'));
   const r = await launchElectron(userDataDir);
   try {
     const probe = await r.page.evaluate(() => {
