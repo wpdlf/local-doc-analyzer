@@ -185,8 +185,8 @@ export type ElectronAPI = {
   file: {
     save: (content: string, defaultName: string) => Promise<string | null>;
     exportPdf: (html: string, defaultName: string) => Promise<string | null>;
-    openPdf: () => Promise<{ path: string; name: string; data: ArrayBuffer } | { error: string } | null>;
-    openPath: (targetPath: string) => Promise<{ path: string; name: string; data: ArrayBuffer } | { error: string }>;
+    openPdf: () => Promise<{ path: string; name: string; data: ArrayBuffer } | { error: string; errorKey?: string } | null>;
+    openPath: (targetPath: string) => Promise<{ path: string; name: string; data: ArrayBuffer } | { error: string; errorKey?: string }>;
   };
   settings: {
     get: () => Promise<Record<string, unknown>>;

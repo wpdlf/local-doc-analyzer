@@ -519,6 +519,16 @@ export const _translations = {
   'mainprog.writing': { ko: '설치 마무리 중...', en: 'Finalizing installation...' },
   'mainprog.success': { ko: '다운로드 완료!', en: 'Download complete!' },
   'mainprog.preparing': { ko: '모델 다운로드 준비 중...', en: 'Preparing model download...' },
+  // ─── main 파일 열기(file:open-pdf · file:open-path) 거부 사유 — QA34: 종전엔 한국어 원문이 영어 UI 에 그대로 ───
+  'mainerr.fileUnsupported': { ko: 'PDF · Word 파일만 열 수 있습니다.', en: 'Only PDF and Word files can be opened.' },
+  'mainerr.fileSymlink': { ko: '심볼릭 링크는 열 수 없습니다.', en: 'Symbolic links cannot be opened.' },
+  'mainerr.fileNotRegular': { ko: '일반 파일이 아닙니다.', en: 'This is not a regular file.' },
+  'mainerr.fileTooLarge': { ko: '파일이 너무 큽니다 (최대 100MB).', en: 'The file is too large (max 100MB).' },
+  'mainerr.fileInvalidPath': { ko: '잘못된 경로입니다.', en: 'Invalid path.' },
+  'mainerr.fileNotFound': { ko: '파일을 찾을 수 없습니다.', en: 'The file could not be found.' },
+  'mainerr.fileNotFoundMoved': { ko: '파일을 찾을 수 없습니다 (이동/삭제되었을 수 있습니다).', en: 'The file could not be found (it may have been moved or deleted).' },
+  'mainerr.fileAccessDenied': { ko: '파일에 접근할 수 없습니다.', en: 'Access to the file was denied.' },
+  'mainerr.fileOpenFailed': { ko: '파일을 열 수 없습니다.', en: 'The file could not be opened.' },
   // ─── main 프로세스 구조화 에러 (pullModel errorKey) — translateMainError 가 매핑 ───
   'mainerr.pullInProgress': { ko: '다른 모델 다운로드가 이미 진행 중입니다. 완료 후 다시 시도해주세요.', en: 'Another model download is already in progress. Please try again after it finishes.' },
   'mainerr.pullTimeout': { ko: '모델 다운로드 타임아웃 (30분). 네트워크를 확인 후 다시 시도해주세요.', en: 'Model download timed out (30 min). Check your network and try again.' },

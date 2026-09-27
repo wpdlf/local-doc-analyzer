@@ -128,3 +128,17 @@ describe('App — 창 DOM 드롭 게이트 (QA34)', () => {
     expect(useAppStore.getState().error?.message).toBe(t('uploader.notPdf'));
   });
 });
+
+// QA34: 다이얼로그(Ctrl+O · 헤더 버튼) 경로의 main 거부 사유가 한국어 원문 그대로 영어 UI 에 떴다.
+describe('App — 파일 열기 다이얼로그 거부 사유 번역 (QA34)', () => {
+  it('main 이 errorKey 를 실어 보내면 UI 언어로 번역한 배너를 띄운다', async () => {
+    useAppStore.setState((s) => ({ settings: { ...s.settings, uiLanguage: 'en' } }));
+    const openPdf = window.electronAPI.file.openPdf as unknown as ReturnType<typeof vi.fn>;
+    openPdf.mockResolvedValueOnce({ error: 'PDF · Word 파일만 열 수 있습니다.', errorKey: 'fileUnsupported' });
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, bubbles: true }));
+    });
+    await vi.waitFor(() => expect(useAppStore.getState().error?.message).toBe('Only PDF and Word files can be opened.'));
+    expect(openDocumentData).not.toHaveBeenCalled();
+  });
+});

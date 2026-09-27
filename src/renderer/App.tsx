@@ -102,7 +102,7 @@ export default function App() {
       const result = await window.electronAPI.file.openPdf();
       if (!result) return;
       if ('error' in result) {
-        useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: result.error });
+        useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: translateMainError(result, t('uploader.cannotRead')) });
         return;
       }
       await openDocumentData(result.data, result.name, result.path);

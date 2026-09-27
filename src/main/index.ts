@@ -1724,19 +1724,19 @@ export function registerIpcHandlers(): void {
       // "파일 형식" 드롭다운을 "모든 파일"로 바꾸거나 경로를 직접 타이핑하면 임의 확장자가
       // 그대로 넘어온다. file:open-path 가 이미 하는 서버측 확장자 재검증을 여기도 건다.
       if (!isSupportedExtension(filePath)) {
-        return { error: 'PDF · Word 파일만 열 수 있습니다.' };
+        return { error: 'PDF · Word 파일만 열 수 있습니다.', errorKey: 'fileUnsupported' };
       }
       // drop 핸들러와 동일한 방어 — 심볼릭 링크/비정규 파일 거부.
       const lstat = await fsp.lstat(filePath);
       if (lstat.isSymbolicLink()) {
-        return { error: '심볼릭 링크는 열 수 없습니다.' };
+        return { error: '심볼릭 링크는 열 수 없습니다.', errorKey: 'fileSymlink' };
       }
       const stat = await fsp.stat(filePath);
       if (!stat.isFile()) {
-        return { error: '일반 파일이 아닙니다.' };
+        return { error: '일반 파일이 아닙니다.', errorKey: 'fileNotRegular' };
       }
       if (stat.size > MAX_PDF_SIZE) {
-        return { error: '파일이 너무 큽니다 (최대 100MB).' };
+        return { error: '파일이 너무 큽니다 (최대 100MB).', errorKey: 'fileTooLarge' };
       }
       const buffer = await fsp.readFile(filePath);
       const arrayBuf = buffer.byteOffset === 0 && buffer.byteLength === buffer.buffer.byteLength
@@ -1749,11 +1749,12 @@ export function registerIpcHandlers(): void {
       };
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
-      const friendly = code === 'ENOENT' ? '파일을 찾을 수 없습니다.'
-        : code === 'EPERM' || code === 'EACCES' ? '파일에 접근할 수 없습니다.'
-        : '파일을 열 수 없습니다.';
       console.error('[file:open-pdf] failed:', err);
-      return { error: friendly };
+      // errorKey 는 렌더러가 UI 언어로 번역한다(translateMainError). 삼항이 아니라 분기로 쓰는 것은
+      // i18n 계약 가드가 `errorKey: '리터럴'` 을 스캔하기 때문 — errno 리터럴이 키로 잡히지 않게.
+      if (code === 'ENOENT') return { error: '파일을 찾을 수 없습니다.', errorKey: 'fileNotFound' };
+      if (code === 'EPERM' || code === 'EACCES') return { error: '파일에 접근할 수 없습니다.', errorKey: 'fileAccessDenied' };
+      return { error: '파일을 열 수 없습니다.', errorKey: 'fileOpenFailed' };
     }
   });
 
@@ -1763,24 +1764,24 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('file:open-path', async (_event, targetPath: unknown) => {
     const MAX_PDF_SIZE = MAX_PDF_SIZE_BYTES;
     if (typeof targetPath !== 'string' || targetPath.length === 0 || targetPath.length > 4096) {
-      return { error: '잘못된 경로입니다.' };
+      return { error: '잘못된 경로입니다.', errorKey: 'fileInvalidPath' };
     }
     if (!isSupportedExtension(targetPath)) {
-      return { error: 'PDF · Word 파일만 열 수 있습니다.' };
+      return { error: 'PDF · Word 파일만 열 수 있습니다.', errorKey: 'fileUnsupported' };
     }
     // QA20(B-MED): UNC(`\\server\share`) 차단 — 드롭 경로(will-navigate)는 "UNC 경로 차단:
     // 네트워크 읽기 방지"를 이미 하는데 이 경로만 빠져 있던 비대칭. 손상된 렌더러가 원격 경로를
     // 넘기면 lstat 만으로 Windows SMB 클라이언트가 깨어나 공격자 서버에 NTLM 자격증명을
     // 흘린다(오프라인 크래킹·릴레이). 널바이트도 함께 거부(경로 절단 방어).
     if (targetPath.startsWith('\\\\') || targetPath.startsWith('//') || targetPath.includes('\0')) {
-      return { error: '잘못된 경로입니다.' };
+      return { error: '잘못된 경로입니다.', errorKey: 'fileInvalidPath' };
     }
     try {
       const lstat = await fsp.lstat(targetPath);
-      if (lstat.isSymbolicLink()) return { error: '심볼릭 링크는 열 수 없습니다.' };
+      if (lstat.isSymbolicLink()) return { error: '심볼릭 링크는 열 수 없습니다.', errorKey: 'fileSymlink' };
       const stat = await fsp.stat(targetPath);
-      if (!stat.isFile()) return { error: '일반 파일이 아닙니다.' };
-      if (stat.size > MAX_PDF_SIZE) return { error: '파일이 너무 큽니다 (최대 100MB).' };
+      if (!stat.isFile()) return { error: '일반 파일이 아닙니다.', errorKey: 'fileNotRegular' };
+      if (stat.size > MAX_PDF_SIZE) return { error: '파일이 너무 큽니다 (최대 100MB).', errorKey: 'fileTooLarge' };
       const buffer = await fsp.readFile(targetPath);
       const arrayBuf = buffer.byteOffset === 0 && buffer.byteLength === buffer.buffer.byteLength
         ? buffer.buffer
@@ -1788,11 +1789,10 @@ export function registerIpcHandlers(): void {
       return { path: targetPath, name: path.basename(targetPath), data: arrayBuf };
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
-      const friendly = code === 'ENOENT' ? '파일을 찾을 수 없습니다 (이동/삭제되었을 수 있습니다).'
-        : code === 'EPERM' || code === 'EACCES' ? '파일에 접근할 수 없습니다.'
-        : '파일을 열 수 없습니다.';
       console.error('[file:open-path] failed:', err);
-      return { error: friendly };
+      if (code === 'ENOENT') return { error: '파일을 찾을 수 없습니다 (이동/삭제되었을 수 있습니다).', errorKey: 'fileNotFoundMoved' };
+      if (code === 'EPERM' || code === 'EACCES') return { error: '파일에 접근할 수 없습니다.', errorKey: 'fileAccessDenied' };
+      return { error: '파일을 열 수 없습니다.', errorKey: 'fileOpenFailed' };
     }
   });
 }

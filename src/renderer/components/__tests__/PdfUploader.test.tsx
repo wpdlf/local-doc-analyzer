@@ -64,6 +64,16 @@ describe('PdfUploader', () => {
     expect(M.openDocumentData).not.toHaveBeenCalled();
   });
 
+  // QA34: main 의 거부 사유가 한국어 원문 그대로 영어 UI 에 떴다 — errorKey 가 있으면 UI 언어로 번역.
+  it('openPdf 에러에 errorKey 가 있으면 UI 언어로 번역해 보인다', async () => {
+    useAppStore.setState((s) => ({ settings: { ...s.settings, uiLanguage: 'en' } }));
+    M.openPdf.mockResolvedValue({ error: '파일이 너무 큽니다 (최대 100MB).', errorKey: 'fileTooLarge' });
+    const user = userEvent.setup();
+    render(<PdfUploader />);
+    await user.click(screen.getByRole('button', { name: 'Select file' }));
+    await waitFor(() => expect(useAppStore.getState().error?.message).toBe('The file is too large (max 100MB).'));
+  });
+
   it('openPdf 취소(null 반환) → 에러 없음, openDocumentData 미호출', async () => {
     M.openPdf.mockResolvedValue(null);
     const user = userEvent.setup();
