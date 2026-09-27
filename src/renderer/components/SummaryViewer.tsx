@@ -12,7 +12,7 @@ import { PdfViewerPanel } from './PdfViewer';
 import { DocTextViewerPanel } from './DocTextViewer';
 import { ResizeHandle } from './ResizeHandle';
 import { Toast } from './Toast';
-import { isCanvasRenderable } from '../../shared/document-formats';
+import { usesCanvasViewer, stripSupportedExtension } from '../../shared/document-formats';
 
 interface SummaryViewerProps {
   onAbort?: () => void;
@@ -28,9 +28,8 @@ export function SummaryViewer({ onAbort }: SummaryViewerProps) {
   // page-citation-viewer: citationTarget 존재 시 우측 패널 슬롯에 PdfViewer 마운트
   const citationTarget = useAppStore((s) => s.citationTarget);
   // PDF 만 canvas 로 그린다. 비-PDF 는 추출된 단위를 텍스트로 보여준다.
-  // unitKind === 'page' 만으로는 갈리지 않는다 — DOCX 도 'page' 다(document-formats.ts 참고).
-  const isPdfDocument = useAppStore((s) => (s.document?.unitKind ?? 'page') === 'page'
-    && s.document?.fileName !== undefined && isCanvasRenderable(s.document.fileName));
+  // QA34(L10): 파일명이 아니라 내용(추출 파이프라인)으로 가른다 — document-formats.ts 참고.
+  const isPdfDocument = useAppStore((s) => s.document != null && usesCanvasViewer(s.document.unitKind));
   // DR-01: 사용자 조정 가능한 패널 너비 비율 (우측 PdfViewer 가 차지할 비율)
   const panelRatio = useAppStore((s) => s.citationPanelWidth);
   const setCitationPanelWidth = useAppStore((s) => s.setCitationPanelWidth);
@@ -140,9 +139,9 @@ export function SummaryViewer({ onAbort }: SummaryViewerProps) {
 
   const handleExport = async () => {
     if (!summaryStream) return;
-    // `.pdf` 대소문자 무관하게 제거 — "report.PDF" 가 "report.PDF_summary.md" 가 되는 문제 방지
+    // 지원 확장자를 대소문자 무관하게 제거 — "report.PDF_summary.md" / "보고서.docx_요약.md" 방지(QA34 L9)
     const defaultName = document
-      ? document.fileName.replace(/\.pdf$/i, '') + `_${t('viewer.defaultFilename').replace('.md', '')}.md`
+      ? stripSupportedExtension(document.fileName) + `_${t('viewer.defaultFilename').replace('.md', '')}.md`
       : t('viewer.defaultFilename');
     try {
       await window.electronAPI.file.save(summaryStream, defaultName);
@@ -168,7 +167,7 @@ export function SummaryViewer({ onAbort }: SummaryViewerProps) {
     if (!summaryStream || isExportingPdf) return;
     setIsExportingPdf(true);
     // 파일명 폴백 — 이모지가 든 표시용 문자열이 파일명에 박히면 안 된다(평문 키 사용).
-    const baseName = document ? document.fileName.replace(/\.pdf$/i, '') : t('viewer.resultAria');
+    const baseName = document ? stripSupportedExtension(document.fileName) : t('viewer.resultAria');
     const defaultName = `${baseName}_${t('viewer.defaultFilename').replace('.md', '')}.pdf`;
     try {
       // 지연 로드: react-dom/server(renderToStaticMarkup) 를 시작 청크에서 분리 — PDF 내보내기는
