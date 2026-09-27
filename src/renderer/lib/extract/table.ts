@@ -7,7 +7,14 @@
 
 function cell(text: string): string {
   // 표 한 줄이 한 행이어야 하므로 줄바꿈을 접고, 파이프는 열 경계를 깨므로 이스케이프한다.
-  return text.replace(/\s*\n\s*/g, ' ').replace(/\|/g, '\\|').trim();
+  // 역슬래시를 **먼저** 두 배로 한다 — 셀 끝의 역슬래시(`C:\`)가 뒤따르는 경계 파이프와 붙어
+  // `\|` 로 읽히면 열이 하나 사라진다. 순서가 반대면 파이프 이스케이프가 만든 역슬래시까지
+  // 두 배가 되어 이번엔 파이프가 경계로 풀린다.
+  return text
+    .replace(/\s*\n\s*/g, ' ')
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .trim();
 }
 
 export function toGfmTable(rows: string[][]): string {
