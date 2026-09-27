@@ -203,7 +203,7 @@ export const _translations = {
   'uploader.ocrFail': { ko: 'OCR로도 텍스트를 추출할 수 없습니다. PDF 품질을 확인해주세요.', en: 'Text could not be extracted even with OCR. Please check the PDF quality.' },
   // QA30(A-F4): 401 은 "OCR 실패" 가 아니라 키 문제다 — per-page catch 가 삼키던 것을 표면화.
   'uploader.ocrAuthFail': { ko: 'API 키가 유효하지 않아 OCR을 진행할 수 없습니다. 설정에서 API 키를 확인해주세요.', en: 'OCR could not run because the API key is not valid. Please check your API key in Settings.' },
-  'uploader.cancelParse': { ko: 'PDF 처리 취소', en: 'Cancel PDF processing' },
+  'uploader.cancelParse': { ko: '문서 처리 취소', en: 'Cancel document processing' },
   'uploader.cancelBtn': { ko: '■ 취소', en: '■ Cancel' },
   'uploader.ocrProgress': { ko: '스캔 PDF 텍스트 인식 중...', en: 'Recognizing scanned PDF text...' },
   'uploader.ocrLabel': { ko: 'OCR 진행', en: 'OCR progress' },
