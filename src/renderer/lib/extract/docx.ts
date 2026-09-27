@@ -26,6 +26,20 @@ function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) extractFail('ABORTED', 'aborted');
 }
 
+/**
+ * 이만큼 요소를 처리할 때마다 이벤트 루프에 한 번 양보한다.
+ *
+ * QA34: 추출이 처음부터 끝까지 동기로 돌아 await 지점이 없었다 — 렌더러가 그동안 얼고,
+ * 사용자의 취소(AbortController.abort)는 추출이 끝난 뒤에야 실행돼 루프 안 throwIfAborted
+ * 가 취소를 한 번도 관측하지 못하는 죽은 코드였다. 양보 비용(setTimeout 최소 지연)이 문단당
+ * 처리 비용보다 훨씬 커서 너무 자주 양보하면 정상 문서가 느려진다 — 수백 요소 단위로 둔다.
+ */
+const YIELD_EVERY = 200;
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 function mimeOf(path: string): 'image/png' | 'image/jpeg' | null {
   const lower = path.toLowerCase();
   if (lower.endsWith('.png')) return 'image/png';
@@ -371,10 +385,18 @@ export const docxExtractor: Extractor = {
       return true;
     };
 
+    // 진행률은 본문 최상위 항목 기준이다 — 글상자 프레임은 그 항목 하나의 일부로 친다.
+    const top = stack[0]!;
+    let processed = 0;
     while (stack.length > 0) {
       const frame = stack[stack.length - 1]!;
       if (frame.i >= frame.items.length) { stack.pop(); continue; }
       const child = frame.items[frame.i++]!;
+      processed += 1;
+      if (processed % YIELD_EVERY === 0) {
+        await yieldToEventLoop();
+        opts.onProgress?.(top.i, top.items.length);
+      }
       throwIfAborted(opts.signal);
       const name = localName(child);
 
@@ -417,6 +439,8 @@ export const docxExtractor: Extractor = {
         stack.push({ items: textBoxes.flatMap((box) => expandWrappers(box.children)), i: 0, nested: true });
       }
     }
+
+    opts.onProgress?.(top.items.length, top.items.length);
 
     const { units, unitOfBlock } = paginate(blocks);
     if (units.length === 0) extractFail('DOC_NO_TEXT', 'no text in document');

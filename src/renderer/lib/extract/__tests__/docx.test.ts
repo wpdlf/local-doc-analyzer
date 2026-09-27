@@ -333,6 +333,32 @@ describe('docxExtractor.extract', () => {
 
 // ─── QA34: 실물 DOCX 에서 확인된 누락·중복 ───
 
+describe('docxExtractor — 큰 문서의 중단·진행률', () => {
+  const bigDoc = () =>
+    zipOf({ 'word/document.xml': doc(Array.from({ length: 2000 }, (_, i) => para(`p${i}`)).join('')) });
+
+  it('다른 작업(타이머)이 건 abort 를 추출 도중에 관측해 ABORTED 로 멈춘다', async () => {
+    // 추출이 이벤트 루프에 한 번도 양보하지 않으면 타이머 콜백은 추출이 끝난 **뒤에야** 돈다 —
+    // 그러면 루프 안 throwIfAborted 는 사용자의 취소를 영영 볼 수 없는 죽은 코드다.
+    const zip = bigDoc();
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 0);
+    await expect(docxExtractor.extract(zip, { signal: ctrl.signal, extractImages: false })).rejects.toThrowError(
+      expect.objectContaining({ code: 'ABORTED' }),
+    );
+  });
+
+  it('onProgress 를 단조 증가로 부르고 마지막에 total 에 닿는다', async () => {
+    const calls: [number, number][] = [];
+    await docxExtractor.extract(bigDoc(), { extractImages: false, onProgress: (c, t) => calls.push([c, t]) });
+    expect(calls.length).toBeGreaterThan(1);
+    for (let i = 1; i < calls.length; i++) expect(calls[i]![0]).toBeGreaterThanOrEqual(calls[i - 1]![0]);
+    const last = calls[calls.length - 1]!;
+    expect(last[0]).toBe(last[1]);
+    expect(last[1]).toBe(2000);
+  });
+});
+
 /** PNG 와 다른 바이트 — 어느 그림이 담겼는지 base64 로 가린다. */
 const PNG_B = new Uint8Array([...PNG, 0x00]);
 
