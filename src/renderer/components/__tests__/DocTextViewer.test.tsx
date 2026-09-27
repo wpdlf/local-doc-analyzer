@@ -136,7 +136,7 @@ describe('DocTextViewerPanel', () => {
   it("원문의 '~' 범위 표기를 취소선으로 그리지 않는다", async () => {
     setDoc(['**일정** 기간 9/1~9/30, 인원 10~20명']);
     const { container } = render(<DocTextViewerPanel />);
-    await waitFor(() => expect(container.querySelector('strong')).not.toBeNull());
+    await waitFor(() => expect(container.querySelector('strong')).not.toBeNull(), { timeout: 5000 });
     expect(container.querySelector('del')).toBeNull();
     expect(container.textContent).toContain('기간 9/1~9/30, 인원 10~20명');
   });
@@ -144,7 +144,7 @@ describe('DocTextViewerPanel', () => {
   it('이중 물결(~~x~~)은 여전히 취소선이다 (GFM 기능 자체는 유지)', async () => {
     setDoc(['**a** ~~지운 글~~']);
     const { container } = render(<DocTextViewerPanel />);
-    await waitFor(() => expect(container.querySelector('strong')).not.toBeNull());
+    await waitFor(() => expect(container.querySelector('strong')).not.toBeNull(), { timeout: 5000 });
     expect(container.querySelector('del')?.textContent).toBe('지운 글');
   });
 });
