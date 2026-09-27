@@ -5,14 +5,15 @@ import type { PDFDocumentProxy, PDFDocumentLoadingTask } from 'pdfjs-dist';
 import { useAppStore } from '../lib/store';
 import { useT } from '../lib/i18n';
 import { loadPdfjs, isReReadablePath } from '../lib/pdf-parser';
-import { restoreCitationFocus } from '../lib/citation-focus';
+import { closeCitationPanel } from '../lib/close-citation-panel';
 import { extractOutline, type OutlineNode } from '../lib/pdf-outline';
 import {
   ZOOM_MAX, ZOOM_STEP_BUTTON,
   composeRenderScale, findScrollAnchor, scrollTopForAnchor,
   maxUsableZoom, scrollLeftForRatio,
 } from '../lib/viewer-zoom';
-import { useZoomControls, isEditableFocused } from '../lib/use-zoom-controls';
+import { useZoomControls } from '../lib/use-zoom-controls';
+import { ViewerCloseButton } from './ViewerCloseButton';
 import { ZoomControls } from './ZoomControls';
 
 /**
@@ -617,24 +618,8 @@ export function PdfViewer({ pdfBytes, targetPage, jumpNonce = 0, onClose }: PdfV
     // jumpNonce: 동일 targetPage 재지정 시에도 effect 재실행해 재스크롤 (M1).
   }, [targetPage, jumpNonce, loadState, totalPages]);
 
-  // 4. ESC 키로 닫기
-  //    v0.18.4 H3 fix: editable 포커스(textarea/input/contenteditable) 에서 ESC 는
-  //    입력 롤백·IME 조합 취소 등 관례적 용도로 쓰이므로 가로채지 않고 흘려보낸다.
-  //    (QaChat 질문 입력 중 ESC 누르면 인용 패널이 닫히던 UX 이슈 해소)
-  //    v0.18.5 L1 fix: Shadow DOM 내부에 포커스가 있을 때 `document.activeElement` 는
-  //    shadow 호스트를 반환하므로 단순 체크로는 내부 INPUT/TEXTAREA 를 놓친다.
-  //    shadowRoot.activeElement 를 재귀적으로 따라가 실제 포커스 element 를 찾는다.
-  //    (현재 코드에 shadow DOM 위젯은 없으나, 서드파티/네이티브 위젯 도입 대비 future-proof.)
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (isEditableFocused()) return;
-      e.preventDefault();
-      onClose();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [onClose]);
+  // 4. ESC 키로 닫기 — QA34(H1): ✕ 버튼과 함께 ViewerCloseButton 이 소유한다(형제 패널
+  //    DocTextViewer 와 공유). 편집 포커스 예외(v0.18.4 H3)·Shadow DOM 추적(v0.18.5 L1)도 그쪽에.
 
   return (
     <div className="flex flex-col h-full bg-white border-l dark:border-gray-700" role="region" aria-label={t('pdfviewer.title')}>
@@ -675,14 +660,7 @@ export function PdfViewer({ pdfBytes, targetPage, jumpNonce = 0, onClose }: PdfV
             onZoomIn={() => zoomBy(1, ZOOM_STEP_BUTTON)}
             onZoomReset={() => setZoom(1)}
           />
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm px-2 py-1 ml-1"
-            aria-label={t('pdfviewer.close')}
-          >
-            ✕
-          </button>
+          <ViewerCloseButton onClose={onClose} className="ml-1" />
         </div>
       </div>
 
@@ -811,16 +789,10 @@ export function PdfViewerPanel() {
   const pdfBytes = useAppStore((s) => s.pdfBytes);
   const filePath = useAppStore((s) => s.document?.filePath ?? null);
   const docId = useAppStore((s) => s.document?.id ?? null);
-  const setCitationTarget = useAppStore((s) => s.setCitationTarget);
   const [loadFailed, setLoadFailed] = useState(false);
 
-  // QA14(D-MED): 패널 닫힘 시 포커스를 트리거 CitationButton 으로 반환(패널 언마운트로 body 유실 방지).
-  // 재렌더로 트리거 버튼이 재부착된 뒤 포커스하도록 rAF 로 지연.
-  const handleClose = () => {
-    setCitationTarget(null);
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(restoreCitationFocus);
-    else restoreCitationFocus();
-  };
+  // QA14(D-MED) 포커스 반환 포함 — QA34(H1): DocTextViewerPanel 과 공유하는 단일 통로.
+  const handleClose = closeCitationPanel;
 
   // 상주 바이트가 없고 재읽기 가능한 실경로면 디스크에서 1회 로드 → store 주입.
   const canLazyLoad = !pdfBytes && !!filePath && isReReadablePath(filePath) && !!docId;
@@ -863,14 +835,7 @@ export function PdfViewerPanel() {
     <div className="flex flex-col h-full bg-white border-l dark:border-gray-700" role="region" aria-label={t('pdfviewer.title')}>
       <div className="flex items-center justify-between px-3 py-2 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800 shrink-0">
         <span className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate">{t('pdfviewer.title')}</span>
-        <button
-          type="button"
-          onClick={handleClose}
-          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm px-2 py-1 shrink-0"
-          aria-label={t('pdfviewer.close')}
-        >
-          ✕
-        </button>
+        <ViewerCloseButton onClose={handleClose} className="shrink-0" />
       </div>
       <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3 p-4 text-center" aria-busy={!unrecoverable}>
         {unrecoverable ? (

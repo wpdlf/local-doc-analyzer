@@ -39,9 +39,15 @@ export const DOCX_FORMAT_ID = 'docx' as const satisfies DocumentFormat['id'];
  */
 export type NonPdfFormatId = Exclude<DocumentFormat['id'], 'pdf'>;
 
-/** Electron dialog 의 filters — extensions 는 점 없는 형태여야 한다. */
+/**
+ * Electron dialog 의 filters — extensions 는 점 없는 형태여야 한다.
+ *
+ * QA34(L11): "모든 지원 문서" 필터 이름은 main 프로세스가 쓰는데 main 에는 i18n 이 없다 — 종전
+ * 한국어 '문서' 가 영어 UI 에서도 그대로 보였다. 포맷 라벨(고유명사) 나열로 언어 중립화한다
+ * ('PDF, Word'). 포맷이 늘면 자동으로 따라간다.
+ */
 export const DIALOG_FILTERS: readonly { name: string; extensions: string[] }[] = [
-  { name: '문서', extensions: SUPPORTED_FORMATS.map((f) => f.ext.slice(1)) },
+  { name: SUPPORTED_FORMATS.map((f) => f.label).join(', '), extensions: SUPPORTED_FORMATS.map((f) => f.ext.slice(1)) },
   ...SUPPORTED_FORMATS.map((f) => ({ name: f.label, extensions: [f.ext.slice(1)] })),
 ];
 
@@ -60,12 +66,41 @@ export function isSupportedExtension(filePath: string): boolean {
 }
 
 /**
- * canvas 렌더 대상(PDF)인가. 나머지(DOCX 등)는 텍스트 뷰어(`DocTextViewerPanel`)가 맡는다.
+ * 파일명 끝의 지원 확장자를 벗긴다(대소문자 무관) — 내보내기 기본 파일명용 (QA34 L9).
  *
- * `unitKind === 'page'` 만으로는 갈리지 않는다 — DOCX 도 `'page'` 단위를 쓴다(Task13).
+ * 종전 호출부(SummaryViewer)가 `.pdf` 만 벗겨 `보고서.docx_요약.md` 가 됐다. 확장자 목록을
+ * 여기서 도출하므로 포맷이 늘어도 따라간다. 이름 전체가 확장자뿐이면(`.pdf`) 빈 문자열이
+ * 되지 않도록 그대로 둔다(`isSupportedExtension` 의 stem 규칙과 같다).
  */
-export function isCanvasRenderable(fileName: string): boolean {
-  return fileName.toLowerCase().endsWith('.pdf');
+export function stripSupportedExtension(fileName: string): string {
+  const lower = fileName.toLowerCase();
+  const ext = SUPPORTED_EXTENSIONS.find((e) => lower.endsWith(e) && fileName.length > e.length);
+  return ext ? fileName.slice(0, -ext.length) : fileName;
+}
+
+/**
+ * 인용 단위 종류의 런타임 단일 출처 (QA34 L7).
+ *
+ * 타입 선언은 extract/types.ts(`UnitKind`)와 session-types.ts(레이어링 때문에 복제)에 있고
+ * unit-kind-drift.test.ts 가 셋을 대조한다. main 의 session-store 는 디스크에서 읽은 값을
+ * 이 상수로 거른다 — 종전엔 거기에 세 번째 리터럴 사본이 있었고 drift 가드 밖이었다.
+ */
+export const UNIT_KINDS = ['page', 'slide', 'chapter'] as const;
+
+export function isUnitKind(v: unknown): v is (typeof UNIT_KINDS)[number] {
+  return typeof v === 'string' && (UNIT_KINDS as readonly string[]).includes(v);
+}
+
+/**
+ * canvas(pdfjs) 뷰어 대상인가 — 파일명이 아니라 **내용**(어느 파이프라인이 추출했나)으로 가른다
+ * (QA34 L10). 나머지는 텍스트 뷰어(`DocTextViewerPanel`)가 맡는다.
+ *
+ * PDF 파이프라인(pdf-parser.ts)은 unitKind 를 두지 않고, 비-PDF 추출기(extract/normalize.ts)는
+ * 언제나 둔다(DOCX 도 `'page'`). 세션 복원·탭 전환도 저장된 unitKind 를 그대로 싣는다. 종전의
+ * 확장자 판정은 `.pdf` 이름의 zip(내용 판별로 DOCX 파싱됨)을 pdfjs 뷰어로 보내 깨뜨렸다.
+ */
+export function usesCanvasViewer(unitKind: string | undefined): boolean {
+  return unitKind === undefined;
 }
 
 /** zip 로컬 파일 헤더 `PK\x03\x04`. 암호가 걸린 OOXML 은 CFB 라 여기서 갈린다. */

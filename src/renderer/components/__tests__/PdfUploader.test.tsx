@@ -88,7 +88,7 @@ describe('PdfUploader', () => {
     const user = userEvent.setup();
     render(<PdfUploader />);
     expect(screen.getByText(/문서를 읽고 있습니다/)).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'PDF 처리 취소' }));
+    await user.click(screen.getByRole('button', { name: '문서 처리 취소' }));
     expect(M.cancelDocumentParse).toHaveBeenCalledTimes(1);
   });
 

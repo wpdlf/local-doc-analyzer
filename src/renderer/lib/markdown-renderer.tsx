@@ -1,5 +1,5 @@
 ﻿import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { GFM_REMARK_PLUGINS } from './gfm-plugins';
 import { safeComponents } from './safe-markdown';
 import { MATH_REMARK_PLUGINS, MATH_REHYPE_PLUGINS } from './math-plugins';
 import { normalizeMathDelimiters } from './math-normalize';
@@ -11,8 +11,11 @@ import { normalizeMathDelimiters } from './math-normalize';
 // cold-start eager 번들에서 빠지고, 요약/Q&A 첫 렌더 직전에 비동기 로드된다.
 // (export-html 은 이미 별도 lazy 청크라 자체적으로 react-markdown 을 정적 import 한다.)
 
-/** remark/rehype 플러그인 — 모듈 스코프 상수로 매 렌더 새 참조 생성 방지 */
-const REMARK_PLUGINS = [remarkGfm, ...MATH_REMARK_PLUGINS];
+/**
+ * remark/rehype 플러그인 — 모듈 스코프 상수로 매 렌더 새 참조 생성 방지.
+ * GFM 설정(단일 물결 취소선 끔, QA34 M6)은 gfm-plugins.ts 가 단일 출처다.
+ */
+const REMARK_PLUGINS = [...GFM_REMARK_PLUGINS, ...MATH_REMARK_PLUGINS];
 const REHYPE_PLUGINS = MATH_REHYPE_PLUGINS;
 
 export default function MarkdownRenderer({ children }: { children: string }) {

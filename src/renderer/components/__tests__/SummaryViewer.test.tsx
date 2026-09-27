@@ -48,11 +48,11 @@ import { SummaryViewer } from '../SummaryViewer';
 import { useAppStore } from '../../lib/store';
 import { DEFAULT_SETTINGS } from '../../types';
 
-function setState(opts: Partial<{ generating: boolean; stream: string; citation: boolean; docName: string }>) {
-  const { generating = false, stream = '', citation = false, docName = 'lecture.pdf' } = opts;
+function setState(opts: Partial<{ generating: boolean; stream: string; citation: boolean; docName: string; unitKind: 'page' | 'slide' | 'chapter' }>) {
+  const { generating = false, stream = '', citation = false, docName = 'lecture.pdf', unitKind } = opts;
   useAppStore.setState({
     settings: { ...DEFAULT_SETTINGS },
-    document: { fileName: docName, pageCount: 5 } as never,
+    document: { fileName: docName, pageCount: 5, ...(unitKind ? { unitKind } : {}) } as never,
     summaryStream: stream,
     isGenerating: generating,
     progress: 0,
@@ -113,6 +113,28 @@ describe('SummaryViewer', () => {
     const call = M.save.mock.calls[0] as unknown as [string, string];
     expect(call[0]).toBe('본문');
     expect(call[1]).toMatch(/^lecture_.*\.md$/);
+  });
+
+  // QA34(L9): `.pdf` 만 벗겨 `보고서.docx_요약.md` 가 됐다.
+  it('DOCX 문서의 .md 내보내기 파일명에 .docx 가 남지 않는다', async () => {
+    setState({ stream: '본문', docName: '보고서.DOCX', unitKind: 'page' });
+    const user = userEvent.setup();
+    render(<SummaryViewer />);
+    await user.click(screen.getByText('💾 .md 내보내기'));
+    const call = M.save.mock.calls[0] as unknown as [string, string];
+    expect(call[1]).toMatch(/^보고서_.*\.md$/);
+    expect(call[1].toLowerCase()).not.toContain('.docx');
+  });
+
+  it('DOCX 문서의 PDF 내보내기 파일명에 .docx 가 남지 않는다', async () => {
+    setState({ stream: '# 요약', docName: '보고서.docx', unitKind: 'page' });
+    const user = userEvent.setup();
+    render(<SummaryViewer />);
+    await user.click(screen.getByRole('button', { name: 'PDF 파일로 내보내기' }));
+    await vi.waitFor(() => expect(M.exportPdf).toHaveBeenCalledTimes(1), { timeout: 5000 });
+    const call = M.exportPdf.mock.calls[0] as unknown as [string, string];
+    expect(call[1]).toMatch(/^보고서_.*\.pdf$/);
+    expect(call[1]).not.toContain('.docx');
   });
 
   it('PDF 내보내기 → file.exportPdf(html, *.pdf) 호출 (지연 import)', async () => {
@@ -337,8 +359,9 @@ describe('SummaryViewer', () => {
    * DOCX 는 canvas 로 그릴 원본 바이트가 없으므로, 분기가 깨지면 PdfViewerPanel 이 마운트돼
    * 빈/깨진 canvas 로 이어진다 — 여기서 텍스트 패널이 뜨는지 직접 본다.
    */
+  // QA34(L10): 분기는 파일명이 아니라 내용(추출 파이프라인이 남긴 unitKind)으로 간다.
   it('비-PDF 문서 + citationTarget 활성 → DocTextViewer 패널(PdfViewer 아님) 마운트', () => {
-    setState({ stream: '본문', citation: true, docName: 'notes.docx' });
+    setState({ stream: '본문', citation: true, docName: 'notes.docx', unitKind: 'page' });
     render(<SummaryViewer />);
     expect(screen.getByTestId('doctextviewer')).toBeTruthy();
     expect(screen.queryByTestId('pdfviewer')).toBeNull();
@@ -349,6 +372,20 @@ describe('SummaryViewer', () => {
     render(<SummaryViewer />);
     expect(screen.getByTestId('pdfviewer')).toBeTruthy();
     expect(screen.queryByTestId('doctextviewer')).toBeNull();
+  });
+
+  // QA34(L10): 이름은 .pdf 지만 내용은 zip(DOCX 로 파싱됨) — pdfjs 뷰어로 보내면 깨진다.
+  it('.pdf 이름이라도 추출기 문서(unitKind 있음)면 DocTextViewer 로 간다', () => {
+    setState({ stream: '본문', citation: true, docName: 'renamed.pdf', unitKind: 'page' });
+    render(<SummaryViewer />);
+    expect(screen.getByTestId('doctextviewer')).toBeTruthy();
+    expect(screen.queryByTestId('pdfviewer')).toBeNull();
+  });
+
+  it('.docx 이름이라도 PDF 파이프라인 문서(unitKind 없음)면 PdfViewer 로 간다', () => {
+    setState({ stream: '본문', citation: true, docName: 'renamed.docx' });
+    render(<SummaryViewer />);
+    expect(screen.getByTestId('pdfviewer')).toBeTruthy();
   });
 });
 
