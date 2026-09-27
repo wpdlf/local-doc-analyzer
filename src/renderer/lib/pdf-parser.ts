@@ -324,6 +324,21 @@ export function notifyEmptyPages(
   } catch { /* 테스트/비-store 환경 — best-effort */ }
 }
 
+/**
+ * 세션 복원 문서의 빈 페이지 재통지 — PDF 만.
+ *
+ * QA34: 탭 복원 경로가 문서 종류를 가리지 않고 notifyEmptyPages 를 불러, 그림만 있는 쪽이 여럿인
+ * DOCX 에도 "스캔 PDF 라면 OCR 을 켜라" 고지가 떴다. 비-PDF 의 빈 단위는 OCR 로 채울 수 있는
+ * 손실이 아니다(그림만 있는 쪽). 판정(unitKind 부재 = PDF)을 PDF 전용 모듈인 여기에 두어,
+ * PDF 문구를 쓰는 호출이 포맷 중립 모듈에 남지 않게 한다.
+ */
+export function notifyRestoredEmptyPages(
+  doc: Pick<PdfDocument, 'pageTexts' | 'isOcr' | 'unitKind'>,
+): void {
+  if (doc.unitKind !== undefined) return;
+  notifyEmptyPages(doc.pageTexts, doc.isOcr ? 'pdf.ocrPartialFailNotice' : 'pdf.emptyPagesNotice');
+}
+
 export async function parsePdf(
   data: ArrayBuffer,
   fileName: string,

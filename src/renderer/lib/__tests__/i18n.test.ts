@@ -367,15 +367,9 @@ describe('포맷 무관 경로의 "PDF" 문구 가드 (QA34)', () => {
       code: stripJsComments(readFileSync(f, 'utf-8')),
     }));
     expect(files.some((f) => f.rel === 'renderer/App.tsx'), '스캔 범위 붕괴(경로 계산 확인)').toBe(true);
-    // ⚠️ 알려진 잔여(QA34 fix-3 에서 발견, 소유 범위 밖이라 보고만): 탭 복원 경로(tabs.ts)가 DOCX
-    // 문서에도 "스캔 PDF 라면 OCR 을 켜라" 고지를 띄운다 — `doc.unitKind === undefined`(PDF) 일
-    // 때만 notifyEmptyPages 를 불러야 한다. 고쳐지면 이 항목이 빠져 아래 단언이 알려 준다.
-    const KNOWN_PENDING = ['pdf.emptyPagesNotice @ renderer/lib/tabs.ts'];
-    const found = offenders(_translations as never, files);
-    expect(found.filter((o) => !KNOWN_PENDING.includes(o))).toEqual([]);
-    for (const k of KNOWN_PENDING) {
-      expect(found, `${k} 가 고쳐졌다 — KNOWN_PENDING 에서 지울 것`).toContain(k);
-    }
+    // 이 가드가 처음 잡은 실결함: 탭 복원(tabs.ts)이 DOCX 에도 OCR 고지를 띄웠다 → PDF 판정을
+    // pdf-parser 의 notifyRestoredEmptyPages 로 옮겨 닫았다(QA34).
+    expect(offenders(_translations as never, files)).toEqual([]);
   });
 
   it('가드가 합성 위반을 실제로 잡는다 (양성 샘플)', () => {
