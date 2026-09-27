@@ -2,9 +2,11 @@
 import { describe, it, expect } from 'vitest';
 import { zipSync, strToU8 } from 'fflate';
 import { openZip } from '../zip';
-import { docxExtractor } from '../docx';
+import { docxExtractor, MAX_TABLE_COLUMNS } from '../docx';
 
-const W = 'xmlns:w="urn:w" xmlns:a="urn:a" xmlns:r="urn:r"';
+const W =
+  'xmlns:w="urn:w" xmlns:a="urn:a" xmlns:r="urn:r" xmlns:mc="urn:mc" xmlns:wps="urn:wps" ' +
+  'xmlns:v="urn:v" xmlns:w14="urn:w14"';
 
 function doc(body: string): string {
   return `<?xml version="1.0"?><w:document ${W}><w:body>${body}</w:body></w:document>`;
@@ -326,5 +328,316 @@ describe('docxExtractor.extract', () => {
     await expect(docxExtractor.extract(zip, { signal: ctrl.signal })).rejects.toThrowError(
       expect.objectContaining({ code: 'ABORTED' }),
     );
+  });
+});
+
+// ─── QA34: 실물 DOCX 에서 확인된 누락·중복 ───
+
+/** PNG 와 다른 바이트 — 어느 그림이 담겼는지 base64 로 가린다. */
+const PNG_B = new Uint8Array([...PNG, 0x00]);
+
+function styles(inner: string): string {
+  return `<?xml version="1.0"?><w:styles ${W}>${inner}</w:styles>`;
+}
+
+function pStyle(id: string, inner: string): string {
+  return `<w:style w:type="paragraph" w:styleId="${id}">${inner}</w:style>`;
+}
+
+async function unitsOf(body: string, extra: Record<string, string> = {}) {
+  const zip = zipOf({ 'word/document.xml': doc(body), ...extra });
+  return docxExtractor.extract(zip, { extractImages: false });
+}
+
+describe('docxExtractor — 제목 스타일 해석 (styles.xml)', () => {
+  it('한국어 Word 의 숫자 styleId 를 w:name "heading N" 으로 해석한다', async () => {
+    const ex = await unitsOf(para('1장', { style: '1' }) + para('본문') + para('가', { style: '2' }), {
+      'word/styles.xml': styles(
+        pStyle('1', '<w:name w:val="heading 1"/>') + pStyle('2', '<w:name w:val="Heading 2"/>'),
+      ),
+    });
+    expect(ex.headings).toEqual([
+      { level: 1, title: '1장', unitIndex: 0 },
+      { level: 2, title: '가', unitIndex: 0 },
+    ]);
+  });
+
+  it('이름이 제목이 아니어도 스타일의 outlineLvl(0-based)로 수준을 잡는다', async () => {
+    const ex = await unitsOf(para('절', { style: 'a3' }), {
+      'word/styles.xml': styles(pStyle('a3', '<w:name w:val="내 절"/><w:pPr><w:outlineLvl w:val="1"/></w:pPr>')),
+    });
+    expect(ex.headings).toEqual([{ level: 2, title: '절', unitIndex: 0 }]);
+  });
+
+  it('basedOn 체인을 따라 상속된 제목 수준을 찾는다', async () => {
+    const ex = await unitsOf(para('파생', { style: 'Mine' }), {
+      'word/styles.xml': styles(
+        pStyle('1', '<w:name w:val="heading 1"/><w:pPr><w:outlineLvl w:val="0"/></w:pPr>') +
+          pStyle('Mine', '<w:name w:val="내 제목"/><w:basedOn w:val="1"/>'),
+      ),
+    });
+    expect(ex.headings).toEqual([{ level: 1, title: '파생', unitIndex: 0 }]);
+  });
+
+  it('basedOn 순환이 있어도 멈추고 제목으로 보지 않는다', async () => {
+    const ex = await unitsOf(para('본문', { style: 'x' }), {
+      'word/styles.xml': styles(
+        pStyle('x', '<w:name w:val="X"/><w:basedOn w:val="y"/>') +
+          pStyle('y', '<w:name w:val="Y"/><w:basedOn w:val="x"/>'),
+      ),
+    });
+    expect(ex.units).toEqual(['본문']);
+    expect(ex.headings).toEqual([]);
+  });
+
+  it('문단의 직접 outlineLvl 도 제목이다 (스타일 없이)', async () => {
+    const body = `<w:p><w:pPr><w:outlineLvl w:val="0"/></w:pPr><w:r><w:t>직접</w:t></w:r></w:p>`;
+    const ex = await unitsOf(body);
+    expect(ex.headings).toEqual([{ level: 1, title: '직접', unitIndex: 0 }]);
+  });
+
+  it('outlineLvl 9(본문 수준)는 제목이 아니다 — 제목 스타일을 문단이 직접 끌 수 있다', async () => {
+    const body = `<w:p><w:pPr><w:pStyle w:val="1"/><w:outlineLvl w:val="9"/></w:pPr><w:r><w:t>본문</w:t></w:r></w:p>`;
+    const ex = await unitsOf(body, {
+      'word/styles.xml': styles(pStyle('1', '<w:name w:val="heading 1"/>')),
+    });
+    expect(ex.headings).toEqual([]);
+  });
+
+  it('styles.xml 이 손상돼 있어도 문서는 열린다 (선택 파트)', async () => {
+    const ex = await unitsOf(para('제목', { style: 'Heading1' }), { 'word/styles.xml': '<w:styles' });
+    expect(ex.units).toEqual(['제목']);
+    // 스타일 표가 없으면 기존 스타일 ID 정규식이 폴백으로 남는다.
+    expect(ex.headings).toEqual([{ level: 1, title: '제목', unitIndex: 0 }]);
+  });
+
+  it('스타일이 상속한 pageBreakBefore 로 쪽을 나눈다 (ST_OnOff 거짓 값은 무시)', async () => {
+    const ex = await unitsOf(
+      para('표지') + para('장', { style: 'Chap' }) + para('끝', { style: 'NoBreak' }),
+      {
+        'word/styles.xml': styles(
+          pStyle('Base', '<w:pPr><w:pageBreakBefore/></w:pPr>') +
+            pStyle('Chap', '<w:basedOn w:val="Base"/>') +
+            pStyle('NoBreak', '<w:basedOn w:val="Base"/><w:pPr><w:pageBreakBefore w:val="0"/></w:pPr>'),
+        ),
+      },
+    );
+    expect(ex.units).toEqual(['표지', '장\n\n끝']);
+  });
+
+  it('문단의 직접 pageBreakBefore=false 가 스타일의 쪽나눔을 이긴다', async () => {
+    const body =
+      para('앞') +
+      `<w:p><w:pPr><w:pStyle w:val="Chap"/><w:pageBreakBefore w:val="false"/></w:pPr><w:r><w:t>뒤</w:t></w:r></w:p>`;
+    const ex = await unitsOf(body, {
+      'word/styles.xml': styles(pStyle('Chap', '<w:pPr><w:pageBreakBefore/></w:pPr>')),
+    });
+    expect(ex.units).toEqual(['앞\n\n뒤']);
+  });
+});
+
+describe('docxExtractor — 문단 자신의 pPr 만 본다', () => {
+  const textBox = (inner: string) =>
+    `<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wps:txbx><w:txbxContent>${inner}</w:txbxContent></wps:txbx></w:drawing></mc:Choice>` +
+    `<mc:Fallback><w:pict><v:textbox><w:txbxContent>${inner}</w:txbxContent></v:textbox></w:pict></mc:Fallback></mc:AlternateContent></w:r>`;
+
+  it('mc:Fallback 을 건너뛰어 글상자 텍스트를 한 번만, 본문과 떨어진 블록으로 담는다', async () => {
+    const body = `<w:p><w:r><w:t>앞</w:t></w:r>${textBox(para('상자'))}<w:r><w:t>뒤</w:t></w:r></w:p>`;
+    const ex = await unitsOf(body);
+    expect(ex.units).toEqual(['앞뒤\n\n상자']);
+  });
+
+  it('글상자 안의 제목 스타일이 바깥 문단을 제목으로 만들지 않는다', async () => {
+    const body = `<w:p><w:r><w:t>본문</w:t></w:r>${textBox(para('상자제목', { style: 'Heading1' }))}</w:p>`;
+    const ex = await unitsOf(body);
+    expect(ex.headings).toEqual([]);
+  });
+
+  it('글상자 안의 pageBreakBefore 가 바깥 문단의 쪽을 나누지 않는다', async () => {
+    const body = para('앞') + `<w:p><w:r><w:t>본문</w:t></w:r>${textBox(para('상자', { breakBefore: true }))}</w:p>`;
+    const ex = await unitsOf(body);
+    expect(ex.units).toEqual(['앞\n\n본문\n\n상자']);
+  });
+
+  it('mc:Fallback 안의 그림은 수집하지 않는다', async () => {
+    const body =
+      para('앞') +
+      `<w:p><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><a:blip r:embed="rId6"/></w:drawing></mc:Choice>` +
+      `<mc:Fallback><w:pict><a:blip r:embed="rId7"/></w:pict></mc:Fallback></mc:AlternateContent></w:r></w:p>`;
+    const zip = zipOf({
+      'word/document.xml': doc(body),
+      'word/_rels/document.xml.rels':
+        `<?xml version="1.0"?><Relationships xmlns="urn:rel">` +
+        `<Relationship Id="rId6" Type="urn:x/image" Target="media/image1.png"/>` +
+        `<Relationship Id="rId7" Type="urn:x/image" Target="media/image2.png"/>` +
+        `</Relationships>`,
+      'word/media/image1.png': PNG,
+      'word/media/image2.png': PNG_B,
+    });
+    const ex = await docxExtractor.extract(zip, {});
+    expect(ex.images).toHaveLength(1);
+    expect(ex.images[0]!.base64).toBe(PNG_BASE64);
+  });
+});
+
+describe('docxExtractor — 런 안의 특수 요소', () => {
+  it('cr·noBreakHyphen·softHyphen·ptab 을 텍스트로 옮긴다', async () => {
+    const body =
+      `<w:p><w:r><w:t>a</w:t><w:cr/><w:t>b</w:t><w:noBreakHyphen/><w:t>c</w:t><w:softHyphen/>` +
+      `<w:t>d</w:t><w:ptab w:alignment="right" w:relativeTo="margin" w:leader="none"/><w:t>e</w:t></w:r></w:p>`;
+    const ex = await unitsOf(body);
+    expect(ex.units).toEqual(['a\nb-cd\te']);
+  });
+
+  it('w:sym 의 알려진 체크박스·글머리 코드만 옮기고 모르는 것은 뺀다', async () => {
+    const sym = (font: string, ch: string) => `<w:sym w:font="${font}" w:char="${ch}"/>`;
+    const body =
+      `<w:p><w:r>${sym('Wingdings', 'F0FE')}<w:t>완료</w:t>${sym('Wingdings', 'F0A8')}<w:t>미완</w:t>` +
+      `${sym('Wingdings', 'F0FD')}<w:t>취소</w:t>${sym('Symbol', 'F0B7')}<w:t>항목</w:t>` +
+      `${sym('Wingdings', '00FE')}<w:t>접두없음</w:t>${sym('Webdings', 'F0FE')}<w:t>모름</w:t>` +
+      `${sym('Symbol', 'F041')}</w:r></w:p>`;
+    const ex = await unitsOf(body);
+    expect(ex.units).toEqual(['☑완료☐미완☒취소•항목☑접두없음모름']);
+  });
+
+  it('w14:checkbox 콘텐츠 컨트롤은 sdtContent 의 글리프로 한 번만 담긴다', async () => {
+    const body =
+      `<w:p><w:sdt><w:sdtPr><w14:checkbox><w14:checked w14:val="1"/></w14:checkbox></w:sdtPr>` +
+      `<w:sdtContent><w:r><w:t>☒</w:t></w:r></w:sdtContent></w:sdt><w:r><w:t> 동의</w:t></w:r></w:p>`;
+    const ex = await unitsOf(body);
+    expect(ex.units).toEqual(['☒ 동의']);
+  });
+
+  it('w:moveFrom(옮겨진 원래 자리)은 빼고 w:moveTo 만 담는다', async () => {
+    const body =
+      `<w:p><w:moveFrom><w:r><w:t>옛자리</w:t></w:r></w:moveFrom><w:r><w:t>본문</w:t></w:r>` +
+      `<w:moveTo><w:r><w:t>새자리</w:t></w:r></w:moveTo></w:p>`;
+    const ex = await unitsOf(body);
+    expect(ex.units).toEqual(['본문새자리']);
+  });
+
+  it('숨김 텍스트(w:vanish)는 빼고, vanish=false 와 specVanish 는 담는다', async () => {
+    const body =
+      `<w:p><w:r><w:rPr><w:vanish/></w:rPr><w:t>숨김</w:t></w:r>` +
+      `<w:r><w:rPr><w:vanish w:val="0"/></w:rPr><w:t>보임</w:t></w:r>` +
+      `<w:r><w:rPr><w:specVanish/></w:rPr><w:t>특수</w:t></w:r></w:p>`;
+    const ex = await unitsOf(body);
+    expect(ex.units).toEqual(['보임특수']);
+  });
+});
+
+describe('docxExtractor — 구역 나눔과 제목 조각', () => {
+  it('pPr/sectPr(유형 없음=nextPage)이 끝낸 구역 뒤에서 단위를 나눈다', async () => {
+    const body =
+      `<w:p><w:pPr><w:sectPr><w:pgSz w:w="11906"/></w:sectPr></w:pPr><w:r><w:t>1구역</w:t></w:r></w:p>` +
+      para('2구역');
+    const ex = await unitsOf(body);
+    expect(ex.units).toEqual(['1구역', '2구역']);
+  });
+
+  it('continuous 구역 나눔은 단위를 나누지 않는다', async () => {
+    const body =
+      `<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/></w:sectPr></w:pPr><w:r><w:t>가</w:t></w:r></w:p>` +
+      para('나');
+    const ex = await unitsOf(body);
+    expect(ex.units).toEqual(['가\n\n나']);
+  });
+
+  it('구역 나눔 뒤가 표여도 표 앞에서 나눈다', async () => {
+    const body =
+      `<w:p><w:pPr><w:sectPr><w:type w:val="oddPage"/></w:sectPr></w:pPr><w:r><w:t>앞</w:t></w:r></w:p>` +
+      `<w:tbl><w:tr><w:tc>${para('셀')}</w:tc></w:tr></w:tbl>`;
+    const ex = await unitsOf(body);
+    expect(ex.units).toEqual(['앞', '| 셀 |\n| --- |']);
+  });
+
+  it('쪽나눔으로 시작하는 제목 문단도 제목을 잃지 않는다 (첫 비지 않은 조각에 붙인다)', async () => {
+    const body =
+      para('앞') +
+      `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:br w:type="page"/><w:t>제목</w:t></w:r></w:p>`;
+    const ex = await unitsOf(body);
+    expect(ex.units).toEqual(['앞', '제목']);
+    expect(ex.headings).toEqual([{ level: 1, title: '제목', unitIndex: 1 }]);
+  });
+
+  it('제목 문단 중간의 쪽나눔이 챕터를 둘로 만들지 않는다', async () => {
+    const body =
+      `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>상</w:t><w:br w:type="page"/><w:t>하</w:t></w:r></w:p>`;
+    const ex = await unitsOf(body);
+    expect(ex.units).toEqual(['상', '하']);
+    expect(ex.headings).toEqual([{ level: 1, title: '상', unitIndex: 0 }]);
+  });
+});
+
+describe('docxExtractor — 표 격자 배치', () => {
+  const tbl = (rows: string) => `<w:tbl>${rows}</w:tbl>`;
+  const tr = (cells: string, trPr = '') => `<w:tr>${trPr ? `<w:trPr>${trPr}</w:trPr>` : ''}${cells}</w:tr>`;
+  const tc = (text: string, tcPr = '') => `<w:tc>${tcPr ? `<w:tcPr>${tcPr}</w:tcPr>` : ''}${para(text)}</w:tc>`;
+
+  it('gridSpan 셀은 첫 칸에 텍스트, 나머지 칸은 비워 열을 맞춘다', async () => {
+    const ex = await unitsOf(
+      tbl(tr(tc('A', '<w:gridSpan w:val="2"/>') + tc('C')) + tr(tc('a') + tc('b') + tc('c'))),
+    );
+    expect(ex.units[0]).toBe('| A |  | C |\n| --- | --- | --- |\n| a | b | c |');
+  });
+
+  it('vMerge 연속 셀은 위 셀의 텍스트를 같은 열에 복사한다', async () => {
+    const ex = await unitsOf(
+      tbl(
+        tr(tc('X', '<w:vMerge w:val="restart"/>') + tc('y')) +
+          tr(tc('', '<w:vMerge/>') + tc('z')) +
+          tr(tc('', '<w:vMerge w:val="continue"/>') + tc('w')),
+      ),
+    );
+    expect(ex.units[0]).toBe('| X | y |\n| --- | --- |\n| X | z |\n| X | w |');
+  });
+
+  it('gridSpan 뒤의 vMerge 연속 셀은 격자 열 기준으로 위 셀을 찾는다', async () => {
+    // 행 2 의 두 번째 tc 는 **셀 순번 1** 이지만 격자 열 2 에 놓인다 — 셀 순번으로 찾으면 'B' 를 복사한다.
+    const ex = await unitsOf(
+      tbl(
+        tr(tc('A') + tc('B') + tc('C', '<w:vMerge w:val="restart"/>')) +
+          tr(tc('ab', '<w:gridSpan w:val="2"/>') + tc('', '<w:vMerge/>')),
+      ),
+    );
+    expect(ex.units[0]).toBe('| A | B | C |\n| --- | --- | --- |\n| ab |  | C |');
+  });
+
+  it('gridBefore/gridAfter 는 앞뒤에 빈 칸을 둔다', async () => {
+    const ex = await unitsOf(
+      tbl(
+        tr(tc('a') + tc('b') + tc('c')) +
+          tr(tc('b2'), '<w:gridBefore w:val="1"/><w:gridAfter w:val="1"/>'),
+      ),
+    );
+    expect(ex.units[0]).toBe('| a | b | c |\n| --- | --- | --- |\n|  | b2 |  |');
+  });
+
+  it('비정상적으로 큰 gridSpan 은 상한에서 자른다 (배열 폭주 방지)', async () => {
+    const ex = await unitsOf(tbl(tr(tc('A', '<w:gridSpan w:val="1000000000"/>'))));
+    const header = ex.units[0]!.split('\n')[0]!;
+    expect(header.startsWith('| A |')).toBe(true);
+    expect(header.split('|').length - 2).toBeLessThanOrEqual(MAX_TABLE_COLUMNS);
+  });
+
+  it('w:sdt·w:customXml 로 감싼 행과 셀도 담는다', async () => {
+    const ex = await unitsOf(
+      tbl(
+        `<w:sdt><w:sdtContent>${tr(tc('행sdt') + tc('b'))}</w:sdtContent></w:sdt>` +
+          `<w:customXml w:element="row">${tr(`<w:sdt><w:sdtContent>${tc('셀sdt')}</w:sdtContent></w:sdt>` + `<w:customXml w:element="c">${tc('셀cx')}</w:customXml>`)}</w:customXml>`,
+      ),
+    );
+    expect(ex.units[0]).toBe('| 행sdt | b |\n| --- | --- |\n| 셀sdt | 셀cx |');
+  });
+
+  it('본문 수준 w:customXml 블록의 문단도 담는다', async () => {
+    const ex = await unitsOf(`<w:customXml w:element="sec"><w:customXmlPr/>${para('안')}</w:customXml>` + para('밖'));
+    expect(ex.units).toEqual(['안\n\n밖']);
+  });
+
+  it('셀 안의 중첩 표를 셀 텍스트로 평탄화한다 (행은 "; ", 칸은 " / ")', async () => {
+    const inner = tbl(tr(tc('a') + tc('b')) + tr(tc('c') + tc('d')));
+    const ex = await unitsOf(tbl(tr(`<w:tc>${para('위')}${inner}</w:tc>` + tc('x'))));
+    expect(ex.units[0]).toBe('| 위 a / b; c / d | x |\n| --- | --- |');
   });
 });
