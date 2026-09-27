@@ -2,7 +2,8 @@
 import { describe, it, expect } from 'vitest';
 import { zipSync, strToU8 } from 'fflate';
 import { openZip } from '../zip';
-import { docxExtractor, MAX_TABLE_COLUMNS } from '../docx';
+import { docxExtractor, createDocxExtractor, MAX_TABLE_COLUMNS } from '../docx';
+import { createImageFitter, type ImageCodec } from '../image-fit';
 
 const W =
   'xmlns:w="urn:w" xmlns:a="urn:a" xmlns:r="urn:r" xmlns:mc="urn:mc" xmlns:wps="urn:wps" ' +
@@ -24,16 +25,32 @@ function zipOf(files: Record<string, string | Uint8Array>) {
   return openZip(out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer);
 }
 
-// 1x1 PNG
-const PNG = new Uint8Array([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
-  0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-  0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
-  0x42, 0x60, 0x82,
-]);
-// 위 PNG 바이트를 base64 로 직접 인코딩한 값 — toBase64 가 상수를 반환하는 뮤테이션을 잡는다.
-const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==';
+/**
+ * 헤더만 있는 합성 PNG/JPEG. image-fit 의 probeImage 는 헤더까지만 읽고, 디코드는 아래
+ * passThrough 코덱이 대신한다(happy-dom 은 실제로 디코드하지 않는다).
+ */
+function pngHeader(width: number, height: number, tail: number[] = []): Uint8Array {
+  const u32 = (n: number) => [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
+  return new Uint8Array([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ...u32(13), 0x49, 0x48, 0x44, 0x52, ...u32(width), ...u32(height), 8, 6, 0, 0, 0,
+    ...tail,
+  ]);
+}
+
+function jpegHeader(width: number, height: number): Uint8Array {
+  return new Uint8Array([
+    0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, height >> 8, height & 0xff, width >> 8, width & 0xff, 3,
+  ]);
+}
+
+const PNG = pngHeader(100, 100, [0x42, 0x60, 0x82]);
+// 기대값은 Node Buffer 로 따로 인코딩한다 — 추출기의 base64 가 상수를 반환하는 뮤테이션을 잡는다.
+const PNG_BASE64 = Buffer.from(PNG).toString('base64');
+
+/** 디코드 성공으로 치고 원본 바이트를 그대로 돌려주는 코덱. 크기 규칙(probe)은 실제 구현을 탄다. */
+const passThrough: ImageCodec = { reencode: async (bytes, mimeType) => ({ bytes, mimeType }) };
+const docxImg = createDocxExtractor({ fitImage: createImageFitter(passThrough) });
 
 describe('docxExtractor.sniff', () => {
   it('word/document.xml 이 있으면 참이다', () => {
@@ -102,7 +119,7 @@ describe('docxExtractor.extract', () => {
         `<?xml version="1.0"?><Relationships xmlns="urn:rel"><Relationship Id="rId6" Type="urn:x/image" Target="media/image1.png"/></Relationships>`,
       'word/media/image1.png': PNG,
     });
-    const ex = await docxExtractor.extract(zip, {});
+    const ex = await docxImg.extract(zip, {});
     expect(ex.images).toHaveLength(1);
     expect(ex.images[0]!.unitIndex).toBe(0);
     expect(ex.images[0]!.mimeType).toBe('image/png');
@@ -126,7 +143,7 @@ describe('docxExtractor.extract', () => {
         `<?xml version="1.0"?><Relationships xmlns="urn:rel"><Relationship Id="rId6" Type="urn:x/image" Target="media/image1.png"/></Relationships>`,
       'word/media/image1.png': PNG,
     });
-    const ex = await docxExtractor.extract(zip, {});
+    const ex = await docxImg.extract(zip, {});
     expect(ex.images).toHaveLength(1);
     expect(ex.images[0]!.unitIndex).toBe(0);
   });
@@ -142,7 +159,7 @@ describe('docxExtractor.extract', () => {
         `<?xml version="1.0"?><Relationships xmlns="urn:rel"><Relationship Id="rId6" Type="urn:x/image" Target="media/image1.png"/></Relationships>`,
       'word/media/image1.png': PNG,
     });
-    const ex = await docxExtractor.extract(zip, {});
+    const ex = await docxImg.extract(zip, {});
     expect(ex.units).toEqual(['앞\n\n전', '후']);
     expect(ex.images).toHaveLength(1);
     expect(ex.images[0]!.unitIndex).toBe(1);
@@ -159,16 +176,27 @@ describe('docxExtractor.extract', () => {
         `<?xml version="1.0"?><Relationships xmlns="urn:rel"><Relationship Id="rId6" Type="urn:x/image" Target="media/image1.png"/></Relationships>`,
       'word/media/image1.png': PNG,
     });
-    const ex = await docxExtractor.extract(zip, {});
+    const ex = await docxImg.extract(zip, {});
     expect(ex.units).toEqual(['앞', '제목']);
     expect(ex.headings).toEqual([{ level: 1, title: '제목', unitIndex: 1 }]);
     expect(ex.images).toHaveLength(1);
     expect(ex.images[0]!.unitIndex).toBe(1);
   });
 
-  it('JPEG 확장자 그림도 image/jpeg 로 수집한다', async () => {
-    // 바이트 내용은 실제 JPEG 가 아니어도 된다 — mimeOf 는 확장자만 보고, 추출기는
-    // 이미지를 디코드하지 않는다(Vision 호출부가 바이트를 그대로 넘긴다).
+  it('JPEG 그림은 image/jpeg 로 수집한다', async () => {
+    const body = para('앞') + `<w:p><w:r><w:drawing><a:blip r:embed="rId7"/></w:drawing></w:r></w:p>`;
+    const zip = zipOf({
+      'word/document.xml': doc(body),
+      'word/_rels/document.xml.rels':
+        `<?xml version="1.0"?><Relationships xmlns="urn:rel"><Relationship Id="rId7" Type="urn:x/image" Target="media/image2.jpg"/></Relationships>`,
+      'word/media/image2.jpg': jpegHeader(120, 80),
+    });
+    const ex = await docxImg.extract(zip, {});
+    expect(ex.images).toHaveLength(1);
+    expect(ex.images[0]).toMatchObject({ mimeType: 'image/jpeg', width: 120, height: 80 });
+  });
+
+  it('형식은 확장자가 아니라 바이트로 가린다 (Vision 은 선언 형식과 실제 바이트가 다르면 거절한다)', async () => {
     const body = para('앞') + `<w:p><w:r><w:drawing><a:blip r:embed="rId7"/></w:drawing></w:r></w:p>`;
     const zip = zipOf({
       'word/document.xml': doc(body),
@@ -176,9 +204,8 @@ describe('docxExtractor.extract', () => {
         `<?xml version="1.0"?><Relationships xmlns="urn:rel"><Relationship Id="rId7" Type="urn:x/image" Target="media/image2.jpg"/></Relationships>`,
       'word/media/image2.jpg': PNG,
     });
-    const ex = await docxExtractor.extract(zip, {});
-    expect(ex.images).toHaveLength(1);
-    expect(ex.images[0]!.mimeType).toBe('image/jpeg');
+    const ex = await docxImg.extract(zip, {});
+    expect(ex.images[0]!.mimeType).toBe('image/png');
   });
 
   it('같은 그림을 서로 다른 rId 로 두 번 참조해도 한 번만 담는다', async () => {
@@ -195,7 +222,7 @@ describe('docxExtractor.extract', () => {
         `</Relationships>`,
       'word/media/image1.png': PNG,
     });
-    const ex = await docxExtractor.extract(zip, {});
+    const ex = await docxImg.extract(zip, {});
     expect(ex.images).toHaveLength(1);
   });
 
@@ -332,6 +359,73 @@ describe('docxExtractor.extract', () => {
 });
 
 // ─── QA34: 실물 DOCX 에서 확인된 누락·중복 ───
+
+describe('docxExtractor — 그림 크기 규칙과 예산', () => {
+  /** 그림 n 장을 각각 다른 rId·파일로 참조하는 문서. 파일이 없는 rId 도 섞을 수 있다. */
+  function imageDoc(files: (Uint8Array | null)[]) {
+    const refs = files.map((_, i) => `<w:p><w:r><w:drawing><a:blip r:embed="rId${i}"/></w:drawing></w:r></w:p>`);
+    const rels = files
+      .map((_, i) => `<Relationship Id="rId${i}" Type="urn:x/image" Target="media/i${i}.png"/>`)
+      .join('');
+    const zipFiles: Record<string, string | Uint8Array> = {
+      'word/document.xml': doc(para('앞') + refs.join('')),
+      'word/_rels/document.xml.rels': `<?xml version="1.0"?><Relationships xmlns="urn:rel">${rels}</Relationships>`,
+    };
+    files.forEach((f, i) => { if (f) zipFiles[`word/media/i${i}.png`] = f; });
+    return zipOf(zipFiles);
+  }
+  /** 그림마다 다른 바이트(꼬리 바이트로 구분). */
+  const distinct = (n: number) => Array.from({ length: n }, (_, i) => pngHeader(100, 100, [i & 0xff, i >> 8]));
+
+  it('50px 미만 그림과 PNG·JPEG 가 아닌 그림(EMF)은 건너뛰고, 채택한 그림의 크기를 채운다', async () => {
+    const emf = new Uint8Array([0x01, 0x00, 0x00, 0x00, 0x6c, 0x00, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const ex = await docxImg.extract(imageDoc([pngHeader(10, 300), emf, pngHeader(300, 200)]), {});
+    expect(ex.images).toHaveLength(1);
+    expect(ex.images[0]).toMatchObject({ width: 300, height: 200, mimeType: 'image/png' });
+  });
+
+  it('기본 추출기는 디코드에 실패한 그림을 건너뛰되 문서는 연다', async () => {
+    // docxExtractor 는 실제 canvasCodec 을 쓴다. 헤더만 있는 PNG 는 실제 디코드가 실패한다 —
+    // happy-dom 에서 createImageBitmap 을 실패로 고정해 렌더러의 그 상황을 재현한다.
+    const original = globalThis.createImageBitmap;
+    globalThis.createImageBitmap = (async () => { throw new Error('InvalidStateError'); }) as typeof createImageBitmap;
+    try {
+      const ex = await docxExtractor.extract(imageDoc([pngHeader(300, 200)]), {});
+      expect(ex.units).toEqual(['앞']);
+      expect(ex.images).toEqual([]);
+    } finally {
+      globalThis.createImageBitmap = original;
+    }
+  });
+
+  it('채택 수가 MAX_TOTAL_IMAGES(50)를 넘으면 imageBudgetExceeded 를 세운다', async () => {
+    const ex = await docxImg.extract(imageDoc(distinct(51)), {});
+    expect(ex.images).toHaveLength(50);
+    expect(ex.imageBudgetExceeded).toBe(true);
+  });
+
+  it('정확히 50장이면 예산 초과가 아니다', async () => {
+    const ex = await docxImg.extract(imageDoc(distinct(50)), {});
+    expect(ex.images).toHaveLength(50);
+    expect(ex.imageBudgetExceeded).toBeUndefined();
+  });
+
+  it('검사 수가 MAX_EXAMINED_IMAGES(400)에 닿으면 그 뒤 그림은 보지 않는다', async () => {
+    // 앞의 참조가 전부 채택되지 않는(파일 없는) 병리적 문서 — 채택 예산만으로는 끝나지 않는다.
+    const at400 = await docxImg.extract(imageDoc([...Array<null>(400).fill(null), PNG]), {});
+    expect(at400.images).toEqual([]);
+    const at399 = await docxImg.extract(imageDoc([...Array<null>(399).fill(null), PNG]), {});
+    expect(at399.images).toHaveLength(1);
+  });
+});
+
+describe('docxExtractor — 단위 수 상한 경계', () => {
+  it('단위 수가 정확히 MAX_PAGE_COUNT(500)이면 받아들인다', async () => {
+    const paragraphs = Array.from({ length: 500 }, (_, i) => para(`p${i}`, { breakBefore: i > 0 }));
+    const ex = await unitsOf(paragraphs.join(''));
+    expect(ex.units).toHaveLength(500);
+  });
+});
 
 describe('docxExtractor — 큰 문서의 중단·진행률', () => {
   const bigDoc = () =>
@@ -500,7 +594,7 @@ describe('docxExtractor — 문단 자신의 pPr 만 본다', () => {
       'word/media/image1.png': PNG,
       'word/media/image2.png': PNG_B,
     });
-    const ex = await docxExtractor.extract(zip, {});
+    const ex = await docxImg.extract(zip, {});
     expect(ex.images).toHaveLength(1);
     expect(ex.images[0]!.base64).toBe(PNG_BASE64);
   });

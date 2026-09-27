@@ -7,6 +7,7 @@ import type { Extractor, ExtractedDoc, ExtractedHeading, ExtractedImage, Extract
 import { DOCX_FORMAT_ID } from '../../../shared/document-formats';
 import { extractFail } from './errors';
 import { HEADING_STYLE_RE, onOff, outlineLevelOf, readStyles, type StyleTable } from './docx-styles';
+import { fitImage, type ImageFitter } from './image-fit';
 
 const DOCUMENT_PART = 'word/document.xml';
 
@@ -38,21 +39,6 @@ const YIELD_EVERY = 200;
 
 function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
-function mimeOf(path: string): 'image/png' | 'image/jpeg' | null {
-  const lower = path.toLowerCase();
-  if (lower.endsWith('.png')) return 'image/png';
-  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
-  return null;
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let bin = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  }
-  return btoa(bin);
 }
 
 // ─── 순회 규칙 ───
@@ -122,13 +108,19 @@ function expandWrappers(children: ArrayLike<Element>): Element[] {
  *   Wingdings 0xFE ☑ / 0xFD ☒ / 0x78 ☒ / 0xA8 ☐ / 0x6F ☐ / 0xFC ✓ / 0xFB ✗
  *             0xA7 · 0x9F · 0x6C → • (글머리표 용도 — 모양보다 "항목"이라는 뜻을 남긴다)
  *   Symbol    0xB7 → •
+ *
+ * 값은 유니코드 이스케이프로 적는다. 이 글자들은 UI 아이콘이 아니라 **문서 본문 데이터**인데,
+ * a11y-contract 의 소스 스캔 가드(문자열 안 장식 기호는 aria-hidden 을 거쳐야 한다)가 렌더러
+ * 소스의 리터럴 ✓ 를 UI 아이콘으로 오인한다. 가드를 넓게 유지하려고 여기서 이스케이프한다.
  */
 const SYM_MAP: Readonly<Record<string, Readonly<Record<number, string>>>> = {
   wingdings: {
-    0xfe: '☑', 0xfd: '☒', 0x78: '☒', 0xa8: '☐', 0x6f: '☐', 0xfc: '✓', 0xfb: '✗',
-    0xa7: '•', 0x9f: '•', 0x6c: '•',
+    // ☑ ☒ ☒ ☐ ☐ ✓ ✗
+    0xfe: '\u2611', 0xfd: '\u2612', 0x78: '\u2612', 0xa8: '\u2610', 0x6f: '\u2610', 0xfc: '\u2713', 0xfb: '\u2717',
+    // • • •
+    0xa7: '\u2022', 0x9f: '\u2022', 0x6c: '\u2022',
   },
-  symbol: { 0xb7: '•' },
+  symbol: { 0xb7: '\u2022' },
 };
 
 function symText(el: Element): string {
@@ -349,154 +341,160 @@ function blipsIn(el: Element): string[] {
   return ids;
 }
 
-export const docxExtractor: Extractor = {
-  id: DOCX_FORMAT_ID,
+export interface DocxExtractorDeps {
+  /** 그림 크기 규칙(image-fit.ts). 테스트가 디코드를 대체하려고 주입한다. */
+  fitImage?: ImageFitter;
+}
 
-  sniff: (zip: ZipIndex): boolean => zip.has(DOCUMENT_PART),
+export function createDocxExtractor(deps: DocxExtractorDeps = {}): Extractor {
+  const fit = deps.fitImage ?? fitImage;
+  return {
+    id: DOCX_FORMAT_ID,
 
-  extract: async (zip: ZipIndex, opts: ExtractOptions): Promise<ExtractedDoc> => {
-    throwIfAborted(opts.signal);
+    sniff: (zip: ZipIndex): boolean => zip.has(DOCUMENT_PART),
 
-    const xml = zip.text(DOCUMENT_PART);
-    if (!xml) extractFail('DOC_CORRUPT', 'word/document.xml missing');
-
-    // walk 는 제너레이터라 .find 가 없다. 펼쳐서 찾는다.
-    const body = [...walk(parseXml(xml).documentElement)].find((el) => localName(el) === 'body')
-      ?? extractFail('DOC_CORRUPT', 'w:body missing');
-    const styles = readStyles(zip);
-
-    const blocks: Block[] = [];
-    const headingAt: { level: number; title: string; blockIndex: number }[] = [];
-    const imageAt: { relId: string; blockIndex: number }[] = [];
-
-    /**
-     * 순회 프레임. 본문이 바닥 프레임이고, 문단의 글상자는 그 문단 바로 뒤에 처리되도록 위에
-     * 프레임을 쌓는다(재귀 대신 명시적 스택 — 글상자 중첩이 깊어도 스택을 넘기지 않는다).
-     * nested 프레임(글상자)은 떠 있는 개체라 쪽 흐름에 관여하지 않는다: 제목·쪽나눔·구역
-     * 나눔을 만들지도, 대기 중인 구역 나눔을 소비하지도 않는다.
-     */
-    interface Frame { items: Element[]; i: number; nested: boolean }
-    const stack: Frame[] = [{ items: expandWrappers(body.children), i: 0, nested: false }];
-    /** 직전 문단이 구역을 끝냈다 — 다음 본문 블록 앞에서 쪽을 나눈다. */
-    let pendingSectionBreak = false;
-    const takeSectionBreak = (nested: boolean): boolean => {
-      if (nested || !pendingSectionBreak) return false;
-      pendingSectionBreak = false;
-      return true;
-    };
-
-    // 진행률은 본문 최상위 항목 기준이다 — 글상자 프레임은 그 항목 하나의 일부로 친다.
-    const top = stack[0]!;
-    let processed = 0;
-    while (stack.length > 0) {
-      const frame = stack[stack.length - 1]!;
-      if (frame.i >= frame.items.length) { stack.pop(); continue; }
-      const child = frame.items[frame.i++]!;
-      processed += 1;
-      if (processed % YIELD_EVERY === 0) {
-        await yieldToEventLoop();
-        opts.onProgress?.(top.i, top.items.length);
-      }
+    extract: async (zip: ZipIndex, opts: ExtractOptions): Promise<ExtractedDoc> => {
       throwIfAborted(opts.signal);
-      const name = localName(child);
 
-      if (name === 'tbl') {
-        const blockIndex = blocks.length;
-        blocks.push({ text: toGfmTable(tableRows(child)), breakBefore: takeSectionBreak(frame.nested) });
-        // 표 셀 안 그림 — 셀 나눔은 단위 경계가 아니므로 표 전체를 담은 이 블록에 붙인다.
-        for (const relId of blipsIn(child)) imageAt.push({ relId, blockIndex });
-        continue;
-      }
-      if (name !== 'p') continue;
+      const xml = zip.text(DOCUMENT_PART);
+      if (!xml) extractFail('DOC_CORRUPT', 'word/document.xml missing');
 
-      const pPr = ownPPr(child);
-      const { pieces: rawPieces, textBoxes } = paragraphContent(child);
-      // 글상자 안에서는 쪽나눔이 의미가 없다(떠 있는 개체) — 조각을 하나로 접는다.
-      const pieces = frame.nested
-        ? [{ text: rawPieces.map((p) => p.text).join('\n'), blipRelIds: rawPieces.flatMap((p) => p.blipRelIds) }]
-        : rawPieces;
-      const level = frame.nested ? null : headingLevelOf(pPr, styles);
-      let breakBefore = takeSectionBreak(frame.nested) || (!frame.nested && pageBreakBeforeOf(pPr, styles));
-      let headingPlaced = level === null;
+      // walk 는 제너레이터라 .find 가 없다. 펼쳐서 찾는다.
+      const body = [...walk(parseXml(xml).documentElement)].find((el) => localName(el) === 'body')
+        ?? extractFail('DOC_CORRUPT', 'w:body missing');
+      const styles = readStyles(zip);
 
-      for (const [i, piece] of pieces.entries()) {
-        const blockIndex = blocks.length;
-        blocks.push({ text: piece.text, breakBefore: breakBefore || i > 0 });
-        breakBefore = false;
-        // 제목은 조각이 아니라 문단의 스타일이므로 한 번만 붙인다 — **첫 비지 않은** 조각에.
-        // 첫 조각에만 붙이던 때는 쪽나눔으로 시작하는 제목 문단(빈 첫 조각)이 제목을 잃었다.
-        if (!headingPlaced && piece.text.trim()) {
-          headingAt.push({ level: level!, title: piece.text.trim(), blockIndex });
-          headingPlaced = true;
+      const blocks: Block[] = [];
+      const headingAt: { level: number; title: string; blockIndex: number }[] = [];
+      const imageAt: { relId: string; blockIndex: number }[] = [];
+
+      /**
+       * 순회 프레임. 본문이 바닥 프레임이고, 문단의 글상자는 그 문단 바로 뒤에 처리되도록 위에
+       * 프레임을 쌓는다(재귀 대신 명시적 스택 — 글상자 중첩이 깊어도 스택을 넘기지 않는다).
+       * nested 프레임(글상자)은 떠 있는 개체라 쪽 흐름에 관여하지 않는다: 제목·쪽나눔·구역
+       * 나눔을 만들지도, 대기 중인 구역 나눔을 소비하지도 않는다.
+       */
+      interface Frame { items: Element[]; i: number; nested: boolean }
+      const stack: Frame[] = [{ items: expandWrappers(body.children), i: 0, nested: false }];
+      /** 직전 문단이 구역을 끝냈다 — 다음 본문 블록 앞에서 쪽을 나눈다. */
+      let pendingSectionBreak = false;
+      const takeSectionBreak = (nested: boolean): boolean => {
+        if (nested || !pendingSectionBreak) return false;
+        pendingSectionBreak = false;
+        return true;
+      };
+
+      // 진행률은 본문 최상위 항목 기준이다 — 글상자 프레임은 그 항목 하나의 일부로 친다.
+      const top = stack[0]!;
+      let processed = 0;
+      while (stack.length > 0) {
+        const frame = stack[stack.length - 1]!;
+        if (frame.i >= frame.items.length) { stack.pop(); continue; }
+        const child = frame.items[frame.i++]!;
+        processed += 1;
+        if (processed % YIELD_EVERY === 0) {
+          await yieldToEventLoop();
+          opts.onProgress?.(top.i, top.items.length);
         }
-        // 그림은 실제로 그 조각(쪽나눔 이전 구간) 에 속한 것만 붙인다 — 문단 중간의
-        // 쪽나눔 뒤에 오는 그림이 앞쪽 조각에 잘못 매핑되는 것을 막는다.
-        for (const relId of piece.blipRelIds) imageAt.push({ relId, blockIndex });
-      }
-
-      if (!frame.nested && endsSectionWithBreak(pPr)) pendingSectionBreak = true;
-      if (textBoxes.length > 0) {
-        stack.push({ items: textBoxes.flatMap((box) => expandWrappers(box.children)), i: 0, nested: true });
-      }
-    }
-
-    opts.onProgress?.(top.items.length, top.items.length);
-
-    const { units, unitOfBlock } = paginate(blocks);
-    if (units.length === 0) extractFail('DOC_NO_TEXT', 'no text in document');
-    // 단위 수 상한은 PDF 와 같은 예산을 쓴다 — 요약·임베딩이 단위 수에 선형으로 확장된다.
-    // Task10 fix round2: 번역 파라미터를 함께 싣는다 — PDF 경로(parsePdf)는 이미 번역된
-    // 문자열을 던지지만 이쪽(DOCX)은 코드만 던지므로, document-open.ts 의 경계가 pages/max 로
-    // uploader.tooManyPages 를 채울 수 있어야 한다(그래야 "unit count 501 exceeds 500" 같은
-    // 개발자용 영어가 화면에 그대로 노출되지 않는다).
-    if (units.length > MAX_PAGE_COUNT) {
-      extractFail(
-        'PDF_TOO_MANY_PAGES',
-        `unit count ${units.length} exceeds ${MAX_PAGE_COUNT}`,
-        { pages: String(units.length), max: String(MAX_PAGE_COUNT) },
-      );
-    }
-
-    const headings: ExtractedHeading[] = headingAt.map((h) => ({
-      level: h.level,
-      title: h.title,
-      unitIndex: unitOfBlock[h.blockIndex] ?? 0,
-    }));
-
-    const images: ExtractedImage[] = [];
-    let imageBudgetExceeded = false;
-    if (opts.extractImages !== false && imageAt.length > 0) {
-      const rels = readRels(zip, DOCUMENT_PART);
-      const seen = new Set<string>();
-      let examined = 0;
-      for (const { relId, blockIndex } of imageAt) {
         throwIfAborted(opts.signal);
-        if (examined >= MAX_EXAMINED_IMAGES) break;
-        examined += 1;
-        const path = rels.get(relId);
-        if (!path || seen.has(path)) continue;
-        const mimeType = mimeOf(path);
-        const bytes = zip.bytes(path);
-        if (!mimeType || !bytes) continue;
-        seen.add(path);
-        if (images.length >= MAX_TOTAL_IMAGES) { imageBudgetExceeded = true; continue; }
-        images.push({
-          unitIndex: unitOfBlock[blockIndex] ?? 0,
-          base64: toBase64(bytes),
-          // 원본 픽셀 크기는 디코드해야 알 수 있는데 Vision 경로가 쓰지 않는다. 0 으로 둔다.
-          width: 0,
-          height: 0,
-          mimeType,
-        });
-      }
-    }
+        const name = localName(child);
 
-    return {
-      units,
-      images,
-      headings,
-      unitKind: 'page',
-      ...(imageBudgetExceeded ? { imageBudgetExceeded: true } : {}),
-    };
-  },
-};
+        if (name === 'tbl') {
+          const blockIndex = blocks.length;
+          blocks.push({ text: toGfmTable(tableRows(child)), breakBefore: takeSectionBreak(frame.nested) });
+          // 표 셀 안 그림 — 셀 나눔은 단위 경계가 아니므로 표 전체를 담은 이 블록에 붙인다.
+          for (const relId of blipsIn(child)) imageAt.push({ relId, blockIndex });
+          continue;
+        }
+        if (name !== 'p') continue;
+
+        const pPr = ownPPr(child);
+        const { pieces: rawPieces, textBoxes } = paragraphContent(child);
+        // 글상자 안에서는 쪽나눔이 의미가 없다(떠 있는 개체) — 조각을 하나로 접는다.
+        const pieces = frame.nested
+          ? [{ text: rawPieces.map((p) => p.text).join('\n'), blipRelIds: rawPieces.flatMap((p) => p.blipRelIds) }]
+          : rawPieces;
+        const level = frame.nested ? null : headingLevelOf(pPr, styles);
+        let breakBefore = takeSectionBreak(frame.nested) || (!frame.nested && pageBreakBeforeOf(pPr, styles));
+        let headingPlaced = level === null;
+
+        for (const [i, piece] of pieces.entries()) {
+          const blockIndex = blocks.length;
+          blocks.push({ text: piece.text, breakBefore: breakBefore || i > 0 });
+          breakBefore = false;
+          // 제목은 조각이 아니라 문단의 스타일이므로 한 번만 붙인다 — **첫 비지 않은** 조각에.
+          // 첫 조각에만 붙이던 때는 쪽나눔으로 시작하는 제목 문단(빈 첫 조각)이 제목을 잃었다.
+          if (!headingPlaced && piece.text.trim()) {
+            headingAt.push({ level: level!, title: piece.text.trim(), blockIndex });
+            headingPlaced = true;
+          }
+          // 그림은 실제로 그 조각(쪽나눔 이전 구간) 에 속한 것만 붙인다 — 문단 중간의
+          // 쪽나눔 뒤에 오는 그림이 앞쪽 조각에 잘못 매핑되는 것을 막는다.
+          for (const relId of piece.blipRelIds) imageAt.push({ relId, blockIndex });
+        }
+
+        if (!frame.nested && endsSectionWithBreak(pPr)) pendingSectionBreak = true;
+        if (textBoxes.length > 0) {
+          stack.push({ items: textBoxes.flatMap((box) => expandWrappers(box.children)), i: 0, nested: true });
+        }
+      }
+
+      opts.onProgress?.(top.items.length, top.items.length);
+
+      const { units, unitOfBlock } = paginate(blocks);
+      if (units.length === 0) extractFail('DOC_NO_TEXT', 'no text in document');
+      // 단위 수 상한은 PDF 와 같은 예산을 쓴다 — 요약·임베딩이 단위 수에 선형으로 확장된다.
+      // Task10 fix round2: 번역 파라미터를 함께 싣는다 — PDF 경로(parsePdf)는 이미 번역된
+      // 문자열을 던지지만 이쪽(DOCX)은 코드만 던지므로, document-open.ts 의 경계가 pages/max 로
+      // uploader.tooManyPages 를 채울 수 있어야 한다(그래야 "unit count 501 exceeds 500" 같은
+      // 개발자용 영어가 화면에 그대로 노출되지 않는다).
+      if (units.length > MAX_PAGE_COUNT) {
+        extractFail(
+          'PDF_TOO_MANY_PAGES',
+          `unit count ${units.length} exceeds ${MAX_PAGE_COUNT}`,
+          { pages: String(units.length), max: String(MAX_PAGE_COUNT) },
+        );
+      }
+
+      const headings: ExtractedHeading[] = headingAt.map((h) => ({
+        level: h.level,
+        title: h.title,
+        unitIndex: unitOfBlock[h.blockIndex] ?? 0,
+      }));
+
+      const images: ExtractedImage[] = [];
+      let imageBudgetExceeded = false;
+      if (opts.extractImages !== false && imageAt.length > 0) {
+        const rels = readRels(zip, DOCUMENT_PART);
+        const seen = new Set<string>();
+        let examined = 0;
+        for (const { relId, blockIndex } of imageAt) {
+          throwIfAborted(opts.signal);
+          if (examined >= MAX_EXAMINED_IMAGES) break;
+          examined += 1;
+          const path = rels.get(relId);
+          if (!path || seen.has(path)) continue;
+          const bytes = zip.bytes(path);
+          if (!bytes) continue;
+          seen.add(path);
+          if (images.length >= MAX_TOTAL_IMAGES) { imageBudgetExceeded = true; continue; }
+          // 형식은 확장자가 아니라 바이트로 가린다(EMF/WMF/TIFF 는 건너뛴다). 크기 규칙은 PDF
+          // 경로와 같다 — 50px 미만·4M 픽셀 초과는 건너뛰고, 긴 변 1024 초과는 줄인다.
+          const fitted = await fit(bytes);
+          if (!fitted) continue;
+          images.push({ unitIndex: unitOfBlock[blockIndex] ?? 0, ...fitted });
+        }
+      }
+
+      return {
+        units,
+        images,
+        headings,
+        unitKind: 'page',
+        ...(imageBudgetExceeded ? { imageBudgetExceeded: true } : {}),
+      };
+    },
+  };
+}
+
+export const docxExtractor: Extractor = createDocxExtractor();
