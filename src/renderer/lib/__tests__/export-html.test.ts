@@ -23,6 +23,15 @@ describe('summaryToHtml — 인쇄용 HTML 변환', () => {
     expect(summaryToHtml('x', 't', '"><script>')).toContain('<html lang="ko">'); // 주입 시도 차단
   });
 
+  // QA34: 화면(markdown-renderer)은 singleTilde 를 껐는데 내보내기가 remark-gfm 기본값을 따로 써서
+  // 범위 표기가 PDF 에서만 취소선이 됐다. 이중 물결 취소선은 유지.
+  it("'~' 범위 표기는 취소선이 아니고, '~~x~~' 는 취소선이다 — 화면과 같은 GFM 설정", () => {
+    const html = summaryToHtml('기간 9/1~9/30, 인원 10~20명 그리고 ~~지운 글~~', 'x');
+    expect(html).toContain('기간 9/1~9/30, 인원 10~20명');
+    expect(html.match(/<del>/g)?.length).toBe(1);
+    expect(html).toContain('<del>지운 글</del>');
+  });
+
   it('인용 [p.N] 은 plain text 로 보존(인터랙티브 버튼 미사용)', () => {
     const html = summaryToHtml('근거 문장입니다 [p.3].', 'x');
     expect(html).toContain('[p.3]');
