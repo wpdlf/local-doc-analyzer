@@ -2254,7 +2254,7 @@ const LANG_PROMPTS: Record<string, LangPrompts> = {
 const CITATION_RULES: Record<string, string> = {
   ko: `## 인용 규칙 (가장 중요한 출력 규칙)
 
-**입력 텍스트의 각 단락은 \`[p.N]\` 형태의 페이지 라벨로 시작합니다.** 이 라벨은 해당 단락이 어느 PDF 페이지에서 왔는지 정확히 알려줍니다.
+**입력 텍스트의 각 단락은 \`[p.N]\` 형태의 페이지 라벨로 시작합니다.** 이 라벨은 해당 단락이 문서의 어느 페이지에서 왔는지 정확히 알려줍니다.
 
 **반드시 지켜야 할 사항**:
 1. **거의 모든 주요 문장에 출처 인용 \`[p.N]\` 을 문장 끝에 붙이세요.** 해당 문장이 어느 단락의 라벨에서 왔는지 보고 그대로 사용합니다.
@@ -2274,7 +2274,7 @@ const CITATION_RULES: Record<string, string> = {
 - "결론은 다음과 같다\\n[p.3]" **(줄바꿈 후 단독 금지 ✗ — 같은 줄 문장 끝에 붙여야 함)**`,
   en: `## Citation rule (MOST IMPORTANT OUTPUT RULE)
 
-**Each paragraph in the input begins with a \`[p.N]\` page label** telling you exactly which PDF page it came from.
+**Each paragraph in the input begins with a \`[p.N]\` page label** telling you exactly which page of the document it came from.
 
 **What you MUST do**:
 1. **Attach a source citation \`[p.N]\` at the end of almost every key sentence.** Take the page label from the paragraph the fact came from and reproduce it verbatim.

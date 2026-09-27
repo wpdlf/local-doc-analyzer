@@ -159,6 +159,16 @@ describe('buildPrompt', () => {
     }
   });
 
+  // 인용 규칙의 설명문("어느 PDF 페이지에서 왔는지")도 같은 이유로 중립화했다 — [p.N] 형식 자체는
+  // 계약이라 그대로여야 한다(CITATION_REGEX 가 이 형태만 잡는다).
+  it.each(['ko', 'en', 'ja', 'zh', 'auto'])('언어 %s — 인용 규칙을 포함한 프롬프트 전체가 포맷 중립이고 [p.N] 계약은 유지된다', (lang) => {
+    for (const type of ['full', 'chapter', 'qa'] as const) {
+      const p = buildPrompt('x', type, lang);
+      expect(p, `${lang}/${type}`).not.toMatch(/PDF/i);
+      expect(p, `${lang}/${type}`).toContain('[p.N]');
+    }
+  });
+
   it('알 수 없는 언어 → ko fallback', () => {
     expect(buildPrompt('x', 'full', 'fr')).toContain('한국어');
   });
