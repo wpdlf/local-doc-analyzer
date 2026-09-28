@@ -152,7 +152,7 @@ export const _translations = {
   'uploader.fileTooLarge': { ko: '파일이 너무 큽니다 ({size}MB). 최대 100MB까지 지원합니다.', en: 'File too large ({size}MB). Maximum 100MB supported.' },
   'uploader.cannotRead': { ko: '문서를 읽을 수 없습니다.', en: 'Cannot read document.' },
   'uploader.multipleFiles': { ko: '한 번에 하나의 파일만 처리할 수 있습니다. 첫 번째 파일({name})만 열었습니다.', en: 'Only one file can be processed at a time. Opening the first file ({name}) only.' },
-  'uploader.notPdf': { ko: 'PDF · Word 파일만 지원됩니다.', en: 'Only PDF and Word files are supported.' },
+  'uploader.notPdf': { ko: '{list} 파일만 지원됩니다.', en: 'Only these file types are supported: {list}.' },
   // ─── openDocumentData 진입 가드(모든 파일 열기 경로 공통) ───
   'pdf.busyGenerating': { ko: '요약 진행 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while summarizing.' },
   'pdf.busyQa': { ko: 'Q&A 답변 생성 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while answering Q&A.' },
@@ -533,7 +533,7 @@ export const _translations = {
   'mainprog.success': { ko: '다운로드 완료!', en: 'Download complete!' },
   'mainprog.preparing': { ko: '모델 다운로드 준비 중...', en: 'Preparing model download...' },
   // ─── main 파일 열기(file:open-pdf · file:open-path) 거부 사유 — QA34: 종전엔 한국어 원문이 영어 UI 에 그대로 ───
-  'mainerr.fileUnsupported': { ko: 'PDF · Word 파일만 열 수 있습니다.', en: 'Only PDF and Word files can be opened.' },
+  'mainerr.fileUnsupported': { ko: '{list} 파일만 열 수 있습니다.', en: 'Only these file types can be opened: {list}.' },
   'mainerr.fileSymlink': { ko: '심볼릭 링크는 열 수 없습니다.', en: 'Symbolic links cannot be opened.' },
   'mainerr.fileNotRegular': { ko: '일반 파일이 아닙니다.', en: 'This is not a regular file.' },
   'mainerr.fileTooLarge': { ko: '파일이 너무 큽니다 (최대 100MB).', en: 'The file is too large (max 100MB).' },

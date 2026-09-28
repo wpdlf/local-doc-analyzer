@@ -26,6 +26,12 @@ export const SUPPORTED_FORMATS: readonly DocumentFormat[] = [
 export const SUPPORTED_EXTENSIONS: readonly string[] = SUPPORTED_FORMATS.map((f) => f.ext);
 
 /**
+ * 사용자 안내용 지원 형식 목록("PDF · Word"). i18n 문구가 `{list}` 로 받는다 — 문구에 형식을
+ * 하드코딩하면 포맷을 등록할 때마다 틀려진다(P4 이전 네 곳이 "PDF · Word" 로 박혀 있었다).
+ */
+export const SUPPORTED_LABEL = SUPPORTED_FORMATS.map((f) => f.label).join(' · ');
+
+/**
  * docx 추출기(`extract/docx.ts`)의 판별 값. 포맷 id 리터럴은 이 파일 한 곳에서만 쓴다 —
  * `Extractor.id`(extract/types.ts)가 이 상수의 타입을 derive 해서 쓰므로 그쪽엔 리터럴이
  * 남지 않는다(소스 스캔 가드 대상 — Task9).

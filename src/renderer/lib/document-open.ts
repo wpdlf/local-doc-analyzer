@@ -4,7 +4,7 @@ import { t } from './i18n';
 import { restoreSessionForDocument, persistCurrentSession } from './use-session';
 import { confirmDiscardIfNotPersisted } from './discard-policy';
 import { MAX_PDF_SIZE_BYTES } from '../../shared/constants';
-import { hasPdfMagic, hasZipMagic, hasCfbMagic, SUPPORTED_FORMATS } from '../../shared/document-formats';
+import { hasPdfMagic, hasZipMagic, hasCfbMagic, SUPPORTED_LABEL } from '../../shared/document-formats';
 // QA34(bundle): 추출기 체인(extract/zip = fflate, extract/registry = docx…, extract/normalize)은
 // 비-PDF 분기에서만 동적 import 한다(loadExtractChain). App.tsx 가 이 모듈을 정적으로 import
 // 하므로, 여기서 정적으로 끌면 PDF 만 여는 사용자도 fflate·추출기를 eager 진입 청크로 받는다.
@@ -13,8 +13,6 @@ import type { PdfDocument } from '../types';
 import type { Extractor } from './extract/types';
 import { parsePdf, isReReadablePath, MAX_TOTAL_IMAGES } from './pdf-parser';
 import type { TranslationKey } from './i18n';
-
-const SUPPORTED_LABEL = SUPPORTED_FORMATS.map((f) => f.label).join(' · ');
 
 /**
  * 추출기(docx.ts/zip.ts/xml.ts)·파서(pdf-parser.ts) 가 던지는 코드 중, 화면에 보이기 전에

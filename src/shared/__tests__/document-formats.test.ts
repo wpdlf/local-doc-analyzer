@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  SUPPORTED_FORMATS, SUPPORTED_EXTENSIONS, DIALOG_FILTERS,
+  SUPPORTED_FORMATS, SUPPORTED_EXTENSIONS, SUPPORTED_LABEL, DIALOG_FILTERS,
   isSupportedExtension, hasZipMagic, hasPdfMagic, usesCanvasViewer, stripSupportedExtension,
   UNIT_KINDS, isUnitKind,
 } from '../document-formats';
@@ -9,6 +9,12 @@ describe('document-formats — 지원 포맷 단일 출처', () => {
   it('P1 시점의 지원 목록은 pdf 와 docx 다', () => {
     expect(SUPPORTED_FORMATS.map((f) => f.id)).toEqual(['pdf', 'docx']);
     expect(SUPPORTED_EXTENSIONS).toEqual(['.pdf', '.docx']);
+  });
+
+  // Task3(P4 선행): 사용자 안내 문구("PDF · Word 파일만 지원됩니다")가 이 목록에서 도출돼야
+  // 포맷 등록만으로 문구가 따라간다 — 하드코딩되면 등록 순간 문구가 틀려진다.
+  it('SUPPORTED_LABEL 은 등록된 포맷 라벨을 순서대로 잇는다', () => {
+    expect(SUPPORTED_LABEL).toBe(SUPPORTED_FORMATS.map((f) => f.label).join(' · '));
   });
 
   it('확장자 검사는 대소문자를 가리지 않는다', () => {
