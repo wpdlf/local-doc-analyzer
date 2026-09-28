@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { describe, it, expect } from 'vitest';
-import { parseXml, localName, walk, childrenNamed, firstNamed, attr } from '../xml';
+import { parseXml, localName, walk, childrenNamed, firstNamed, attr, prefixedAttr } from '../xml';
 
 const DOC = `<?xml version="1.0"?>
 <w:body xmlns:w="urn:w" xmlns:a="urn:a">
@@ -116,5 +116,26 @@ describe('xml 순회 — 프리픽스에 의존하지 않는다', () => {
       `<el xmlns:w="urn:w" xmlns:a="urn:a" w:val="1" a:val="2"/>`,
     ).documentElement;
     expect(attr(root, 'val')).toBe('1');
+  });
+});
+
+describe('prefixedAttr', () => {
+  const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const el = (xml: string) => parseXml(xml).documentElement;
+
+  // 실물 PPTX 순서(`<p:sldId id="256" r:id="rId2"/>` — id 가 먼저)는 여기서 검증하지 않는다:
+  // happy-dom 20.10.6 의 XML 파서가 "무접두 속성 뒤에 같은 로컬명의 접두사 속성"이 오면 그
+  // 접두사 속성을 el.attributes 에서 통째로 지워버린다(재현: <el xmlns:r=".." id="1" r:id="2"/>
+  // → attributes 에 xmlns:r·id 만 남고 r:id 는 없음. 순서를 뒤집으면(r:id 먼저) 둘 다 남는다).
+  // prefixedAttr 은 el.attributes 만 보므로 파서가 이미 지운 값은 복구할 수 없다 — 구현 결함이
+  // 아니라 테스트 환경(happy-dom, 정확 핀이라 여기서 올리지 않는다)의 한계다. 이 순서는 실제
+  // Chromium 에서 Task 10 E2E 픽스처로 검증하고, PPTX 추출기(Task 4)는 애초에 슬라이드 순서를
+  // DOM attributes 가 아니라 태그 레벨 리더로 읽어 이 경로를 타지 않는다.
+  it('r:id 가 먼저 나오면 접두사 쪽을 준다', () => {
+    expect(prefixedAttr(el(`<sldId xmlns:r="${R}" r:id="rId7" id="256"/>`), 'id')).toBe('rId7');
+  });
+
+  it('접두사 속성이 없으면 null (무접두 속성으로 폴백하지 않는다)', () => {
+    expect(prefixedAttr(el('<sldId id="256"/>'), 'id')).toBeNull();
   });
 });

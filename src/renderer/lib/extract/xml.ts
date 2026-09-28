@@ -75,3 +75,19 @@ export function attr(el: Element, name: string): string | null {
   }
   return null;
 }
+
+/**
+ * 접두사가 **붙은** 속성 중 로컬명이 일치하는 것. 무접두 동명 속성은 보지 않는다.
+ *
+ * attr() 는 로컬명만 보므로 같은 로컬명의 속성이 둘이면 먼저 나오는 쪽을 준다. PPTX 의
+ * `<p:sldId id="256" r:id="rId2"/>` 가 그 경우다 — 슬라이드 순서를 정하는 값이 r:id 인데
+ * id(숫자)를 받으면 rels 조회가 전부 실패해 슬라이드가 0장이 된다(조용히). 판정은 attr() 와
+ * 같은 이유로 a.name 문자열로 한다(happy-dom 은 속성 네임스페이스를 분해하지 않는다).
+ */
+export function prefixedAttr(el: Element, name: string): string | null {
+  for (const a of Array.from(el.attributes)) {
+    const i = a.name.indexOf(':');
+    if (i > 0 && a.name.slice(i + 1) === name && a.name.slice(0, i) !== 'xmlns') return a.value;
+  }
+  return null;
+}

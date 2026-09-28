@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toGfmTable } from '../table';
+import { toGfmTable, placeGridCells } from '../table';
 
 describe('toGfmTable', () => {
   it('첫 행을 머리글로 삼아 GFM 표를 만든다', () => {
@@ -43,5 +43,42 @@ describe('toGfmTable', () => {
   it('빈 표는 빈 문자열이다 (빈 구분선만 남기지 않는다)', () => {
     expect(toGfmTable([])).toBe('');
     expect(toGfmTable([[]])).toBe('');
+  });
+});
+
+describe('placeGridCells — 좌표로 놓는 격자(HWPX: 가려진 칸이 XML 에 없다)', () => {
+  const c = (row: number, col: number, text: string, rowSpan = 1, colSpan = 1) => ({ row, col, rowSpan, colSpan, text });
+
+  it('가로 병합은 첫 칸에 텍스트, 나머지는 빈 칸', () => {
+    expect(placeGridCells([c(0, 0, 'H', 1, 2), c(1, 0, 'a'), c(1, 1, 'b')], 2, 2))
+      .toEqual([['H', ''], ['a', 'b']]);
+  });
+
+  it('세로 병합은 아래 칸에 텍스트를 복사한다(분류 열이 행마다 남게 — DOCX vMerge 와 같은 규칙)', () => {
+    expect(placeGridCells([c(0, 0, '분류', 2), c(0, 1, 'x'), c(1, 1, 'y')], 2, 2))
+      .toEqual([['분류', 'x'], ['분류', 'y']]);
+  });
+
+  it('입력 순서와 무관하게 좌표로 놓는다', () => {
+    expect(placeGridCells([c(1, 1, 'd'), c(0, 0, 'a'), c(1, 0, 'c'), c(0, 1, 'b')], 2, 2))
+      .toEqual([['a', 'b'], ['c', 'd']]);
+  });
+
+  it('범위를 벗어난 좌표·스팬은 잘라내고, 겹치면 먼저 놓인 칸을 유지한다', () => {
+    expect(placeGridCells([c(0, 0, 'a', 1, 99), c(0, 1, 'z'), c(5, 5, 'out')], 1, 2))
+      .toEqual([['a', '']]);
+  });
+
+  it('원점이 이미 차 있으면 그 셀 전체를 버린다 — 스팬 일부만 놓지 않는다', () => {
+    // (0,0)~(0,1) 을 'a' 가로 병합으로 먼저 채운 뒤, (0,1)에서 시작해 아래로 뻗는 'z' 세로 병합을
+    // 놓으려 하면 원점 (0,1)이 이미 'a' 가 채운 빈 칸이므로 셀 전체(그 아래 (1,1)까지)를 버려야
+    // 한다 — 원점만 막고 스팬의 나머지 칸(1,1)에는 여전히 쓰면 반쪽짜리 셀이 격자에 남는다.
+    expect(placeGridCells([c(0, 0, 'a', 1, 2), c(0, 1, 'z', 2, 1)], 2, 2))
+      .toEqual([['a', ''], ['', '']]);
+  });
+
+  it('비어 있는 칸은 빈 문자열, 행·열 수는 MAX_TABLE_COLUMNS 로 제한', () => {
+    expect(placeGridCells([], 1, 3)).toEqual([['', '', '']]);
+    expect(placeGridCells([], 1, 1e9)[0]!.length).toBe(256);
   });
 });

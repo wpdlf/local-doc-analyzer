@@ -1,6 +1,6 @@
 import { parseXml, walk, localName, attr, childrenNamed } from './xml';
 import { readRels } from './ooxml';
-import { toGfmTable } from './table';
+import { toGfmTable, MAX_GRID_CELLS_PER_AXIS } from './table';
 import { paginate, type Block } from './paginate';
 import { MAX_EXAMINED_IMAGES, MAX_PAGE_COUNT, MAX_TOTAL_IMAGES } from '../pdf-parser';
 import type { Extractor, ExtractedDoc, ExtractedHeading, ExtractedImage, ExtractOptions, ZipIndex } from './types';
@@ -15,7 +15,7 @@ const DOCUMENT_PART = 'word/document.xml';
  * 표 한 행의 격자 칸 상한. gridSpan/gridBefore 는 파일이 주는 정수라 1e9 같은 값이 그대로
  * 배열 길이가 되면 렌더러가 멈춘다. 실물 업무 서식의 최대 폭(수십 칸)보다 넉넉하게 둔다.
  */
-export const MAX_TABLE_COLUMNS = 256;
+export const MAX_TABLE_COLUMNS = MAX_GRID_CELLS_PER_AXIS;
 
 /**
  * 표·글상자 중첩 깊이 상한. 이보다 깊은 내용은 구조 없이 텍스트만 모은다 — 병리적 중첩에서

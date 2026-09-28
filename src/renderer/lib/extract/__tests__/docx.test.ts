@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { zipSync, strToU8 } from 'fflate';
 import { openZip } from '../zip';
 import { docxExtractor, createDocxExtractor, MAX_TABLE_COLUMNS } from '../docx';
-import { createImageFitter, type ImageCodec } from '../image-fit';
+import { createImageFitter, type ImageCodec, type FittedMime } from '../image-fit';
 
 const W =
   'xmlns:w="urn:w" xmlns:a="urn:a" xmlns:r="urn:r" xmlns:mc="urn:mc" xmlns:wps="urn:wps" ' +
@@ -49,7 +49,8 @@ const PNG = pngHeader(100, 100, [0x42, 0x60, 0x82]);
 const PNG_BASE64 = Buffer.from(PNG).toString('base64');
 
 /** 디코드 성공으로 치고 원본 바이트를 그대로 돌려주는 코덱. 크기 규칙(probe)은 실제 구현을 탄다. */
-const passThrough: ImageCodec = { reencode: async (bytes, mimeType) => ({ bytes, mimeType }) };
+// DOCX 는 BMP 를 만들지 않으므로(probeImage 는 PNG/JPEG 만 준다) 여기서는 항상 FittedMime 이다.
+const passThrough: ImageCodec = { reencode: async (bytes, mimeType) => ({ bytes, mimeType: mimeType as FittedMime }) };
 const docxImg = createDocxExtractor({ fitImage: createImageFitter(passThrough) });
 
 describe('docxExtractor.sniff', () => {
