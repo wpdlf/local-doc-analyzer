@@ -37,6 +37,8 @@ This document has two parts — **[User Guide](#user-guide)** (install · usage 
 
 > **Note**: Releases before v1.8.0 shipped the installer as `Local-PDF-Analyzer-Setup-x.x.x.exe` (pre-rename name). If you're verifying an older download, use that filename instead.
 
+> **Upgrading from "PDF 자료 분석기" (v1.7.x or earlier)**: the app's identifier changed with the rename, so the new version installs **alongside** the old one rather than replacing it. From v1.8.1 on, your sessions, settings, collections and saved API keys are **copied over automatically on first launch** (the old data folder is left untouched). Once the new app looks right, uninstall the old "PDF 자료 분석기" entry.
+
 1. Download the Windows installer from the link above
 2. Run the downloaded file to install
 3. Launch the app from the desktop shortcut or Start menu
@@ -185,6 +187,7 @@ For image-based/scanned PDFs where text extraction fails, Vision AI recognizes t
 - Clean summaries — greetings, commentary, and conversational filler are removed via prompt constraints plus a post-processing filter
 - Large document support — long documents are split, processed in parallel batches, and merged into a unified summary (up to 500 pages)
 - Automatic answer verification — Q&A answers are checked sentence-by-sentence against document embeddings and refined when grounding is weak
+- Word documents read the way the author wrote them — headings are recognized from the document's own styles (including the localized heading styles Korean Word uses), tables keep merged cells in their columns and are passed on as tables rather than run-on text, and the author's page and section breaks decide where a "page" ends
 
 **Usability**
 - Real-time streaming — summaries appear as they are generated, with auto-scroll (pauses when you scroll manually)
@@ -209,7 +212,7 @@ For image-based/scanned PDFs where text extraction fails, Vision AI recognizes t
 - Self-updating — new versions are detected on startup and installed with one click; downloads never start without consent, and in-progress work is saved before the app restarts
 
 **Quality assurance**
-- 2567 unit tests + Playwright E2E + CI quality gates, plus a 4-agent parallel QA round on every release
+- 2873 unit tests + Playwright E2E + CI quality gates, plus a 4-agent parallel QA round on every release
 - Build integrity — installer SHA-256 hashes + Sigstore attestation published automatically
 - Detailed improvement/fix history: [docs/HISTORY.md](docs/HISTORY.md) (Korean)
 
@@ -254,6 +257,7 @@ For image-based/scanned PDFs where text extraction fails, Vision AI recognizes t
 | Saved sessions use too much disk | At most 30 sessions/200MB are kept; older ones are pruned automatically. Check usage and "Clear all" under Settings → Session Data |
 | App freezes on a screen error | Use the "Try again" button on the error screen to recover without restarting |
 | Want to verify the installer wasn't tampered with | Compare against `SHA256SUMS-windows.txt` on the release page, or verify Sigstore provenance with `gh attestation verify` (see [integrity verification](#installer-integrity-verification)) |
+| After upgrading from v1.7.x, my sessions, settings or API keys are missing | The rename installed the new version alongside the old one with a fresh data folder. Update to v1.8.1 or later — on first launch it copies everything from `%APPDATA%\summary-lecture-material`. The copy is skipped if you had already entered keys or changed settings in the new app, so nothing of yours is overwritten; in that case quit the app and copy the old folder's contents into `%APPDATA%\local-doc-analyzer` yourself |
 | The update check fails or finds nothing | Press **Check now** under Settings → App Updates. A network error suggests a firewall/proxy blocking `github.com`; if it persists, install the latest version manually from the releases page. Versions installed before auto-update shipped need one manual update first |
 | No macOS download | dmg releases are paused until code signing/notarization credentials are in place; meanwhile, build from source with `npm run package` |
 
@@ -277,7 +281,7 @@ For image-based/scanned PDFs where text extraction fails, Vision AI recognizes t
 | Markdown · math | react-markdown + remark-gfm; KaTeX in MathML-only output (no webfonts, no CSP relaxation) — shared by the on-screen renderer and PDF export |
 | Build | electron-vite + electron-builder (Windows NSIS — macOS DMG paused until notarization credentials are in place) |
 | Auto-update | electron-updater (GitHub Releases feed) — check on startup, download and install only on user consent, renderer flush before install |
-| Testing | Vitest, 2567 unit tests / 122 files (renderer·shared 1675 + main 892) + Playwright E2E (10 CI-deterministic tests) + `tsc --noEmit` type check + CI coverage gates (82/75/81/85) |
+| Testing | Vitest, 2873 unit tests / 144 files (renderer·shared 1944 + main 929) + Playwright E2E (11 CI-deterministic tests) + `tsc --noEmit` type check + CI coverage gates (84/77/83/87) |
 | i18n | In-house (i18n.ts) — 400+ keys, useT() hook, template substitution |
 | API key security | Electron safeStorage (OS keychain encryption), decrypted only in the Main process |
 | Shared constants | `src/shared/constants.ts` — shared between Main/Renderer (prevents drift of MAX_PDF_SIZE etc.) |
@@ -330,7 +334,7 @@ src/
     │   ├── use-qa.ts          # Q&A chat hook (RAG semantic search + keyword fallback, history)
     │   ├── vector-store.ts    # In-memory vector store (cosine similarity, dimension checks)
     │   ├── store.ts           # Zustand state (summary + Q&A + RAG index)
-    │   └── __tests__/         # Unit tests (2567, 122 files)
+    │   └── __tests__/         # Unit tests (2873, 144 files)
     └── types/
         └── index.ts       # Type definitions + provider model constants
 ```
@@ -525,9 +529,9 @@ The threat model and mitigations currently in place. For the detailed per-versio
 
 ## Quality Assurance
 
-- **2567 unit tests / 122 files** — renderer·shared 1675 + main 892. The main process is behavior-tested through an electron mocking harness covering IPC handlers, OllamaManager, the API key store, ai-service, and cross-session search; the renderer/preload layer (all 18 components, the app shell itself, and core libraries such as use-summarize/use-session/pdf-parser/safe-markdown and the preload bridge) is behavior-tested via happy-dom
-- **Playwright E2E** — 10 CI-deterministic tests driving the real Electron build (cold-start wizard, PDF parse, session/settings persistence across restart, upload-error paths, and the browser engine's mathematical layout that formula rendering depends on), all AI-independent; multi-tab restore and summarize/Q&A/collection flows are covered by local-only Ollama specs
-- **CI gates** — `tsc --noEmit` (strict, incl. a separate e2e type-check project), enforced coverage thresholds (82/75/81/85), lockfile version sync check, tag ↔ `package.json` version match, two blocking `npm audit` gates (the whole production tree, plus a lockfile-closure check that covers the transitive dependencies of everything actually shipped), a build-time check that the math chunk never leaks into the eager bundle, Node 22/24 matrix plus a Windows unit-test leg
+- **2873 unit tests / 144 files** — renderer·shared 1944 + main 929. The main process is behavior-tested through an electron mocking harness covering IPC handlers, OllamaManager, the API key store, ai-service, and cross-session search; the renderer/preload layer (all 21 components, the app shell itself, and core libraries such as use-summarize/use-session/pdf-parser/safe-markdown and the preload bridge) is behavior-tested via happy-dom
+- **Playwright E2E** — 11 CI-deterministic tests driving the real Electron build (cold-start wizard, PDF parse, opening a Word document through to a citation jump, zoom and closing the source panel, session/settings persistence across restart, upload-error paths, and the browser engine's mathematical layout that formula rendering depends on), all AI-independent; multi-tab restore and summarize/Q&A/collection flows are covered by local-only Ollama specs
+- **CI gates** — `tsc --noEmit` (strict, incl. a separate e2e type-check project), enforced coverage thresholds (84/77/83/87), lockfile version sync check, tag ↔ `package.json` version match, two blocking `npm audit` gates (the whole production tree, plus a lockfile-closure check that covers the transitive dependencies of everything actually shipped), a build-time check that the math chunk never leaks into the eager bundle, Node 22/24 matrix plus a Windows unit-test leg
 - **Packaged-app gate (release only)** — the release workflow launches the actual packaged binary before uploading any asset, and verifies that the renderer boots and parses a real PDF **from inside the asar alone**, plus an asar size ceiling. Every other E2E spec runs the source tree's `out/`, where the repo's `node_modules` is still visible — so none of them can catch a packaging regression
 - **4-agent parallel QA** — a full-codebase QA round on every release, each agent taking a different axis (recent code, concurrency, persistence, packaging/CI, …). Zero blocking findings for 50+ consecutive rounds; what the rounds actually surface now is the expensive-but-quiet class — data that disappears without an error, and answers that look correct but aren't. Two examples fixed in v0.31.42: on documents whose first pages are a table of contents, those contents lines consumed the chapter numbers and every real chapter after them was suppressed — chapter summaries lost all but one; and opening a document while Ollama was not running deleted its stored search index, so reopening meant re-embedding the whole file. The rounds are also, by design, where regressions introduced by earlier fixes surface: of the findings in that round, five traced back to fixes shipped in the two rounds before it — which is why each fix now lands with a test that reproduces the defect first
 - Detailed improvement/fix history: [docs/HISTORY.md](docs/HISTORY.md) (Korean)
