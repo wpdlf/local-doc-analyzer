@@ -128,6 +128,16 @@ test('DOCX 를 열면 쪽나눔으로 2단위가 나뉘고 표가 표로 렌더�
       await expect(reset).toHaveText('100%');
       await expect.poll(fontPx, { timeout: 5000 }).toBeCloseTo(font100, 1);
 
+      // ── QA34(High): 텍스트 뷰어를 닫을 수 없었다(✕·Esc·포커스 반환 전무 — PdfViewer 형제 누락).
+      // 실앱에서 ✕ 로 닫히고 포커스가 인용 버튼으로 돌아오는지, 다시 열어 Esc 로도 닫히는지 본다.
+      await r2.page.getByRole('button', { name: '뷰어 닫기' }).click();
+      await expect(textViewer).toHaveCount(0);
+      await expect(cite).toBeFocused({ timeout: 5000 });
+      await cite.click();
+      await expect(textViewer).toBeVisible({ timeout: 15000 });
+      await r2.page.keyboard.press('Escape');
+      await expect(textViewer).toHaveCount(0);
+
       expect(r2.pageErrors.map((e) => e.message), '2차 렌더러 에러').toEqual([]);
     } finally {
       await r2.app.close().catch(() => { /* 이미 종료 */ });
