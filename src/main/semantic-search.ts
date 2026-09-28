@@ -215,6 +215,7 @@ export async function runSemanticSearch(
           fileName: e.fileName,
           filePath: e.filePath,
           pageCount: e.pageCount,
+          ...(e.unitKind ? { unitKind: e.unitKind } : {}),
           score: hits[0]!.score, // 최상위 청크 코사인 유사도
           inSummary: false,
           snippets: hits.slice(0, MAX_SNIPPETS).map((h) => chunkSnippet(h.text, h.pageStart)),

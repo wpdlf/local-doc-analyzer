@@ -5,6 +5,7 @@ import { openDocumentData } from '../lib/document-open';
 import { searchSessionsSemantic } from '../lib/semantic-search';
 import type { GlobalSearchResult } from '../../shared/session-types';
 import { openFromSessionOnly } from '../lib/tabs';
+import { formatUnitLabel } from '../lib/citation';
 
 /**
  * 전체 문서 검색 (cross-session search) — 저장된 모든 세션을 가로질러 검색.
@@ -222,7 +223,7 @@ export function GlobalSearch() {
                   {r.snippets.map((s, i) => {
                     // 키워드: page=0 = 요약 발췌 fallback. 의미: page=0 = 페이지 메타 없는 청크(라벨 생략).
                     const label = s.page > 0
-                      ? tr('search.page', { page: s.page })
+                      ? formatUnitLabel(s.page, r.unitKind ?? 'page')
                       : (lastMode === 'keyword' ? tr('search.summaryLabel') : null);
                     return (
                       <div key={i} className="mt-1 text-xs text-gray-500 dark:text-gray-400">

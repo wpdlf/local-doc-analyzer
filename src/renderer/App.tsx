@@ -8,6 +8,7 @@ import { GlobalSearch } from './components/GlobalSearch';
 import { CollectionsList } from './components/CollectionsList';
 import { TabBar } from './components/TabBar';
 import { closeTab } from './lib/tabs';
+import { formatUnitCount } from './lib/citation';
 import { SummaryViewer } from './components/SummaryViewer';
 import { SummaryTypeSelector } from './components/SummaryTypeSelector';
 import { StatusBar } from './components/StatusBar';
@@ -742,7 +743,7 @@ export default function App() {
           <div className="flex flex-col items-center gap-6">
             <div className="w-full flex items-center justify-between px-4 py-3 bg-gray-100 dark:bg-gray-800 rounded-lg">
               <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                📎 {document.fileName} ({document.pageCount}p)
+                📎 {document.fileName} ({formatUnitCount(document.pageCount, document.unitKind ?? 'page', 'short')})
                 {document.isOcr && (
                   <span className="ml-2 px-1.5 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded">
                     OCR

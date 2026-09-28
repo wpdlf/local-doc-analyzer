@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { parseCitations, formatPromptPageLabel, formatUnitLabel, clampCitationPage, CITATION_REGEX, normalizeCitationPlacement, stripCitations, sanitizeDocLabelName, qualifyBareCitations, stripTrailingPartialCitation, stripBareCitations } from '../citation';
+import { parseCitations, formatPromptPageLabel, formatUnitLabel, formatUnitCount, clampCitationPage, CITATION_REGEX, normalizeCitationPlacement, stripCitations, sanitizeDocLabelName, qualifyBareCitations, stripTrailingPartialCitation, stripBareCitations } from '../citation';
 import { useAppStore } from '../store';
 
 describe('parseCitations', () => {
@@ -550,5 +550,30 @@ describe('formatUnitLabel — 표시 라벨만 포맷별로 갈린다', () => {
 
   it('페이지가 없으면 빈 문자열이다 (기존 동작 유지)', () => {
     expect(formatUnitLabel(undefined, 'slide')).toBe('');
+  });
+});
+
+describe('formatUnitCount', () => {
+  beforeEach(() => useAppStore.setState((s) => ({ settings: { ...s.settings, uiLanguage: 'ko' } })));
+
+  it('단위 종류별 개수 문구 — long', () => {
+    expect(formatUnitCount(12, 'page')).toBe('12페이지');
+    expect(formatUnitCount(12, 'slide')).toBe('슬라이드 12장');
+    expect(formatUnitCount(3, 'chapter')).toBe('3개 장');
+  });
+
+  it('short 는 헤더·탭의 괄호 표기 — page 는 종전 "(2p)" 그대로', () => {
+    expect(formatUnitCount(2, 'page', 'short')).toBe('2p');
+    expect(formatUnitCount(12, 'slide', 'short')).toBe('12슬라이드');
+  });
+
+  it('unitKind 생략 = page (PDF·옛 세션)', () => {
+    expect(formatUnitCount(5)).toBe('5페이지');
+  });
+
+  it('영어', () => {
+    useAppStore.setState((s) => ({ settings: { ...s.settings, uiLanguage: 'en' } }));
+    expect(formatUnitCount(12, 'slide')).toBe('12 slides');
+    expect(formatUnitCount(2, 'page', 'short')).toBe('2p');
   });
 });

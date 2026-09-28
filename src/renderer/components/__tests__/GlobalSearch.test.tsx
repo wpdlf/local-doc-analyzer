@@ -238,6 +238,25 @@ describe('GlobalSearch', () => {
     await waitFor(() => expect(useAppStore.getState().error?.code).toBe('PDF_PARSE_FAIL'));
     expect(M.openDocumentData).not.toHaveBeenCalled();
   });
+
+  it('슬라이드 문서의 스니펫 라벨은 "슬라이드 N" 이다 — p.N 이 아니라 (P4)', async () => {
+    M.search.mockResolvedValue([result({ fileName: 'deck.pptx', unitKind: 'slide', snippets: [{ page: 3, text: '…프로세스…' }] })]);
+    const user = userEvent.setup();
+    render(<GlobalSearch />);
+    await user.type(screen.getByLabelText('문서 검색'), '프로세스');
+    await user.click(screen.getByRole('button', { name: '검색' }));
+    await waitFor(() => expect(screen.getByText('슬라이드 3')).toBeTruthy());
+    expect(screen.queryByText('p.3')).toBeNull();
+  });
+
+  it('unitKind 없는 결과(PDF·옛 세션)는 종전대로 p.N', async () => {
+    M.search.mockResolvedValue([result({})]);
+    const user = userEvent.setup();
+    render(<GlobalSearch />);
+    await user.type(screen.getByLabelText('문서 검색'), '프로세스');
+    await user.click(screen.getByRole('button', { name: '검색' }));
+    await waitFor(() => expect(screen.getByText('p.2')).toBeTruthy());
+  });
 });
 
 // QA26(C-High): 전역 검색도 재기동 직후의 유일한 입구 중 하나다 — 파일이 없어도 세션으로 연다.

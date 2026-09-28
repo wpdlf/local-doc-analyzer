@@ -47,6 +47,7 @@ interface SearchableMeta {
   fileName: string;
   filePath: string;
   pageCount: number;
+  unitKind?: 'page' | 'slide' | 'chapter';
 }
 
 /**
@@ -113,6 +114,7 @@ export function searchPersistedSession(
     fileName: meta.fileName,
     filePath: meta.filePath,
     pageCount: meta.pageCount,
+    ...(meta.unitKind ? { unitKind: meta.unitKind } : {}),
     score,
     inSummary,
     snippets,

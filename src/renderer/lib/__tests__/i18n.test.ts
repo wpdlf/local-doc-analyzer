@@ -268,7 +268,10 @@ describe('i18n 정적 키 가드 (QA28)', () => {
   // unitKind 는 닫힌 합타입(UnitKind = 'page'|'slide'|'chapter')이라 citation.unit.page/slide/
   // chapter 3개로 완결되며, citation.test.ts 의 formatUnitLabel 테스트가 세 값 모두를 실제로
   // 호출해 ko/en 라벨을 검증한다.
-  const DYNAMIC_PREFIXES = ['mainprog.', 'mainerr.', 'citation.unit.'];
+  // P4: formatUnitCount/formatUnitSpoken(citation.ts) 이 같은 방식으로 `unit.count.${unitKind}`·
+  // `unit.countShort.${unitKind}`·`unit.spoken.${unitKind}` 를 조합한다 — 마찬가지로 닫힌
+  // 합타입이라 각 3개(page/slide/chapter)로 완결되고, citation.test.ts 가 세 값 전부를 호출한다.
+  const DYNAMIC_PREFIXES = ['mainprog.', 'mainerr.', 'citation.unit.', 'unit.count.', 'unit.countShort.', 'unit.spoken.'];
   const isDynamic = (k: string) => DYNAMIC_PREFIXES.some((p) => k.startsWith(p));
 
   function walk(dir: string, out: string[] = []): string[] {

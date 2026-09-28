@@ -4,6 +4,7 @@ import { useAppStore } from '../lib/store';
 import { openDocumentData } from '../lib/document-open';
 import type { SessionManifestEntry } from '../../shared/session-types';
 import { openFromSessionOnly } from '../lib/tabs';
+import { formatUnitCount } from '../lib/citation';
 
 /**
  * 최근 문서 목록 (session-persistence module-4).
@@ -132,7 +133,7 @@ export function RecentDocuments() {
                 📄 {e.fileName}
               </div>
               <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                {tr('recent.pages', { count: e.pageCount })}
+                {formatUnitCount(e.pageCount, e.unitKind ?? 'page')}
                 {e.chunkCount > 0 && <> · {tr('recent.indexed', { count: e.chunkCount })}</>}
               </div>
             </button>

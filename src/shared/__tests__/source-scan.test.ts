@@ -523,6 +523,33 @@ describe('인용 표시 라벨은 formatUnitLabel 밖에서 조립하지 않는�
     expect(P_LABEL_RE.test('const label = "[p." + page + "]";')).toBe(true);
     expect(P_LABEL_RE.test("const label = `[p.` + page + ']';")).toBe(true);
   });
+
+  // P4: 단위 개수를 formatUnitCount 밖에서 조립하면 unitKind 를 모른다("(12p)" 가 슬라이드 덱에).
+  // i18n 키 참조(recent.pages·search.page)로 우회하던 자리도 함께 막는다 — 키를 지웠으니 다시
+  // 쓰면 tsc 가 먼저 잡지만, 같은 모양의 새 키를 만드는 우회까지는 못 막으므로 문자열로도 본다.
+  const UNIT_COUNT_RE = /\}p\)|\{count\}페이지|['"`]recent\.pages['"`]|['"`]search\.page['"`]/;
+
+  it('단위 개수·검색 페이지 라벨은 formatUnitCount/formatUnitLabel 밖에서 조립하지 않는다', () => {
+    const scanned = walkSourceFiles('src', /\.tsx?$/);
+    assertScanIsWide(scanned);
+    const offenders: string[] = [];
+    for (const file of scanned) {
+      const norm = file.replace(/\\/g, '/');
+      if (norm.endsWith('renderer/lib/i18n.ts') || isTestPath(file)) continue;
+      const src = stripJsComments(readFileSync(file, 'utf-8'));
+      for (const [i, line] of src.split('\n').entries()) {
+        if (UNIT_COUNT_RE.test(line)) offenders.push(`${norm}:${i + 1}`);
+      }
+    }
+    expect(offenders, '개수 표기는 formatUnitCount 를 거친다').toEqual([]);
+  });
+
+  it('개수 조립 가드의 양성 샘플', () => {
+    expect(UNIT_COUNT_RE.test('title={`${tab.fileName} (${tab.pageCount}p)`}')).toBe(true);
+    expect(UNIT_COUNT_RE.test("tr('recent.pages', { count })")).toBe(true);
+    expect(UNIT_COUNT_RE.test("tr('search.page', { page })")).toBe(true);
+    expect(UNIT_COUNT_RE.test("formatUnitCount(n, k, 'short')")).toBe(false);
+  });
 });
 
 describe('프롬프트 빌더는 표시 라벨(formatUnitLabel)을 쓰지 않는다 (QA34 H2)', () => {

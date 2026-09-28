@@ -1079,7 +1079,7 @@ export function registerIpcHandlers(): void {
           const loaded = await readSessionMeta(sessionsDir, e.docHash);
           if (!loaded) return null;
           return searchPersistedSession(
-            { docHash: e.docHash, fileName: e.fileName, filePath: e.filePath, pageCount: e.pageCount },
+            { docHash: e.docHash, fileName: e.fileName, filePath: e.filePath, pageCount: e.pageCount, unitKind: e.unitKind },
             loaded.session,
             query,
           );

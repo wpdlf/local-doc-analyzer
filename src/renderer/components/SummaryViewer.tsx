@@ -6,6 +6,7 @@ import { useT } from '../lib/i18n';
 import { SafeMarkdown } from '../lib/safe-markdown';
 import { SummaryMindMap } from './SummaryMindMap';
 import { setCitationReturnFocus } from '../lib/citation-focus';
+import { formatUnitCount } from '../lib/citation';
 import { ProgressBar } from './ProgressBar';
 import { QaChat } from './QaChat';
 import { PdfViewerPanel } from './PdfViewer';
@@ -208,7 +209,7 @@ export function SummaryViewer({ onAbort }: SummaryViewerProps) {
       >
       <div className="flex items-center justify-between px-4 py-2 bg-gray-100 dark:bg-gray-800 rounded-t-lg">
         <span className="text-sm font-medium text-gray-700 dark:text-gray-200 min-w-0 truncate">
-          {document ? `📎 ${document.fileName} (${document.pageCount}p)` : t('viewer.result')}
+          {document ? `📎 ${document.fileName} (${formatUnitCount(document.pageCount, document.unitKind ?? 'page', 'short')})` : t('viewer.result')}
         </span>
         <div className="flex items-center gap-2 shrink-0">
           {/* 요약 마인드맵: 텍스트/마인드맵 뷰 토글 (요약이 있을 때만) */}

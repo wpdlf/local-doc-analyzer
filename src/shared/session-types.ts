@@ -67,6 +67,11 @@ export interface GlobalSearchResult {
   fileName: string;
   filePath: string;
   pageCount: number;
+  /**
+   * 스니펫 페이지 번호를 어떤 단위로 읽을지(P4). manifest 의 unitKind 를 그대로 싣는다 —
+   * 없으면(옛 항목·PDF) 'page'. 검색 스니펫 라벨이 이 값으로 formatUnitLabel 을 거친다.
+   */
+  unitKind?: 'page' | 'slide' | 'chapter';
   score: number;        // 매칭 가중 합(파일명 5 / 페이지 발생수 / 요약 2)
   inSummary: boolean;   // 요약 본문에도 매칭됐는지
   snippets: SearchSnippet[];
