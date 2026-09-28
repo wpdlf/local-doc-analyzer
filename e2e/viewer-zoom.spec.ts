@@ -31,8 +31,8 @@ test('원문 뷰어 확대·축소 — 버튼·Ctrl+휠·Ctrl+0 이 canvas 크�
   await requireOllama('exaone3.5');
   test.setTimeout(300000);
 
-  const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-zoom-'));
-  const docsDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-zoom-docs-'));
+  const userDataDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-zoom-'));
+  const docsDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-zoom-docs-'));
   writeFileSync(join(userDataDir, 'settings.json'), JSON.stringify({
     provider: 'ollama', model: 'exaone3.5:latest', ollamaBaseUrl: 'http://localhost:11434',
     uiLanguage: 'ko', theme: 'light', persistSessions: true, enableAnswerVerification: false,
@@ -46,7 +46,7 @@ test('원문 뷰어 확대·축소 — 버튼·Ctrl+휠·Ctrl+0 이 canvas 크�
 
   const app = await electron.launch({
     args: ['.'],
-    env: { ...process.env, PDF_ANALYZER_USER_DATA: userDataDir },
+    env: { ...process.env, DOC_ANALYZER_USER_DATA: userDataDir },
   });
   const page = await app.firstWindow();
   const pageErrors: Error[] = [];

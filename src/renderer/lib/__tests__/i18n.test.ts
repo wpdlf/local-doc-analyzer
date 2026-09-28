@@ -319,3 +319,62 @@ describe('i18n 정적 키 가드 (QA28)', () => {
     }
   });
 });
+
+/**
+ * QA34(L11): "PDF" 라는 말이 포맷 무관 경로에 남지 않는다.
+ *
+ * v1.8.0 에서 DOCX 가 들어오며 파싱 취소 버튼(`uploader.cancelParse`)이 Word 문서에도 "PDF 처리
+ * 취소" 라고 말했다. 키를 열거하지 않고 도출한다: 값에 'PDF' 가 든 키가 **PDF 전용 모듈 밖**에서
+ * 참조되면 실패. 진짜 PDF 기능(스캔 PDF OCR · PDF 로 내보내기 · 지원 포맷 나열)은 이유와 함께
+ * 명시한 예외다 — 새 키가 여기 들어오려면 사람이 판단해야 한다.
+ */
+describe('포맷 무관 경로의 "PDF" 문구 가드 (QA34)', () => {
+  const SRC_ROOT = resolve(import.meta.dirname, '../../..');
+  // pdfjs 로만 도는 모듈 — 이 안의 PDF 문구는 정확하다.
+  const PDF_ONLY_MODULES = ['renderer/lib/pdf-parser.ts', 'renderer/components/PdfViewer.tsx'];
+  const PDF_FEATURE_KEYS = new Set([
+    'uploader.notPdf', // "PDF · Word 파일만 지원" — 포맷 나열 자체
+    'uploader.ocrProgress', // 스캔 PDF OCR 은 PDF 파이프라인 전용 기능
+    'settings.ocrTitle', 'settings.ocrLabel', 'settings.ocrDesc',
+    'viewer.exportPdf', 'viewer.exportPdfAria', 'viewer.pdfFail', // 출력 포맷이 PDF
+  ]);
+
+  function walk(dir: string, out: string[] = []): string[] {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.isDirectory()) { if (e.name !== '__tests__') walk(resolve(dir, e.name), out); }
+      else if (/\.tsx?$/.test(e.name)) out.push(resolve(dir, e.name));
+    }
+    return out;
+  }
+
+  function offenders(dict: Record<string, { ko: string; en: string }>, files: { rel: string; code: string }[]): string[] {
+    const pdfKeys = Object.keys(dict).filter((k) => /PDF/.test(dict[k]!.ko) || /PDF/.test(dict[k]!.en));
+    const out: string[] = [];
+    for (const k of pdfKeys) {
+      if (PDF_FEATURE_KEYS.has(k)) continue;
+      for (const f of files) {
+        if (PDF_ONLY_MODULES.includes(f.rel) || f.rel === 'renderer/lib/i18n.ts') continue;
+        if (f.code.includes(`'${k}'`)) out.push(`${k} @ ${f.rel}`);
+      }
+    }
+    return out;
+  }
+
+  it('PDF 문구 키는 PDF 전용 모듈이나 명시된 PDF 기능에서만 쓰인다', async () => {
+    const { _translations } = await import('../i18n');
+    const files = walk(resolve(SRC_ROOT, 'renderer')).map((f) => ({
+      rel: f.slice(SRC_ROOT.length + 1).replace(/\\/g, '/'),
+      code: stripJsComments(readFileSync(f, 'utf-8')),
+    }));
+    expect(files.some((f) => f.rel === 'renderer/App.tsx'), '스캔 범위 붕괴(경로 계산 확인)').toBe(true);
+    // 이 가드가 처음 잡은 실결함: 탭 복원(tabs.ts)이 DOCX 에도 OCR 고지를 띄웠다 → PDF 판정을
+    // pdf-parser 의 notifyRestoredEmptyPages 로 옮겨 닫았다(QA34).
+    expect(offenders(_translations as never, files)).toEqual([]);
+  });
+
+  it('가드가 합성 위반을 실제로 잡는다 (양성 샘플)', () => {
+    const dict = { 'x.neutral': { ko: 'PDF 처리 취소', en: 'Cancel PDF processing' } };
+    expect(offenders(dict, [{ rel: 'renderer/App.tsx', code: "t('x.neutral')" }])).toEqual(['x.neutral @ renderer/App.tsx']);
+    expect(offenders(dict, [{ rel: 'renderer/lib/pdf-parser.ts', code: "t('x.neutral')" }])).toEqual([]);
+  });
+});

@@ -21,6 +21,15 @@ describe('toGfmTable', () => {
     expect(out.split('\n')[0]).toBe('| a\\|b | c |');
   });
 
+  it('셀 안의 역슬래시를 파이프보다 먼저 이스케이프한다 (끝 역슬래시가 경계 파이프를 먹으면 열이 밀린다)', () => {
+    // 'C:\' 를 그대로 두면 `| C:\ | x |` 에서 `\|` 가 이스케이프된 파이프로 읽혀 열이 하나 준다.
+    // 순서가 뒤집혀 파이프를 먼저 이스케이프하면 `a\|b` 의 역슬래시가 다시 두 배가 되어
+    // `a\\|b` 가 된다 — 이번에는 역슬래시가 문자로 읽히고 파이프가 경계가 된다.
+    expect(toGfmTable([['C:\\', 'x']]).split('\n')[0]).toBe('| C:\\\\ | x |');
+    expect(toGfmTable([['a|b']]).split('\n')[0]).toBe('| a\\|b |');
+    expect(toGfmTable([['a\\|b']]).split('\n')[0]).toBe('| a\\\\\\|b |');
+  });
+
   it('셀 안의 줄바꿈을 공백으로 접는다 (표 한 줄 = 한 행이어야 한다)', () => {
     const out = toGfmTable([['첫 줄\n둘째 줄', 'x']]);
     expect(out.split('\n')[0]).toBe('| 첫 줄 둘째 줄 | x |');

@@ -11,6 +11,7 @@ import {
   type SessionStats,
 } from '../shared/session-types';
 import { MAX_SUMMARY_TYPE_LEN } from '../shared/constants';
+import { isUnitKind } from '../shared/document-formats';
 
 /**
  * 세션 영속화 — 순수 파일 I/O 헬퍼 (settings-store / api-keys-store 와 동일 패턴).
@@ -34,9 +35,13 @@ const INDEX_BIN = 'index.bin';
 // (이 파일 없음)은 readSession 이 session.json 의 chunkMeta 로 fallback — 파괴적 마이그레이션 없음.
 const INDEX_META = 'index.meta.json';
 
-/** unitKind 는 리터럴 3종 외에는 신뢰하지 않는다 — 손상/구버전 렌더러 값은 부재(=`'page'`)로 폴백. */
-function safeUnitKind(v: unknown): 'page' | 'slide' | 'chapter' | undefined {
-  return v === 'page' || v === 'slide' || v === 'chapter' ? v : undefined;
+/**
+ * unitKind 는 알려진 리터럴 외에는 신뢰하지 않는다 — 손상/구버전 렌더러 값은 부재(=`'page'`)로 폴백.
+ * QA34(L7): 리터럴 집합은 shared/document-formats.ts 의 `UNIT_KINDS` 단일 출처를 쓴다 — 종전엔
+ * 여기에 세 번째 사본이 있어 unit-kind-drift 가드 밖이었다(새 단위가 생기면 여기서만 조용히 버려짐).
+ */
+export function safeUnitKind(v: unknown): SessionManifestEntry['unitKind'] {
+  return isUnitKind(v) ? v : undefined;
 }
 
 /**

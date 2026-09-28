@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../lib/store';
-import { useT } from '../lib/i18n';
+import { useT, translateMainError } from '../lib/i18n';
 import { openDocumentData, cancelDocumentParse } from '../lib/document-open';
 
 export function PdfUploader() {
@@ -34,7 +34,7 @@ export function PdfUploader() {
       const result = await window.electronAPI.file.openPdf();
       if (!result) return;
       if ('error' in result) {
-        setError({ code: 'PDF_PARSE_FAIL', message: (result as { error: string }).error });
+        setError({ code: 'PDF_PARSE_FAIL', message: translateMainError(result, t('uploader.cannotRead')) });
         return;
       }
       await openDocumentData(result.data, result.name, result.path);

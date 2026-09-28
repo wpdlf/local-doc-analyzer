@@ -19,6 +19,14 @@ export interface OpenZipOptions {
    * 프로덕션 호출부(document-open.ts)는 이 옵션을 넘기지 않으므로 항상 기본값을 쓴다.
    */
   maxUnzippedBytes?: number;
+  /**
+   * 엔트리 이름 필터 — false 를 돌려준 엔트리는 **풀지 않는다**(inflate 자체를 건너뛴다).
+   * 거부된 엔트리는 ZipIndex 에서 없는 것으로 보이고(has=false, bytes/text=null, names 에서 빠짐)
+   * 해제 총량에도 들어가지 않는다. 쓰지도 않을 파트(예: 이미지 분석이 꺼졌을 때의
+   * word/media/**) 때문에 메모리를 쓰거나 DOC_TOO_LARGE 로 거절되지 않게 하려는 것이다.
+   * 엔트리 수 상한은 거부 여부와 무관하게 전체 엔트리에 건다 — 목록을 훑는 비용은 똑같이 든다.
+   */
+  filter?: (name: string) => boolean;
 }
 
 /**
@@ -41,10 +49,13 @@ export function openZip(data: ArrayBuffer, opts: OpenZipOptions = {}): ZipIndex 
       filter: (file: UnzipFileInfo): boolean => {
         count += 1;
         if (count > MAX_ZIP_ENTRIES) extractFail('DOC_TOO_LARGE', 'zip entry count exceeded');
+        // 디렉터리 엔트리와 호출자가 거부한 엔트리는 풀지 않는다 — 풀지 않을 것은 총량에도
+        // 넣지 않는다(총량 상한은 "실제로 풀리는 바이트"에 대한 방어다).
+        if (file.name.endsWith('/')) return false;
+        if (opts.filter && !opts.filter(file.name)) return false;
         total += file.originalSize;
         if (total > maxUnzippedBytes) extractFail('DOC_TOO_LARGE', 'unzipped size exceeded');
-        // 디렉터리 엔트리는 담지 않는다.
-        return !file.name.endsWith('/');
+        return true;
       },
     });
   } catch (err) {

@@ -27,10 +27,10 @@ async function makePdf(text: string, pages = 1): Promise<Buffer> {
 }
 
 test('실경로 두 문서 → 탭 전환 (file:dropped IPC)', async () => {
-  const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-dbg-'));
+  const userDataDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-dbg-'));
   // 한글 디렉토리/파일명 — 사용자 실데이터(Desktop\업무\... Section 0. ...와 소개.pdf)와
   // 동일 조건. ASCII 전용 픽스처는 비ASCII 경로의 인코딩 회귀를 잡지 못한다.
-  const docsDir = join(mkdtempSync(join(tmpdir(), 'pdf-analyzer-docs-')), '업무 자료');
+  const docsDir = join(mkdtempSync(join(tmpdir(), 'doc-analyzer-docs-')), '업무 자료');
   mkdirSync(docsDir, { recursive: true });
   writeFileSync(join(userDataDir, 'settings.json'),
     JSON.stringify({ provider: 'claude', uiLanguage: 'ko', theme: 'light' }), 'utf-8');
@@ -45,9 +45,9 @@ test('실경로 두 문서 → 탭 전환 (file:dropped IPC)', async () => {
     args: ['.', ...(process.env.CI ? ['--no-sandbox'] : [])],
     env: {
       ...process.env,
-      PDF_ANALYZER_USER_DATA: userDataDir,
+      DOC_ANALYZER_USER_DATA: userDataDir,
       // 호스트 Ollama 상태와 격리 (smoke.spec 과 동일 — 죽은 포트)
-      PDF_ANALYZER_OLLAMA_URL: 'http://127.0.0.1:59999',
+      DOC_ANALYZER_OLLAMA_URL: 'http://127.0.0.1:59999',
     },
   });
   const page = await app.firstWindow();
@@ -113,8 +113,8 @@ test('실경로 두 문서 → 탭 전환 (file:dropped IPC)', async () => {
 test('실제 Ollama 인덱싱 중 — 문서 → + → 문서 → 탭 전환 (로컬 전용)', async () => {
   await requireOllama();
 
-  const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-ollama-'));
-  const docsDir = mkdtempSync(join(tmpdir(), 'pdf-analyzer-docs-'));
+  const userDataDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-ollama-'));
+  const docsDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-docs-'));
   writeFileSync(join(userDataDir, 'settings.json'),
     JSON.stringify({ provider: 'ollama', uiLanguage: 'ko', theme: 'light' }), 'utf-8');
   const pathA = join(docsDir, 'first.pdf');
@@ -126,8 +126,8 @@ test('실제 Ollama 인덱싱 중 — 문서 → + → 문서 → 탭 전환 (�
 
   const app = await electron.launch({
     args: ['.'],
-    // PDF_ANALYZER_OLLAMA_URL 미설정 — 실제 로컬 Ollama(11434) 사용이 이 테스트의 목적
-    env: { ...process.env, PDF_ANALYZER_USER_DATA: userDataDir },
+    // DOC_ANALYZER_OLLAMA_URL 미설정 — 실제 로컬 Ollama(11434) 사용이 이 테스트의 목적
+    env: { ...process.env, DOC_ANALYZER_USER_DATA: userDataDir },
   });
   const page = await app.firstWindow();
   const pageErrors: Error[] = [];

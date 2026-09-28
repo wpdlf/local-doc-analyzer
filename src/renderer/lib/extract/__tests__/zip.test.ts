@@ -57,6 +57,39 @@ describe('openZip', () => {
     expect(resolveMaxUnzippedBytes({ maxUnzippedBytes: 10 })).toBe(10);
   });
 
+  it('상한 상수를 리터럴로 고정한다 (다른 테스트는 상수를 import 해 쓰므로 값이 바뀌어도 초록이다)', () => {
+    expect(MAX_UNZIPPED_BYTES).toBe(300 * 1024 * 1024);
+    expect(MAX_ZIP_ENTRIES).toBe(2000);
+  });
+
+  it('filter 가 거부한 엔트리는 풀지 않는다 — 해제 총량에도 넣지 않는다', () => {
+    // 이미지 분석이 꺼진 문서 열기에서 word/media/** 를 풀지 않으려는 용도다. 거부한 엔트리가
+    // 총량에 들어가면 그림이 큰 DOCX 가 쓰지도 않을 그림 때문에 DOC_TOO_LARGE 로 거절된다.
+    const CAP = 4096;
+    const data = makeZip({ 'word/document.xml': '<d/>', 'word/media/big.bin': 'A'.repeat(CAP * 2) });
+    const zip = openZip(data, { maxUnzippedBytes: CAP, filter: (n) => !n.startsWith('word/media/') });
+    expect(zip.has('word/document.xml')).toBe(true);
+    expect(zip.has('word/media/big.bin')).toBe(false);
+    expect(zip.bytes('word/media/big.bin')).toBeNull();
+    expect(zip.names()).toEqual(['word/document.xml']);
+  });
+
+  it('filter 를 통과한 엔트리에는 해제 총량 상한이 그대로 걸린다', () => {
+    const CAP = 4096;
+    const data = makeZip({ 'word/document.xml': 'A'.repeat(CAP * 2), 'word/media/x.bin': 'x' });
+    expect(() =>
+      openZip(data, { maxUnzippedBytes: CAP, filter: (n) => !n.startsWith('word/media/') }),
+    ).toThrowError(expect.objectContaining({ code: 'DOC_TOO_LARGE' }));
+  });
+
+  it('엔트리 수 상한은 filter 와 무관하게 전체 엔트리에 걸린다 (거부된 엔트리도 목록 순회 비용이다)', () => {
+    const files: Record<string, string> = {};
+    for (let i = 0; i <= MAX_ZIP_ENTRIES; i++) files[`word/media/f${i}.bin`] = 'x';
+    expect(() => openZip(makeZip(files), { filter: () => false })).toThrowError(
+      expect.objectContaining({ code: 'DOC_TOO_LARGE' }),
+    );
+  });
+
   it('엔트리 수 상한을 넘으면 거부한다', () => {
     const files: Record<string, string> = {};
     for (let i = 0; i <= MAX_ZIP_ENTRIES; i++) files[`f${i}.txt`] = 'x';

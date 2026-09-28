@@ -81,6 +81,18 @@ describe('CitationButton (Top5 #4) — 유효 범위 페이지', () => {
     expect(btn.getAttribute('title')).toMatch(/2/);
     expect(btn.getAttribute('aria-label')).toMatch(/2/);
   });
+
+  // QA34(I3): 단일 문서 라벨의 unitKind 배선이 무보호였다 — 이 파일의 활성 문서는 전부
+  // unitKind 없음(=page)이라 `formatUnitLabel(page)` / `formatPromptPageLabel(page)` 로 바꿔도
+  // `[p.3]` 이 그대로 나와 초록이었다. 활성 문서를 슬라이드 덱으로 만들어 갈라 본다.
+  it("활성 문서가 unitKind 'slide' 면 단일 문서 라벨이 슬라이드로 보인다", () => {
+    useAppStore.setState((s) => ({
+      settings: { ...s.settings, uiLanguage: 'ko' },
+      document: { ...s.document!, fileName: 'deck.pptx', unitKind: 'slide' },
+    }));
+    render(<CitationButton page={3} />);
+    expect(screen.getByRole('button').textContent).toBe('[슬라이드 3]');
+  });
 });
 
 describe('CitationButton (Top5 #4) — 범위 초과 페이지', () => {

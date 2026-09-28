@@ -29,7 +29,10 @@ vi.stubGlobal('crypto', { randomUUID: () => 'test-uuid' });
 // 실제 crypto.subtle.digest 는 fake timer 의 advanceTimersByTimeAsync 로 완전히 flush 되지
 // 않아 persist 의 save 가 다음 테스트로 누설된다. 해시를 결정적 목으로 대체해 디바운스
 // 자동저장 경로를 fake timer 안에서 deterministic 하게 만든다.
-vi.mock('../session-hash', () => ({ hashDocumentText: vi.fn(() => Promise.resolve('deadbeefcafe')) }));
+vi.mock('../session-hash', () => ({
+  hashDocumentText: vi.fn(() => Promise.resolve('deadbeefcafe')),
+  hashDocumentForSession: vi.fn(() => Promise.resolve('deadbeefcafe')),
+}));
 
 import { useAppStore } from '../store';
 import { VectorStore } from '../vector-store';

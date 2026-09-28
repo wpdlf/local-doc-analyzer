@@ -42,7 +42,7 @@ import { useAppStore } from '../store';
 import { VectorStore } from '../vector-store';
 import { persistCurrentSession, __resetSessionModuleStateForTest } from '../use-session';
 import { openFromSessionOnly } from '../tabs';
-import { hashDocumentText } from '../session-hash';
+import { hashDocumentForSession } from '../session-hash';
 
 function makeDoc(id: string, unitKind?: 'page' | 'slide' | 'chapter'): PdfDocument {
   return {
@@ -89,7 +89,7 @@ async function roundTrip(doc: PdfDocument): Promise<{ restoredDoc: PdfDocument |
   const savedPayload = api.session.save.mock.calls[0]![0] as { session: PersistedSession };
   const savedSession = savedPayload.session;
 
-  const docHash = await hashDocumentText(doc.extractedText);
+  const docHash = await hashDocumentForSession(doc); // QA34: 저장·복원과 같은 키 함수
   expect(savedSession.docHash).toBe(docHash);
 
   // main 이 저장한 그대로 돌려준다고 가정 — session-store.ts 의 본문 왕복(opaque JSON)은

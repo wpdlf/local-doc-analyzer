@@ -7,6 +7,9 @@ import { SafeMarkdown } from '../lib/safe-markdown';
 import { ZOOM_MAX, ZOOM_STEP_BUTTON } from '../lib/viewer-zoom';
 import { useZoomControls } from '../lib/use-zoom-controls';
 import { ZoomControls } from './ZoomControls';
+import { ViewerCloseButton } from './ViewerCloseButton';
+import { closeCitationPanel } from '../lib/close-citation-panel';
+import { useT } from '../lib/i18n';
 
 /** 배율 1.0 일 때의 본문 글꼴 크기(px). canvas 배율 대신 이것을 곱한다. */
 const BASE_FONT_PX = 16;
@@ -25,8 +28,13 @@ const BASE_FONT_PX = 16;
  * PdfViewer 와 공유한다 — 이전엔 이 패널이 `pdfViewerZoom` 값을 *읽기*만 해서 아무도 그 값을
  * 바꿀 수 없었다(Ctrl+휠·Ctrl+키가 조용히 죽어 있었음). 캔버스 면적 상한은 텍스트에 무의미하므로
  * `maxZoom` 은 전역 상한 `ZOOM_MAX` 를 그대로 넘긴다.
+ *
+ * QA34(H1): 이 패널에는 닫는 수단이 전혀 없었다(✕ 버튼·Escape·포커스 반환·region 랜드마크 모두
+ * PdfViewer 에만 있었음) — DOCX 에서 인용을 누르면 패널이 영영 열려 있었다. 닫기는
+ * `ViewerCloseButton`(버튼+Esc)·`closeCitationPanel`(해제+포커스 반환)로 PdfViewer 와 공유한다.
  */
 export function DocTextViewerPanel() {
+  const t = useT();
   const pageTexts = useAppStore((s) => s.document?.pageTexts);
   const unitKind = useAppStore((s) => s.document?.unitKind) ?? 'page';
   const citationTarget = useAppStore((s) => s.citationTarget);
@@ -43,17 +51,25 @@ export function DocTextViewerPanel() {
   if (!pageTexts) return null;
 
   return (
-    <div className="h-full flex flex-col bg-white dark:bg-gray-900">
-      <div className="flex items-center justify-end px-2 py-1 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800 shrink-0">
-        {/* 텍스트는 캔버스 면적 상한이 없으므로 maxZoom 은 항상 ZOOM_MAX(300%). */}
-        <ZoomControls
-          zoom={zoom}
-          maxZoom={ZOOM_MAX}
-          announceZoom={zoom}
-          onZoomOut={() => zoomBy(-1, ZOOM_STEP_BUTTON)}
-          onZoomIn={() => zoomBy(1, ZOOM_STEP_BUTTON)}
-          onZoomReset={() => setZoom(1)}
-        />
+    <div
+      className="h-full flex flex-col bg-white dark:bg-gray-900 border-l dark:border-gray-700"
+      role="region"
+      aria-label={t('pdfviewer.title')}
+    >
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800 shrink-0">
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate">{t('pdfviewer.title')}</span>
+        <div className="flex items-center gap-1 shrink-0">
+          {/* 텍스트는 캔버스 면적 상한이 없으므로 maxZoom 은 항상 ZOOM_MAX(300%). */}
+          <ZoomControls
+            zoom={zoom}
+            maxZoom={ZOOM_MAX}
+            announceZoom={zoom}
+            onZoomOut={() => zoomBy(-1, ZOOM_STEP_BUTTON)}
+            onZoomIn={() => zoomBy(1, ZOOM_STEP_BUTTON)}
+            onZoomReset={() => setZoom(1)}
+          />
+          <ViewerCloseButton onClose={closeCitationPanel} className="ml-1" />
+        </div>
       </div>
       <div
         ref={rootRef}
@@ -78,7 +94,12 @@ export function DocTextViewerPanel() {
               <h3 className="mb-2 text-xs font-semibold text-gray-600 dark:text-gray-400">
                 {formatUnitLabel(page, unitKind)}
               </h3>
-              <SafeMarkdown content={text} />
+              {/* prose: 요약 화면과 같은 타이포그래피 — 없으면 GFM 표에 셀 간격·테두리가 없어
+                  "달성률 | 100%" 가 "달성률100%" 로 붙어 보였다(QA34 실앱 스크린샷). 글꼴 크기는
+                  prose 가 고정하지 않고 위 컨테이너의 배율 font-size 를 상속해야 한다. */}
+              <div className="prose dark:prose-invert max-w-none [font-size:inherit]">
+                <SafeMarkdown content={text} />
+              </div>
             </section>
           );
         })}

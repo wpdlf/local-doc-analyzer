@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { GFM_REMARK_PLUGINS } from './gfm-plugins';
 import { safeComponents } from './safe-markdown';
 import { MATH_REMARK_PLUGINS, MATH_REHYPE_PLUGINS } from './math-plugins';
 import { normalizeMathDelimiters } from './math-normalize';
@@ -10,9 +10,11 @@ import { normalizeMathDelimiters } from './math-normalize';
 // remark-gfm·katex 를 직접 정적 import 해도 cold-start eager 번들에 들어가지 않는다.
 // (요약/Q&A 화면 렌더는 safe-markdown 의 SafeMarkdown → markdown-renderer 경로를 쓴다.)
 //
-// 수식 플러그인은 math-plugins 가 단일 출처 — 화면에는 수식이 나오는데 내보낸 PDF 에는
+// GFM·수식 플러그인은 gfm-plugins·math-plugins 가 단일 출처 — 화면과 내보낸 PDF 가 갈리지 않게
+// 한다(QA34: 화면만 singleTilde 를 끄고 내보내기는 기본값이라 "9/1~9/30" 이 PDF 에서만 취소선).
+// 수식도 같은 이유 — 화면에는 수식이 나오는데 내보낸 PDF 에는
 // `\(E=mc^2\)` 가 찍히는 drift 를 구조적으로 막는다.
-const REMARK_PLUGINS = [remarkGfm, ...MATH_REMARK_PLUGINS];
+const REMARK_PLUGINS = [...GFM_REMARK_PLUGINS, ...MATH_REMARK_PLUGINS];
 const REHYPE_PLUGINS = MATH_REHYPE_PLUGINS;
 
 // PDF 내보내기용 마크다운 → 정적 HTML 변환.

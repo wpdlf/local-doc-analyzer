@@ -80,6 +80,37 @@ describe('xml 순회 — 프리픽스에 의존하지 않는다', () => {
     expect(firstNamed(p, 'p')).toBeNull();
   });
 
+  it('walk 는 깊은 중첩에서도 스택을 넘기지 않는다 (재귀 yield* 는 깊이만큼 쌓인다)', () => {
+    // happy-dom 의 파서 자체가 수천 단계에서 먼저 넘치므로 DOM 대신 children 만 가진 가짜
+    // 트리로 walk 만 격리해 본다 — walk 가 쓰는 것은 el.children 하나뿐이다. 재귀 yield*
+    // 구현은 여기서 RangeError 가 나고, 얕은 깊이에서도 원소당 O(깊이) 재개 비용이 들었다.
+    const DEPTH = 100_000;
+    type Fake = { children: Fake[] };
+    const root: Fake = { children: [] };
+    let cur = root;
+    for (let i = 1; i < DEPTH; i++) {
+      const next: Fake = { children: [] };
+      cur.children.push(next);
+      cur = next;
+    }
+    let n = 0;
+    for (const _ of walk(root as unknown as Element)) n++;
+    expect(n).toBe(DEPTH);
+  });
+
+  it('walk 의 skip 은 그 요소와 서브트리를 통째로 뺀다 (형제는 계속 훑는다)', () => {
+    const root = parseXml(
+      `<r xmlns:mc="urn:mc"><a><x/></a><mc:Fallback><a/></mc:Fallback><b/></r>`,
+    ).documentElement;
+    const names = [...walk(root, (e) => localName(e) === 'Fallback')].map(localName);
+    expect(names).toEqual(['r', 'a', 'x', 'b']);
+  });
+
+  it('walk 의 skip 은 루트 자신에게도 적용된다', () => {
+    const root = parseXml(`<r><a/></r>`).documentElement;
+    expect([...walk(root, () => true)]).toEqual([]);
+  });
+
   it('attr 은 서로 다른 프리픽스가 같은 로컬명을 가지면 속성 순서상 먼저 나오는 쪽을 준다', () => {
     const root = parseXml(
       `<el xmlns:w="urn:w" xmlns:a="urn:a" w:val="1" a:val="2"/>`,

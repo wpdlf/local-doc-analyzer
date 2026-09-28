@@ -70,6 +70,8 @@ import type { SessionSaveMeta, GlobalSearchResult, SemanticSearchResponse } from
 import { runSemanticSearch } from './semantic-search';
 // multi-doc Phase 3 (module-1): 컬렉션 영속화. collectionsFile 주입으로 electron-free.
 import { listCollections, saveCollection, deleteCollection, touchCollection } from './collections-store';
+// QA34(High): 개명 이전 userData 의 1회성 이전 + 옛 업데이터 캐시 정리.
+import { migrateLegacyUserData, removeLegacyUpdaterCache, LEGACY_APP_DIR_NAME } from './userdata-migration';
 
 // 전역 에러 핸들러: unhandled rejection/exception으로 인한 무음 크래시 방지
 process.on('unhandledRejection', (reason) => {
@@ -84,8 +86,8 @@ process.on('uncaughtException', (error) => {
 // 디렉토리를 주입해 실사용자의 settings.json/sessions/api-keys.enc 를 오염시키지 않는다.
 // 아래 settingsPath/sessionsDir 등 모듈 상수가 userData 를 읽기 전에 실행돼야 하므로 최상단 배치.
 // 일반 실행에는 영향 없음(env 미설정 시 no-op).
-if (process.env.PDF_ANALYZER_USER_DATA) {
-  app.setPath('userData', process.env.PDF_ANALYZER_USER_DATA);
+if (process.env.DOC_ANALYZER_USER_DATA) {
+  app.setPath('userData', process.env.DOC_ANALYZER_USER_DATA);
 }
 
 const ollamaManager = new OllamaManager();
@@ -395,6 +397,34 @@ if (!gotSingleInstanceLock) {
   });
 }
 
+// QA34(High): 개명(summary-lecture-material → local-doc-analyzer) 이전 userData 의 1회성 자동 이전.
+// v1.7.x 의 앱 내 업데이트가 v1.8.x 를 새 appId 로 나란히 설치해 빈 userData 로 기동시키는 경로의
+// 복구다(상세·판정 규칙은 userdata-migration.ts 머리 주석).
+//
+// ⚠️ 위치가 계약이다 — **최상위·동기**, `app.whenReady()` 보다 앞. Chromium 은 이 스크립트의
+// 동기 실행이 끝난 직후 userData 의 `Local State` 를 메모리에 올리는데, API 키(api-keys.enc)는
+// 그 안의 os_crypt 키로만 풀린다. 그 뒤에 Local State 를 복사하면 이번 실행에 반영되지 않고
+// 종료 시 메모리 사본이 되덮는다. 단일 인스턴스 잠금 뒤에 두는 것은 두 번째 인스턴스가 동시에
+// 복사하지 않게 하기 위해서다(잠금 파일 `lockfile` 은 판정·복사 모두에서 제외된다).
+//
+// E2E 가 userData 를 임시 폴더로 돌린 실행에서는 **개발자 PC 의 실제 옛 폴더를 끌어오면 안 되므로**
+// 건너뛴다. 단 이전 자체를 검증하는 스펙은 원본 경로를 DOC_ANALYZER_LEGACY_USER_DATA 로 명시해
+// 켠다(userData 오버라이드와 함께일 때만 유효 — 일반 실행에서는 이 env 를 보지 않는다).
+if (gotSingleInstanceLock) {
+  const userDataOverridden = !!process.env.DOC_ANALYZER_USER_DATA;
+  const legacyForTest = userDataOverridden ? process.env.DOC_ANALYZER_LEGACY_USER_DATA : undefined;
+  if (!userDataOverridden || legacyForTest) {
+    const result = migrateLegacyUserData({
+      legacyDir: legacyForTest || path.join(app.getPath('appData'), LEGACY_APP_DIR_NAME),
+      targetDir: app.getPath('userData'),
+      defaults: defaultSettings,
+    });
+    if (!(result.action === 'skipped' && (result.reason === 'no-source' || result.reason === 'marker'))) {
+      console.log('[migration] 옛 userData 이전 판정:', JSON.stringify(result));
+    }
+  }
+}
+
 app.whenReady().then(async () => {
   // QA33(M): 기본 메뉴를 내린다.
   //
@@ -414,6 +444,15 @@ app.whenReady().then(async () => {
 
   registerIpcHandlers();
   createWindow();
+
+  // QA34: v1.7.x 업데이터 캐시(`%LOCALAPPDATA%\summary-lecture-material-updater`, 받아 둔 인스톨러
+  // ~113MB)는 새 앱이 다시 쓰지 않아 영구 고아가 된다 — 정확히 그 폴더만 best-effort 로 지운다.
+  // E2E(userData 오버라이드)에서는 개발자 PC 의 실제 폴더를 건드리지 않도록 건너뛴다.
+  if (process.platform === 'win32' && !process.env.DOC_ANALYZER_USER_DATA) {
+    void removeLegacyUpdaterCache(
+      process.env.LOCALAPPDATA || path.join(path.dirname(app.getPath('appData')), 'Local'),
+    );
+  }
 
   try {
     const running = await ollamaManager.healthCheck();
@@ -1685,19 +1724,19 @@ export function registerIpcHandlers(): void {
       // "파일 형식" 드롭다운을 "모든 파일"로 바꾸거나 경로를 직접 타이핑하면 임의 확장자가
       // 그대로 넘어온다. file:open-path 가 이미 하는 서버측 확장자 재검증을 여기도 건다.
       if (!isSupportedExtension(filePath)) {
-        return { error: 'PDF · Word 파일만 열 수 있습니다.' };
+        return { error: 'PDF · Word 파일만 열 수 있습니다.', errorKey: 'fileUnsupported' };
       }
       // drop 핸들러와 동일한 방어 — 심볼릭 링크/비정규 파일 거부.
       const lstat = await fsp.lstat(filePath);
       if (lstat.isSymbolicLink()) {
-        return { error: '심볼릭 링크는 열 수 없습니다.' };
+        return { error: '심볼릭 링크는 열 수 없습니다.', errorKey: 'fileSymlink' };
       }
       const stat = await fsp.stat(filePath);
       if (!stat.isFile()) {
-        return { error: '일반 파일이 아닙니다.' };
+        return { error: '일반 파일이 아닙니다.', errorKey: 'fileNotRegular' };
       }
       if (stat.size > MAX_PDF_SIZE) {
-        return { error: '파일이 너무 큽니다 (최대 100MB).' };
+        return { error: '파일이 너무 큽니다 (최대 100MB).', errorKey: 'fileTooLarge' };
       }
       const buffer = await fsp.readFile(filePath);
       const arrayBuf = buffer.byteOffset === 0 && buffer.byteLength === buffer.buffer.byteLength
@@ -1710,11 +1749,12 @@ export function registerIpcHandlers(): void {
       };
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
-      const friendly = code === 'ENOENT' ? '파일을 찾을 수 없습니다.'
-        : code === 'EPERM' || code === 'EACCES' ? '파일에 접근할 수 없습니다.'
-        : '파일을 열 수 없습니다.';
       console.error('[file:open-pdf] failed:', err);
-      return { error: friendly };
+      // errorKey 는 렌더러가 UI 언어로 번역한다(translateMainError). 삼항이 아니라 분기로 쓰는 것은
+      // i18n 계약 가드가 `errorKey: '리터럴'` 을 스캔하기 때문 — errno 리터럴이 키로 잡히지 않게.
+      if (code === 'ENOENT') return { error: '파일을 찾을 수 없습니다.', errorKey: 'fileNotFound' };
+      if (code === 'EPERM' || code === 'EACCES') return { error: '파일에 접근할 수 없습니다.', errorKey: 'fileAccessDenied' };
+      return { error: '파일을 열 수 없습니다.', errorKey: 'fileOpenFailed' };
     }
   });
 
@@ -1724,24 +1764,24 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('file:open-path', async (_event, targetPath: unknown) => {
     const MAX_PDF_SIZE = MAX_PDF_SIZE_BYTES;
     if (typeof targetPath !== 'string' || targetPath.length === 0 || targetPath.length > 4096) {
-      return { error: '잘못된 경로입니다.' };
+      return { error: '잘못된 경로입니다.', errorKey: 'fileInvalidPath' };
     }
     if (!isSupportedExtension(targetPath)) {
-      return { error: 'PDF · Word 파일만 열 수 있습니다.' };
+      return { error: 'PDF · Word 파일만 열 수 있습니다.', errorKey: 'fileUnsupported' };
     }
     // QA20(B-MED): UNC(`\\server\share`) 차단 — 드롭 경로(will-navigate)는 "UNC 경로 차단:
     // 네트워크 읽기 방지"를 이미 하는데 이 경로만 빠져 있던 비대칭. 손상된 렌더러가 원격 경로를
     // 넘기면 lstat 만으로 Windows SMB 클라이언트가 깨어나 공격자 서버에 NTLM 자격증명을
     // 흘린다(오프라인 크래킹·릴레이). 널바이트도 함께 거부(경로 절단 방어).
     if (targetPath.startsWith('\\\\') || targetPath.startsWith('//') || targetPath.includes('\0')) {
-      return { error: '잘못된 경로입니다.' };
+      return { error: '잘못된 경로입니다.', errorKey: 'fileInvalidPath' };
     }
     try {
       const lstat = await fsp.lstat(targetPath);
-      if (lstat.isSymbolicLink()) return { error: '심볼릭 링크는 열 수 없습니다.' };
+      if (lstat.isSymbolicLink()) return { error: '심볼릭 링크는 열 수 없습니다.', errorKey: 'fileSymlink' };
       const stat = await fsp.stat(targetPath);
-      if (!stat.isFile()) return { error: '일반 파일이 아닙니다.' };
-      if (stat.size > MAX_PDF_SIZE) return { error: '파일이 너무 큽니다 (최대 100MB).' };
+      if (!stat.isFile()) return { error: '일반 파일이 아닙니다.', errorKey: 'fileNotRegular' };
+      if (stat.size > MAX_PDF_SIZE) return { error: '파일이 너무 큽니다 (최대 100MB).', errorKey: 'fileTooLarge' };
       const buffer = await fsp.readFile(targetPath);
       const arrayBuf = buffer.byteOffset === 0 && buffer.byteLength === buffer.buffer.byteLength
         ? buffer.buffer
@@ -1749,11 +1789,10 @@ export function registerIpcHandlers(): void {
       return { path: targetPath, name: path.basename(targetPath), data: arrayBuf };
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
-      const friendly = code === 'ENOENT' ? '파일을 찾을 수 없습니다 (이동/삭제되었을 수 있습니다).'
-        : code === 'EPERM' || code === 'EACCES' ? '파일에 접근할 수 없습니다.'
-        : '파일을 열 수 없습니다.';
       console.error('[file:open-path] failed:', err);
-      return { error: friendly };
+      if (code === 'ENOENT') return { error: '파일을 찾을 수 없습니다 (이동/삭제되었을 수 있습니다).', errorKey: 'fileNotFoundMoved' };
+      if (code === 'EPERM' || code === 'EACCES') return { error: '파일에 접근할 수 없습니다.', errorKey: 'fileAccessDenied' };
+      return { error: '파일을 열 수 없습니다.', errorKey: 'fileOpenFailed' };
     }
   });
 }

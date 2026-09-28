@@ -128,7 +128,7 @@ describe('geminiModelUrl (path 주입 차단)', () => {
 describe('buildPrompt', () => {
   it('full 타입 한국어 — 템플릿 + 인용 규칙 주입 + 본문 포함', () => {
     const p = buildPrompt('본문내용', 'full', 'ko');
-    expect(p).toContain('PDF 문서 분석');
+    expect(p).toContain('당신은 문서 분석 및 요약 전문가');
     expect(p).toContain('인용 규칙'); // CITATION_RULES.ko 주입
     expect(p).toContain('본문내용');
     // 인용 규칙은 system 섹션(구분자 앞)에 위치
@@ -142,12 +142,31 @@ describe('buildPrompt', () => {
   });
 
   it.each([
-    ['en', 'expert PDF document analyst'],
-    ['ja', 'PDF文書'],
-    ['zh', 'PDF文档'],
+    ['en', 'expert document analyst'],
+    ['ja', 'あなたは文書の分析'],
+    ['zh', '你是文档分析'],
     ['auto', 'same language as the source'],
   ])('언어 %s 템플릿 선택', (lang, marker) => {
     expect(buildPrompt('x', 'full', lang)).toContain(marker);
+  });
+
+  // QA34: v1.8.0 부터 DOCX 도 같은 프롬프트를 탄다. 역할 지시문이 "PDF 문서" 라고 못박으면 Word
+  // 요약이 "이 PDF 는…" 으로 시작한다. 역할 줄(첫 줄)만 본다 — 인용 규칙의 [p.N] 설명은 별개 계약.
+  it.each(['ko', 'en', 'ja', 'zh', 'auto'])('언어 %s — full/chapter/qa 역할 지시문이 포맷 중립이다', (lang) => {
+    for (const type of ['full', 'chapter', 'qa'] as const) {
+      const firstLine = buildPrompt('x', type, lang).split('\n')[0]!;
+      expect(firstLine, `${lang}/${type}`).not.toMatch(/PDF/i);
+    }
+  });
+
+  // 인용 규칙의 설명문("어느 PDF 페이지에서 왔는지")도 같은 이유로 중립화했다 — [p.N] 형식 자체는
+  // 계약이라 그대로여야 한다(CITATION_REGEX 가 이 형태만 잡는다).
+  it.each(['ko', 'en', 'ja', 'zh', 'auto'])('언어 %s — 인용 규칙을 포함한 프롬프트 전체가 포맷 중립이고 [p.N] 계약은 유지된다', (lang) => {
+    for (const type of ['full', 'chapter', 'qa'] as const) {
+      const p = buildPrompt('x', type, lang);
+      expect(p, `${lang}/${type}`).not.toMatch(/PDF/i);
+      expect(p, `${lang}/${type}`).toContain('[p.N]');
+    }
   });
 
   it('알 수 없는 언어 → ko fallback', () => {

@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, act } from '@testing-library/react';
+import { render, screen, cleanup, act, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { t } from '../../lib/i18n';
 import { DocTextViewerPanel } from '../DocTextViewer';
 import { useAppStore } from '../../lib/store';
 
@@ -84,5 +86,76 @@ describe('DocTextViewerPanel', () => {
     useAppStore.setState({ document: null });
     const { container } = render(<DocTextViewerPanel />);
     expect(container.firstChild).toBeNull();
+  });
+  // QA34(M4): 툴바 배율 버튼의 콜백이 무보호였다 — `onZoomIn={() => {}}` 로 바꿔도 초록이었다
+  // (기존 테스트는 store 값→글꼴 매핑만 봤다). 클릭 → store 영속 값 + 실제 글꼴 크기까지 본다.
+  it('확대/축소/맞춤 버튼이 store 배율과 글꼴 크기를 바꾼다', async () => {
+    setDoc(['a']);
+    const user = userEvent.setup();
+    const { container } = render(<DocTextViewerPanel />);
+    const root = container.querySelector('[data-testid="doc-text-viewer"]') as HTMLElement;
+    expect(root.style.fontSize).toBe('16px');
+
+    await user.click(screen.getByRole('button', { name: t('pdfviewer.zoomIn') }));
+    expect(useAppStore.getState().pdfViewerZoom).toBeCloseTo(1.25);
+    expect(root.style.fontSize).toBe('20px');
+
+    await user.click(screen.getByRole('button', { name: t('pdfviewer.zoomOut') }));
+    await user.click(screen.getByRole('button', { name: t('pdfviewer.zoomOut') }));
+    expect(useAppStore.getState().pdfViewerZoom).toBeCloseTo(0.75);
+    expect(root.style.fontSize).toBe('12px');
+
+    await user.click(screen.getByRole('button', { name: (n: string) => n.includes(t('pdfviewer.zoomReset')) }));
+    expect(useAppStore.getState().pdfViewerZoom).toBe(1);
+    expect(root.style.fontSize).toBe('16px');
+  });
+
+  // QA34(L12): 표시·접근성 층 — 인용 대상 강조, 단원 section 의 이름, 배율 라이브 리전.
+  it('인용 대상 단위만 강조되고 section 이 단위 라벨을 접근성 이름으로 갖는다', () => {
+    setDoc(['a', 'b', 'c'], 'slide');
+    useAppStore.setState({ citationTarget: { page: 2 } });
+    const { container } = render(<DocTextViewerPanel />);
+    const target = container.querySelector('#unit-2') as HTMLElement;
+    const other = container.querySelector('#unit-1') as HTMLElement;
+    expect(target.className).toContain('border-blue-500');
+    expect(other.className).not.toContain('border-blue-500');
+    expect(target.getAttribute('aria-label')).toBe('슬라이드 2');
+    expect(screen.getByRole('region', { name: '슬라이드 3' })).toBeTruthy();
+  });
+
+  it('배율 라이브 리전이 현재 배율을 알린다', () => {
+    setDoc(['a']);
+    useAppStore.setState({ pdfViewerZoom: 1.5 });
+    render(<DocTextViewerPanel />);
+    expect(screen.getByRole('status').textContent).toBe(t('pdfviewer.zoomLevel', { percent: '150%' }));
+  });
+
+  // QA34(M6): 원문의 물결표 범위("9/1~9/30", "10~20명")가 GFM 단일 물결 취소선으로 먹혀
+  // 두 물결 사이가 <del> 로 그려졌다. 강조(**…**)를 함께 넣어 지연 청크가 **실제로 렌더한 뒤**를
+  // 본다 — 청크 로드 전 fallback 은 원문 평문이라 <del> 이 없어 항상 초록이 된다.
+  it("원문의 '~' 범위 표기를 취소선으로 그리지 않는다", async () => {
+    setDoc(['**일정** 기간 9/1~9/30, 인원 10~20명']);
+    const { container } = render(<DocTextViewerPanel />);
+    await waitFor(() => expect(container.querySelector('strong')).not.toBeNull(), { timeout: 5000 });
+    expect(container.querySelector('del')).toBeNull();
+    expect(container.textContent).toContain('기간 9/1~9/30, 인원 10~20명');
+  });
+
+  // QA34 실앱 스크린샷: prose 가 없어 표에 셀 간격·테두리가 없었다("달성률100%"). 글꼴 크기는
+  // 배율 컨테이너에서 상속해야 한다 — prose 가 font-size 를 고정하면 배율이 먹지 않는다.
+  it('표는 prose 타이포그래피 안에서 렌더되고, prose 가 배율 글꼴 크기를 덮지 않는다', async () => {
+    setDoc(['**a**\n\n| 항목 | 값 |\n| --- | --- |\n| 달성률 | 100% |']);
+    const { container } = render(<DocTextViewerPanel />);
+    await waitFor(() => expect(container.querySelector('table')).not.toBeNull(), { timeout: 5000 });
+    const wrapper = container.querySelector('table')!.closest('.prose');
+    expect(wrapper, '표가 prose 밖에 있다').not.toBeNull();
+    expect(wrapper!.className).toContain('[font-size:inherit]');
+  });
+
+  it('이중 물결(~~x~~)은 여전히 취소선이다 (GFM 기능 자체는 유지)', async () => {
+    setDoc(['**a** ~~지운 글~~']);
+    const { container } = render(<DocTextViewerPanel />);
+    await waitFor(() => expect(container.querySelector('strong')).not.toBeNull(), { timeout: 5000 });
+    expect(container.querySelector('del')?.textContent).toBe('지운 글');
   });
 });

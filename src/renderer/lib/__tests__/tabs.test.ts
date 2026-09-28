@@ -13,11 +13,11 @@ const M = vi.hoisted(() => ({
   restoreSessionForDocument: vi.fn(() => Promise.resolve()),
   openPath: vi.fn(),
   sessionLoad: vi.fn(),
-  notifyEmptyPages: vi.fn(),
+  notifyRestoredEmptyPages: vi.fn(),
 }));
 
 // QA23: 세션 복원도 "빈 페이지 다수" 를 다시 통지한다(1회성 파싱 통지가 세션에 안 남던 결함).
-vi.mock('../pdf-parser', () => ({ notifyEmptyPages: M.notifyEmptyPages }));
+vi.mock('../pdf-parser', () => ({ notifyRestoredEmptyPages: M.notifyRestoredEmptyPages }));
 vi.mock('../document-open', () => ({ openDocumentData: M.handlePdfData }));
 vi.mock('../use-session', () => ({
   persistCurrentSession: M.persistCurrentSession,
@@ -252,10 +252,11 @@ describe('switchToTab', () => {
 
     await switchToTab('/docs/scan.pdf');
 
-    expect(M.notifyEmptyPages).toHaveBeenCalledTimes(1);
-    const [pageTexts, key] = M.notifyEmptyPages.mock.calls[0]!;
-    expect((pageTexts as string[]).length).toBe(10);
-    expect(key, 'OCR 문서면 OCR 부분 실패 문구여야 한다').toBe('pdf.ocrPartialFailNotice');
+    // 문구 선택(OCR/PDF/비-PDF)은 notifyRestoredEmptyPages 의 몫 — pdf-restore-notice.test.ts 가 고정한다.
+    expect(M.notifyRestoredEmptyPages).toHaveBeenCalledTimes(1);
+    const [doc] = M.notifyRestoredEmptyPages.mock.calls[0]! as [{ pageTexts: string[]; isOcr?: boolean }];
+    expect(doc.pageTexts.length).toBe(10);
+    expect(doc.isOcr, '세션의 isOcr 이 판정 함수까지 전달돼야 한다').toBe(true);
   });
 
   // QA26(C-Medium): imagesSkipped 는 세션에 실리지 않아 **세션 복원 문서에서만** 사라졌다.

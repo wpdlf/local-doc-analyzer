@@ -427,6 +427,40 @@ describe('persistCurrentSession (module-3)', () => {
     expect(payload.session.hadImages).toBe(false);
   });
 
+  // QA34(Important): 쪽나눔만 바뀐 DOCX 가 옛 세션(요약·청크 쪽번호)을 복원하던 결함. docHash 계산
+  // 지점은 둘(복원의 load 키, 자동저장의 getCachedDocHash) — 둘 다 단위 경계를 봐야 한다. 한쪽만
+  // 바꾸면 저장 키와 조회 키가 어긋나 모든 DOCX 세션이 영구 miss 가 된다.
+  it('비-PDF: 같은 extractedText·다른 단위 분할 → 복원 조회 키와 저장 키가 모두 달라진다', async () => {
+    const base = makeDoc('docx-a');
+    const a: PdfDocument = { ...base, extractedText: 'x\n\ny\n\nz', pageTexts: ['x', 'y\n\nz'], unitKind: 'page' };
+    const b: PdfDocument = { ...a, id: 'docx-b', pageTexts: ['x\n\ny', 'z'] };
+    api.session.load.mockResolvedValue(null);
+
+    for (const d of [a, b]) {
+      useAppStore.setState({ document: d, sessionRestorePending: true });
+      await restoreSessionForDocument(d);
+    }
+    const loadKeys = api.session.load.mock.calls.map((c) => c[0]);
+    expect(loadKeys).toHaveLength(2);
+    expect(loadKeys[0]).toMatch(HEX);
+    expect(loadKeys[0]).not.toBe(loadKeys[1]);
+
+    for (const d of [a, b]) {
+      useAppStore.setState({ document: d, sessionRestorePending: false, summary: null, summaryStream: '', qaMessages: [], ragIndex: new VectorStore() });
+      await persistCurrentSession();
+    }
+    const saveKeys = (api.session.save.mock.calls as unknown as Array<[{ meta: { docHash: string } }]>).map((c) => c[0].meta.docHash);
+    expect(saveKeys).toEqual(loadKeys); // 저장 키 == 조회 키 (문서별)
+  });
+
+  it('PDF: 복원 조회 키는 종전대로 extractedText 의 SHA-256 이다(기존 세션 호환)', async () => {
+    const doc = { ...makeDoc('pdf-compat'), extractedText: 'abc' };
+    api.session.load.mockResolvedValue(null);
+    useAppStore.setState({ document: doc, sessionRestorePending: true });
+    await restoreSessionForDocument(doc);
+    expect(api.session.load.mock.calls[0]?.[0]).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+  });
+
   it('P1: 같은 문서 반복 저장 시 docHash 를 1회만 계산(캐시)하고 결과는 동일', async () => {
     // 고유 doc.id — 모듈 캐시가 다른 테스트로 오염되지 않도록.
     const doc = makeDoc('p1-cache-doc');

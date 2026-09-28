@@ -21,7 +21,7 @@ import { useSessionPersistence } from './lib/use-session';
 import { prefetchMarkdownRenderer } from './lib/safe-markdown';
 import { MAX_PDF_SIZE_BYTES } from '../shared/constants';
 // Task 9: 확장자·매직바이트 판별을 document-formats.ts 단일 출처로 모은다.
-import { isSupportedExtension, hasPdfMagic, hasZipMagic } from '../shared/document-formats';
+import { isSupportedExtension, hasPdfMagic, hasZipMagic, hasCfbMagic } from '../shared/document-formats';
 import { selectUpdateBanner, shouldResetDismiss, type UpdateBanner } from './lib/update-banner';
 import type { UpdateState } from '../shared/update-types';
 import logoImg from './assets/logo.png';
@@ -102,7 +102,7 @@ export default function App() {
       const result = await window.electronAPI.file.openPdf();
       if (!result) return;
       if ('error' in result) {
-        useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: result.error });
+        useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: translateMainError(result, t('uploader.cannotRead')) });
         return;
       }
       await openDocumentData(result.data, result.name, result.path);
@@ -330,11 +330,16 @@ export default function App() {
         // 추출기 sniff 포함)은 openDocumentData 의 단일 dispatch 에 맡긴다 — 여긴 순수 쓰레기
         // 바이너리를 전체 materialize 전에 조기 거부하는 것만 목적이다. 8바이트를 읽어
         // (CFB 매직은 앞 8바이트) 나중에 CFB 조기 거부를 추가해도 슬라이스 크기를 또 안 건드려도
-        // 되게 한다 — 지금은 CFB 판별을 추가하지 않는다(그 분기는 document-open.ts 가 갖는다).
+        // 되게 한다.
+        // QA34(Medium): CFB 매직도 통과시킨다 — 암호 걸린 OOXML 은 zip 이 아니라 CFB 컨테이너라,
+        // 여기서 쓰레기로 보고 "PDF · Word 파일만 지원됩니다" 로 거부하면 document-open.ts 의
+        // DOC_ENCRYPTED("암호로 보호된 문서입니다") 안내에 영영 닿지 못했다. 판별(암호 안내)은
+        // 여전히 document-open.ts 의 단일 dispatch 가 갖고, 여기는 통과만 시킨다.
         const headerBuf = await file.slice(0, 8).arrayBuffer();
         const header = new Uint8Array(headerBuf);
-        // Task9/10: 매직바이트 판정도 document-formats.ts 단일 출처(hasPdfMagic/hasZipMagic)를 쓴다.
-        if (!hasPdfMagic(header) && !hasZipMagic(header)) {
+        // Task9/10: 매직바이트 판정도 document-formats.ts 단일 출처(hasPdfMagic/hasZipMagic/hasCfbMagic)를 쓴다.
+        // ⚠️ App.drop.test.tsx 가 이 조건의 세 갈래를 실제 DOM 드롭으로 걷는다(E2E 는 IPC 주입이라 못 본다).
+        if (!hasPdfMagic(header) && !hasZipMagic(header) && !hasCfbMagic(header)) {
           useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: t('uploader.notPdf') });
           return;
         }
