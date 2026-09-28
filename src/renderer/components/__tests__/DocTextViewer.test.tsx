@@ -141,6 +141,17 @@ describe('DocTextViewerPanel', () => {
     expect(container.textContent).toContain('기간 9/1~9/30, 인원 10~20명');
   });
 
+  // QA34 실앱 스크린샷: prose 가 없어 표에 셀 간격·테두리가 없었다("달성률100%"). 글꼴 크기는
+  // 배율 컨테이너에서 상속해야 한다 — prose 가 font-size 를 고정하면 배율이 먹지 않는다.
+  it('표는 prose 타이포그래피 안에서 렌더되고, prose 가 배율 글꼴 크기를 덮지 않는다', async () => {
+    setDoc(['**a**\n\n| 항목 | 값 |\n| --- | --- |\n| 달성률 | 100% |']);
+    const { container } = render(<DocTextViewerPanel />);
+    await waitFor(() => expect(container.querySelector('table')).not.toBeNull(), { timeout: 5000 });
+    const wrapper = container.querySelector('table')!.closest('.prose');
+    expect(wrapper, '표가 prose 밖에 있다').not.toBeNull();
+    expect(wrapper!.className).toContain('[font-size:inherit]');
+  });
+
   it('이중 물결(~~x~~)은 여전히 취소선이다 (GFM 기능 자체는 유지)', async () => {
     setDoc(['**a** ~~지운 글~~']);
     const { container } = render(<DocTextViewerPanel />);

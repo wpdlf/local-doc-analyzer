@@ -94,7 +94,12 @@ export function DocTextViewerPanel() {
               <h3 className="mb-2 text-xs font-semibold text-gray-600 dark:text-gray-400">
                 {formatUnitLabel(page, unitKind)}
               </h3>
-              <SafeMarkdown content={text} />
+              {/* prose: 요약 화면과 같은 타이포그래피 — 없으면 GFM 표에 셀 간격·테두리가 없어
+                  "달성률 | 100%" 가 "달성률100%" 로 붙어 보였다(QA34 실앱 스크린샷). 글꼴 크기는
+                  prose 가 고정하지 않고 위 컨테이너의 배율 font-size 를 상속해야 한다. */}
+              <div className="prose dark:prose-invert max-w-none [font-size:inherit]">
+                <SafeMarkdown content={text} />
+              </div>
             </section>
           );
         })}
