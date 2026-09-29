@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
-import { launchElectron, sendDropPath, cleanupDir } from './helpers';
+import { launchElectron, sendDropPath, cleanupDir, openAndFlushSession, findFlushedSession, type ManifestEntry } from './helpers';
 import { writeSamplePptx } from './fixtures/make-pptx';
 import { writeSampleHwpx } from './fixtures/make-hwpx';
 
@@ -34,31 +34,26 @@ async function makeFlushPdf(): Promise<Buffer> {
   return Buffer.from(await doc.save());
 }
 
-interface ManifestEntry { docHash: string; fileName: string; unitKind?: string }
-
 /** 1차 기동으로 세션을 만들고 flush 한 뒤, 그 세션에 `[p.2]` 인용 요약을 심는다. manifest 항목을 돌려준다. */
 async function seedSessionWithCitation(userDataDir: string, docsDir: string, fixture: string, header: string): Promise<ManifestEntry> {
-  const buf = readFileSync(fixture);
   const r1 = await launchElectron(userDataDir, SEED);
+  let flushed: ManifestEntry;
   try {
     await expect(r1.page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
-    await sendDropPath(r1.app, fixture, buf.toString('base64'));
-    await expect(r1.page.getByText(header)).toBeVisible({ timeout: 60000 });
-    await r1.page.waitForTimeout(2000);
     const flushPath = join(docsDir, 'flush.pdf');
     const flushBuf = await makeFlushPdf();
     writeFileSync(flushPath, flushBuf);
-    await sendDropPath(r1.app, flushPath, flushBuf.toString('base64'));
-    await expect(r1.page.getByText('flush.pdf (1p)')).toBeVisible({ timeout: 30000 });
-    await r1.page.waitForTimeout(500);
+    // QA35(D5): 고정 sleep(2000/500) 대신 manifest 항목이 생길 때까지 — helpers 주석 참조.
+    flushed = await openAndFlushSession(r1, { userDataDir, fixture, header, flushPath, flushBuf });
     expect(r1.pageErrors.map((e) => e.message), '1차 렌더러 에러').toEqual([]);
   } finally {
     await r1.app.close().catch(() => { /* 이미 종료 */ });
   }
-  const manifest = JSON.parse(readFileSync(join(userDataDir, 'sessions', 'manifest.json'), 'utf-8')) as { entries: ManifestEntry[] };
+  // 종료 flush 가 manifest 를 다시 쓸 수 있으므로 닫은 뒤의 디스크 상태로 다시 읽는다.
   const name = fixture.split(/[\\/]/).pop()!;
-  const entry = manifest.entries.find((e) => e.fileName === name);
-  if (!entry) throw new Error(`${name} 세션이 flush 되지 않았다`);
+  const entry = findFlushedSession(userDataDir, name);
+  if (!entry) throw new Error(`${name} 세션이 종료 후 manifest 에서 사라졌다`);
+  expect(entry.docHash).toBe(flushed.docHash);
   const sessionPath = join(userDataDir, 'sessions', entry.docHash, 'session.json');
   const session = JSON.parse(readFileSync(sessionPath, 'utf-8')) as { summaries: Record<string, unknown>; summaryType: string };
   session.summaries.full = { content: '요약입니다. 근거는 [p.2] 를 보세요.', model: 'e2e-fixture', provider: 'claude' };

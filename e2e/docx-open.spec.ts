@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
-import { launchElectron, sendDropPath, cleanupDir } from './helpers';
+import { launchElectron, sendDropPath, cleanupDir, openAndFlushSession, findFlushedSession } from './helpers';
 import { writeSampleDocx } from './fixtures/make-docx';
 
 /**
@@ -35,10 +35,6 @@ async function makeFlushPdf(): Promise<Buffer> {
   return Buffer.from(await doc.save());
 }
 
-interface SessionManifest {
-  entries: { docHash: string; fileName: string }[];
-}
-
 test('DOCX 를 열면 쪽나눔으로 2단위가 나뉘고 표가 표로 렌더되며 인용 클릭이 해당 단위로 점프한다', async () => {
   test.setTimeout(150000);
   const userDataDir = mkdtempSync(join(tmpdir(), 'lpa-docx-'));
@@ -53,18 +49,12 @@ test('DOCX 를 열면 쪽나눔으로 2단위가 나뉘고 표가 표로 렌더�
     try {
       await expect(r1.page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
 
-      await sendDropPath(r1.app, fixture, docxBuf.toString('base64'));
-      // 쪽나눔 1회 → 2단위로 갈렸다는 사실이 헤더의 페이지 수 표기에 그대로 드러난다.
-      await expect(r1.page.getByText('sample.docx (2p)')).toBeVisible({ timeout: 60000 });
-      // A 의 세션 복원(restore-pending)이 settle 되어야 다음 드롭의 flush 가 A 를 저장한다.
-      await r1.page.waitForTimeout(2000);
-
       const flushPath = join(docsDir, 'flush.pdf');
       const flushBuf = await makeFlushPdf();
       writeFileSync(flushPath, flushBuf);
-      await sendDropPath(r1.app, flushPath, flushBuf.toString('base64'));
-      await expect(r1.page.getByText('flush.pdf (1p)')).toBeVisible({ timeout: 30000 });
-      await r1.page.waitForTimeout(500);
+      // 쪽나눔 1회 → 2단위로 갈렸다는 사실이 헤더의 페이지 수 표기에 그대로 드러난다.
+      // QA35(D5): 고정 sleep(2000/500) 대신 manifest 항목이 생길 때까지 — helpers 주석 참조.
+      await openAndFlushSession(r1, { userDataDir, fixture, header: 'sample.docx (2p)', flushPath, flushBuf });
 
       expect(r1.pageErrors.map((e) => e.message), '1차 렌더러 에러').toEqual([]);
     } finally {
@@ -72,9 +62,8 @@ test('DOCX 를 열면 쪽나눔으로 2단위가 나뉘고 표가 표로 렌더�
     }
 
     // ── DOCX 의 docHash 를 manifest 에서 찾아 session.json 에 인용 포함 요약을 심는다 ──
-    const manifestPath = join(userDataDir, 'sessions', 'manifest.json');
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as SessionManifest;
-    const entry = manifest.entries.find((e) => e.fileName === 'sample.docx');
+    // 종료 flush 가 manifest 를 다시 쓸 수 있으므로 닫은 뒤의 디스크 상태로 다시 읽는다.
+    const entry = findFlushedSession(userDataDir, 'sample.docx');
     if (!entry) throw new Error('sample.docx 세션이 flush 되지 않았다 — manifest 에 항목이 없음');
 
     const sessionPath = join(userDataDir, 'sessions', entry.docHash, 'session.json');
