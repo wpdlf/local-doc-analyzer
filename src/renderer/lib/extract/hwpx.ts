@@ -1,7 +1,7 @@
 import { parseXml, walk, localName, attr, childrenNamed } from './xml';
 import { paginate, type Block } from './paginate';
 import { toGfmTable, placeGridCells, type GridCell } from './table';
-import { readOcfPackage, hasEncryptionData, type OcfPackage } from './ocf';
+import { readOcfPackage, readOpf, hasEncryptionData, type OcfPackage } from './ocf';
 import { readOutlineLevels } from './hwpx-header';
 import { MAX_PAGE_COUNT } from '../pdf-parser';
 import type { Extractor, ExtractedDoc, ExtractedHeading, ExtractOptions, ZipIndex } from './types';
@@ -185,6 +185,38 @@ function bodySections(zip: ZipIndex, pkg: OcfPackage | null): string[] {
     .sort((a, b) => Number(SECTION_PATH.exec(a)![2]) - Number(SECTION_PATH.exec(b)![2]));
 }
 
+/** 한글이 쓰는 관례 경로 — container.xml 이 가리키지 못할 때의 폴백 */
+const DEFAULT_OPF_PATH = 'Contents/content.hpf';
+const DEFAULT_HEADER_PATH = 'Contents/header.xml';
+
+/** container.xml → OPF, 실패하면 관례 경로의 OPF, 그것도 실패하면 null(섹션은 번호순 폴백). */
+function readHwpxPackage(zip: ZipIndex): OcfPackage | null {
+  try { return readOcfPackage(zip, HWPX_PACKAGE); } catch { /* 아래 폴백 */ }
+  try { return readOpf(zip, DEFAULT_OPF_PATH); } catch { return null; }
+}
+
+/**
+ * 그림 참조(binaryItemIDRef) → zip 경로. manifest 에서 풀리지 않으면(OPF 가 없거나 항목이 빠짐)
+ * 마지막 수단으로 `BinData/<ref>.<확장자>` 를 찾는다 — 실물 한글 파일은 항목 id 와 BinData 파일
+ * 이름 줄기가 같다(image1 ↔ BinData/image1.bmp). 형식은 어차피 바이트로 가린다(image-fit).
+ */
+function binDataResolver(zip: ZipIndex, pkg: OcfPackage | null): (ref: string) => string | undefined {
+  let byStem: Map<string, string> | null = null;
+  return (ref) => {
+    const viaManifest = pkg?.items.get(ref)?.path;
+    if (viaManifest && zip.has(viaManifest)) return viaManifest;
+    if (!byStem) {
+      // 이름 목록은 한 번만 훑는다(그림 후보마다 전체 엔트리를 훑지 않게). 같은 줄기가 둘이면 첫 것.
+      byStem = new Map();
+      for (const n of zip.names()) {
+        const m = /^BinData\/([^/]+)\.[^./]+$/i.exec(n);
+        if (m && !byStem.has(m[1]!.toLowerCase())) byStem.set(m[1]!.toLowerCase(), n);
+      }
+    }
+    return byStem.get(ref.toLowerCase()) ?? viaManifest;
+  };
+}
+
 export interface HwpxExtractorDeps {
   fitImage?: ImageFitter;
   /** 표 텍스트화 교체 지점(테스트용) — 기본값은 gridTableText */
@@ -203,9 +235,11 @@ export function createHwpxExtractor(deps: HwpxExtractorDeps = {}): Extractor {
       throwIfAborted(opts.signal);
       if (hasEncryptionData(zip)) extractFail('DOC_ENCRYPTED', 'encrypted hwpx');
 
-      let pkg: OcfPackage | null = null;
-      try { pkg = readOcfPackage(zip, HWPX_PACKAGE); } catch { pkg = null; }
-      const headerPath = pkg ? [...pkg.items.values()].find((i) => /(^|\/)header\.xml$/i.test(i.path))?.path : 'Contents/header.xml';
+      // QA35: container.xml 이 없거나 깨지면 pkg 가 null 이 되어 그림 참조(binaryItemIDRef →
+      // manifest)를 풀 수 없었고 그림이 **조용히 0개**가 됐다. 한글이 늘 쓰는 관례 경로의 OPF 를
+      // 직접 읽어 본다. 본문 섹션·header 는 원래도 관례 경로로 폴백했다.
+      const pkg = readHwpxPackage(zip);
+      const headerPath = (pkg ? [...pkg.items.values()].find((i) => /(^|\/)header\.xml$/i.test(i.path))?.path : undefined) ?? DEFAULT_HEADER_PATH;
       const outline = readOutlineLevels(headerPath ? zip.text(headerPath) : null);
 
       const sections = bodySections(zip, pkg);
@@ -275,10 +309,10 @@ export function createHwpxExtractor(deps: HwpxExtractorDeps = {}): Extractor {
       }
       const headings: ExtractedHeading[] = headingAt.map((h) => ({ level: h.level, title: h.title, unitIndex: unitOfBlock[h.blockIndex] ?? 0 }));
 
-      const items = pkg?.items;
-      const { images, imageBudgetExceeded } = opts.extractImages !== false && imageAt.length > 0 && items
+      const resolveBinData = binDataResolver(zip, pkg);
+      const { images, imageBudgetExceeded } = opts.extractImages !== false && imageAt.length > 0
         ? await collectImages(
-          imageAt.map(({ ref, blockIndex }) => ({ path: items.get(ref)?.path, unitIndex: unitOfBlock[blockIndex] ?? 0 })),
+          imageAt.map(({ ref, blockIndex }) => ({ path: resolveBinData(ref), unitIndex: unitOfBlock[blockIndex] ?? 0 })),
           zip, fit, opts.signal,
         )
         : { images: [], imageBudgetExceeded: false };

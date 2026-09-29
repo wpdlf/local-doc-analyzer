@@ -317,3 +317,137 @@ describe('hwpx 그림', () => {
     expect(doc.images[0]).toMatchObject({ unitIndex: 1, mimeType: 'image/jpeg', width: 200, height: 100 });
   });
 });
+
+// QA35: 배선 뮤테이션이 살아남던 자리들(H03·H09·H11·H14·H18·H39·H41·H43·H46·H48·H49) + container.xml
+// 폴백. 각 테스트는 해당 배선을 지우거나 바꾸면 실패한다.
+describe('hwpx — 배선 가드 (QA35)', () => {
+  function bmp(w: number, h: number): Uint8Array {
+    const b = new Uint8Array(54); b[0] = 0x42; b[1] = 0x4d;
+    const v = new DataView(b.buffer); v.setUint32(14, 40, true); v.setInt32(18, w, true); v.setInt32(22, h, true);
+    return b;
+  }
+  const codec = { async reencode() { return { bytes: new Uint8Array([1, 2]), mimeType: 'image/jpeg' as const }; } };
+  const xi = createHwpxExtractor({ fitImage: createImageFitter(codec) });
+  const pic = (ref: string) => `<hp:pic><hc:img binaryItemIDRef="${ref}"/></hp:pic>`;
+  const items = '<opf:item id="image1" href="BinData/image1.bmp" media-type="image/bmp"/>';
+  const header = `<hh:head ${NS}><hh:paraPr id="5"><hh:heading type="OUTLINE" level="0"/></hh:paraPr><hh:paraPr id="6"><hh:heading type="OUTLINE" level="1"/></hh:paraPr></hh:head>`;
+  const tbl1 = (text: string) => `<hp:tbl rowCnt="1" colCnt="1"><hp:tr><hp:tc><hp:subList>${p(run(t(text)))}</hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/></hp:tc></hp:tr></hp:tbl>`;
+
+  it('H43: 제목의 unitIndex 는 블록 인덱스가 아니라 그 블록의 단위다', async () => {
+    // 1쪽에 문단 둘 → 2쪽 제목의 블록 인덱스는 2, 단위는 1.
+    const doc = await extract(hwpx([sec(
+      p(run(t('일-가'))) + p(run(t('일-나')))
+      + p(run(t('둘째 장')), { pageBreak: '1', paraPrIDRef: '5' }) + p(run(t('둘-본문')))
+      + p(run(t('셋')), { pageBreak: '1' }),
+    )], { header }));
+    expect(doc.units).toHaveLength(3);
+    expect(doc.headings).toEqual([{ level: 1, title: '둘째 장', unitIndex: 1 }]);
+  });
+
+  it('제목 수준을 개요 수준대로 싣는다(normalize 가 최상위 수준만 챕터로 쓴다)', async () => {
+    const doc = await extract(hwpx([sec(p(run(t('장')), { paraPrIDRef: '5' }) + p(run(t('절')), { paraPrIDRef: '6' }))], { header }));
+    expect(doc.headings.map((h) => [h.level, h.title])).toEqual([[1, '장'], [2, '절']]);
+  });
+
+  it('H11: 줄바꿈이 든 제목은 첫 줄만 제목이다', async () => {
+    const doc = await extract(hwpx([sec(p(run('<hp:t>제목 줄<hp:lineBreak/>부제 줄</hp:t>'), { paraPrIDRef: '5' }))], { header }));
+    expect(doc.headings.map((h) => h.title)).toEqual(['제목 줄']);
+  });
+
+  it('H48/H49: 문단 루프가 이벤트 루프에 양보하고 진행률을 알린다 — 밖에서 건 취소를 관측한다', async () => {
+    const paras = Array.from({ length: 450 }, (_, i) => p(run(t(`문단${i}`)))).join('');
+    const zip = hwpx([sec(paras)]);
+    const progress: number[][] = [];
+    const ac = new AbortController();
+    const pending = x.extract(zip, { extractImages: false, signal: ac.signal, onProgress: (c, total) => progress.push([c, total]) });
+    // 추출이 동기로 끝까지 돌면(양보 없음) 이 타이머보다 먼저 끝나 취소를 못 본다.
+    setTimeout(() => ac.abort(), 0);
+    await expect(pending).rejects.toMatchObject({ code: 'ABORTED' });
+    expect(progress.length).toBeGreaterThan(0);
+  });
+
+  it('H48: 진행률 콜백에서 취소하면 ABORTED', async () => {
+    const paras = Array.from({ length: 250 }, (_, i) => p(run(t(`문단${i}`)))).join('');
+    const ac = new AbortController();
+    await expect(x.extract(hwpx([sec(paras)]), { extractImages: false, signal: ac.signal, onProgress: () => ac.abort() }))
+      .rejects.toMatchObject({ code: 'ABORTED' });
+  });
+
+  it('H03: hiddenComment(숨은 설명) 텍스트는 본문에 나오지 않는다', async () => {
+    const hidden = run(`<hp:hiddenComment><hp:subList>${p(run(t('숨은 메모')))}</hp:subList></hp:hiddenComment>`);
+    const doc = await extract(hwpx([sec(p(run(t('본문')) + hidden))]));
+    expect(doc.units.join('')).not.toContain('숨은 메모');
+    expect(doc.units[0]).toBe('본문');
+  });
+
+  it('H09: 텍스트 없는 문단의 pageBreak="1" 도 새 단위를 시작한다', async () => {
+    const doc = await extract(hwpx([sec(p(run(t('앞'))) + p('', { pageBreak: '1' }) + p(run(t('뒤'))))]));
+    expect(doc.units).toEqual(['앞', '뒤']);
+  });
+
+  it('H14: 분량으로 쪼개진 문단에서 표 뒤 그림은 표가 놓인 단위에 붙는다', async () => {
+    // 앞 텍스트가 한 쪽 분량을 채워, 같은 문단의 표 블록이 다음 단위로 넘어간다.
+    const long = '가'.repeat(1790);
+    const doc = await xi.extract(hwpx(
+      [sec(p(run(t(long) + tbl1('표 셀') + pic('image1'))))],
+      { manifestItems: items, extra: { 'BinData/image1.bmp': bmp(200, 100) } },
+    ), { extractImages: true });
+    expect(doc.units).toHaveLength(2);
+    expect(doc.units[1]).toContain('표 셀');
+    expect(doc.images).toHaveLength(1);
+    expect(doc.images[0]!.unitIndex).toBe(1);
+  });
+
+  it('H18: 글상자 안 글상자의 그림도 모은다', async () => {
+    const inner = `<hp:rect><hp:drawText><hp:subList>${p(run(t('안쪽') + pic('image1')))}</hp:subList></hp:drawText></hp:rect>`;
+    const outer = run(`<hp:rect><hp:drawText><hp:subList>${p(run(t('바깥')) + run(inner))}</hp:subList></hp:drawText></hp:rect>`);
+    const doc = await xi.extract(hwpx(
+      [sec(p(run(t('호스트')) + outer))],
+      { manifestItems: items, extra: { 'BinData/image1.bmp': bmp(200, 100) } },
+    ), { extractImages: true });
+    expect(doc.units[0]).toContain('안쪽');
+    expect(doc.images).toHaveLength(1);
+  });
+
+  it('H41: 섹션 파트의 루트가 sec 가 아니면 DOC_CORRUPT', async () => {
+    await expect(extract(hwpx([`<hs:other ${NS}>${p(run(t('a')))}</hs:other>`]))).rejects.toMatchObject({ code: 'DOC_CORRUPT' });
+  });
+
+  describe('container.xml 이 없거나 깨졌을 때 (H39·H46)', () => {
+    // manifest 경로(photo.bmp)를 참조 id(image1)와 다르게 둔다 — 같으면 BinData 이름 폴백이
+    // OPF 폴백의 부재를 가린다.
+    const opfDoc = `<opf:package xmlns:opf="http://www.idpf.org/2007/opf/"><opf:manifest><opf:item id="header" href="Contents/header.xml" media-type="application/xml"/><opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"/><opf:item id="image1" href="BinData/photo.bmp" media-type="image/bmp"/></opf:manifest><opf:spine><opf:itemref idref="section0"/></opf:spine></opf:package>`;
+    const body = sec(p(run(t('장 제목')), { paraPrIDRef: '5' }) + p(run(t('본문') + pic('image1'))));
+    const base = {
+      mimetype: 'application/hwp+zip',
+      'Contents/header.xml': header,
+      'Contents/section0.xml': body,
+      'BinData/photo.bmp': bmp(200, 100),
+    };
+
+    for (const [label, container] of [['없음', undefined], ['깨짐', '<container><rootfiles'], ['rootfile 없음', '<container/>']] as const) {
+      it(`container.xml ${label}: 본문·개요 제목을 읽고, 관례 경로의 OPF 로 그림도 푼다`, async () => {
+        const files: Record<string, string | Uint8Array> = { ...base, 'Contents/content.hpf': opfDoc };
+        if (container !== undefined) files['META-INF/container.xml'] = container;
+        const doc = await xi.extract(zipOf(files), { extractImages: true });
+        expect(doc.units[0]).toContain('본문');
+        expect(doc.headings).toEqual([{ level: 1, title: '장 제목', unitIndex: 0 }]);
+        expect(doc.images).toHaveLength(1);
+      });
+    }
+
+    it('OPF 도 없으면 BinData/<참조>.* 를 이름으로 찾아 그림을 잃지 않는다', async () => {
+      const files: Record<string, string | Uint8Array> = { ...base, 'BinData/image1.bmp': bmp(200, 100) };
+      delete files['BinData/photo.bmp'];
+      const doc = await xi.extract(zipOf(files), { extractImages: true });
+      expect(doc.units[0]).toContain('본문');
+      expect(doc.headings.map((h) => h.title)).toEqual(['장 제목']);
+      expect(doc.images).toHaveLength(1);
+    });
+
+    it('manifest 에 항목이 빠진 그림도 BinData 이름으로 찾는다', async () => {
+      const doc = await xi.extract(hwpx([sec(p(run(t('본문') + pic('image9'))))], { extra: { 'BinData/image9.png': bmp(200, 100) } }), { extractImages: true });
+      expect(doc.images).toHaveLength(1);
+    });
+  });
+});
