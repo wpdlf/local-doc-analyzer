@@ -37,7 +37,8 @@ interface Boundary {
  * 막았는데 이 형제 경로에는 가드가 없었다. 이제 단위를 **분할**한다 — 모든 단위가 정확히 한
  * 챕터에 들어간다(빈틈·겹침 없음). 규칙:
  *  a. 섹션(≥2개)이 있으면 섹션이 경계다 — 작성자가 직접 나눈 구획이 제목보다 믿을 만하다.
- *  b. 아니면 문서의 최상위 수준(가장 작은 level) 제목만 쓴다. H2 까지 쓰면 H1 한 장이 잘게 쪼개진다.
+ *  b. 아니면 서로 다른 단위에 제목이 둘 이상인 가장 높은 수준(가장 작은 level)의 제목만 쓴다.
+ *     그보다 아래 수준까지 쓰면 한 장이 잘게 쪼개진다. 그런 수준이 없으면 detectChapters 폴백.
  *  c. 경계의 단위가 직전 경계보다 **엄격히 뒤**여야 한다 — 같은 단위의 제목은 첫 제목에 합친다.
  *  d. 직전 경계와 제목이 같으면 흡수한다(여러 슬라이드에 걸친 "(계속)" 식 반복 제목).
  *  e. MAX_HEADING_CHAPTERS 를 넘으면 인접 경계를 묶는다(groupBoundaries).
@@ -48,8 +49,13 @@ function headingBoundaries(ex: ExtractedDoc, length: number): Boundary[] | null 
     candidates = ex.sections;
   } else {
     const usable = ex.headings.filter((h) => h.title.trim());
-    if (usable.length === 0) return null;
-    const top = Math.min(...usable.map((h) => h.level));
+    // R17: "최상위 수준"은 **경계를 둘 이상 만드는** 가장 높은 수준이다. DOCX 는 흔히 문서 제목
+    // 하나만 H1 이고 실제 장이 H2 다 — 단순히 가장 작은 level 을 쓰면 문서 전체가 한 챕터로 접힌다.
+    // 서로 다른 단위에 제목이 둘 이상인 수준이 없으면 제목은 경계 정보가 없는 것과 같다(폴백).
+    const levels = [...new Set(usable.map((h) => h.level))].sort((a, b) => a - b);
+    const top = levels.find((lv) =>
+      new Set(usable.filter((h) => h.level === lv).map((h) => clampUnitIndex(h.unitIndex, length))).size >= 2);
+    if (top === undefined) return null;
     candidates = usable.filter((h) => h.level === top);
   }
 

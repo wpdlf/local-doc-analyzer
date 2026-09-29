@@ -133,13 +133,12 @@ describe('toPdfDocument', () => {
   });
 
   it('헤딩 unitIndex 가 범위를 벗어나도 클램프한다', () => {
+    // 제목 하나만으로는 경계가 둘이 안 된다(R17) — 폴백이 되더라도 범위 밖 unitIndex 로 깨지지 않는다.
     const doc = toPdfDocument(
       { ...base, headings: [{ level: 1, title: '다장', unitIndex: 5 }] },
       meta,
     );
-    expect(doc.chapters.map((c) => [c.title, c.startPage, c.endPage])).toEqual([
-      ['다장', 1, 2],
-    ]);
+    expectPartition(doc.chapters, 2);
     // 첫 챕터는 머리말을 접어 1 에서 시작하므로, clamp 는 두 번째 챕터의 시작·첫 챕터의 끝에서 보인다.
     const two = toPdfDocument(
       { ...base, headings: [{ level: 1, title: '가장', unitIndex: 0 }, { level: 1, title: '다장', unitIndex: 5 }] },
@@ -171,9 +170,33 @@ describe('toPdfDocument — 제목 챕터는 단위를 분할한다 (QA35)', () 
   const h = (level: number, title: string, unitIndex: number): ExtractedHeading => ({ level, title, unitIndex });
   const chaptersOf = (ex: Partial<ExtractedDoc> & { units: string[] }) => toPdfDocument({ ...base, ...ex }, meta).chapters;
 
-  it('한 단위에 제목이 셋이어도 챕터는 하나다 — 같은 단위의 제목은 첫 제목에 합친다', () => {
+  it('한 단위에 제목이 셋이어도 그 단위는 한 챕터에만 든다 — 같은 단위의 제목은 첫 제목에 합친다', () => {
+    const cs = chaptersOf({ units: ['a', 'b'], headings: [h(1, 'A', 0), h(1, 'B', 0), h(1, 'C', 0), h(1, 'D', 1)] });
+    expect(cs.map((c) => [c.title, c.startPage, c.endPage])).toEqual([['A', 1, 1], ['D', 2, 2]]);
+  });
+
+  it('제목이 모두 한 단위에 몰리면 경계 정보가 없다 — detectChapters 폴백 (챕터 1개)', () => {
     const cs = chaptersOf({ units: ['본문'], headings: [h(1, 'A', 0), h(1, 'B', 0), h(1, 'C', 0)] });
-    expect(cs.map((c) => [c.title, c.startPage, c.endPage])).toEqual([['A', 1, 1]]);
+    expect(cs).toHaveLength(1);
+    expect(cs[0]!.title).not.toBe('A'); // 제목 경로가 아니라 폴백이 만든 챕터
+    expectPartition(cs, 1);
+  });
+
+  // R17: DOCX 는 흔히 문서 제목만 H1 이고 실제 장이 H2 다.
+  it('H1 이 문서 제목 하나뿐이면 H2 에서 나눈다 — 제목·머리말은 첫 챕터에 접는다', () => {
+    const cs = chaptersOf({
+      units: units(4),
+      headings: [h(1, '문서 제목', 0), h(2, 'a', 1), h(2, 'b', 2), h(2, 'c', 3)],
+    });
+    expect(cs.map((c) => [c.title, c.startPage, c.endPage])).toEqual([['a', 1, 2], ['b', 3, 3], ['c', 4, 4]]);
+  });
+
+  it('H1 이 둘 이상(서로 다른 단위)이면 여전히 H1 에서만 나눈다', () => {
+    const cs = chaptersOf({
+      units: units(4),
+      headings: [h(1, '1장', 0), h(2, 'x', 1), h(1, '2장', 2), h(2, 'y', 3)],
+    });
+    expect(cs.map((c) => c.title)).toEqual(['1장', '2장']);
   });
 
   it('H1/H2 가 섞이면 최상위(H1)만 경계가 된다', () => {
