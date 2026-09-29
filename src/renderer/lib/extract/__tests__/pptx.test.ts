@@ -187,6 +187,24 @@ describe('pptx — 그림', () => {
     }), { extractImages: false });
     expect(doc.images).toEqual([]);
   });
+
+  // R7(컨트롤러 판정): DOC_NO_TEXT 는 그림 **후보**가 아니라 실제로 **채택된** 그림 수로
+  // 판정해야 한다 — extractImages=false 나, 지원하지 않는 그림 형식뿐이면 후보는 있어도
+  // 실채택은 0장이라 요약할 것이 없는 문서가 그대로 통과했다(R4 편차의 사각).
+  it('텍스트 없이 그림만 있는데 extractImages=false 면 DOC_NO_TEXT (R7)', async () => {
+    await expect(pptxImg.extract(deck({ 's1.xml': slide(pic('rIdP')) }, ['s1.xml'], {
+      'ppt/slides/_rels/s1.xml.rels': rels('../media/image1.png'), 'ppt/media/image1.png': pngHeader(200, 100),
+    }), { extractImages: false })).rejects.toMatchObject({ code: 'DOC_NO_TEXT' });
+  });
+
+  it('텍스트 없이 그림만 있는데 그 그림이 지원하지 않는 형식이면 DOC_NO_TEXT (R7)', async () => {
+    // PNG/JPEG/BMP 매직이 아닌 임의 바이트 — probeImage 가 null 을 돌려 fitImage 가 그 그림을
+    // 건너뛴다(EMF/WMF 를 흉내낸 것과 같은 경로).
+    const unsupported = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+    await expect(pptxImg.extract(deck({ 's1.xml': slide(pic('rIdP')) }, ['s1.xml'], {
+      'ppt/slides/_rels/s1.xml.rels': rels('../media/image1.png'), 'ppt/media/image1.png': unsupported,
+    }), { extractImages: true })).rejects.toMatchObject({ code: 'DOC_NO_TEXT' });
+  });
 });
 
 describe('pptx — 실패 계약', () => {

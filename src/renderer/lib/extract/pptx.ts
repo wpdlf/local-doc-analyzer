@@ -213,13 +213,6 @@ export function createPptxExtractor(deps: PptxExtractorDeps = {}): Extractor {
       }
       opts.onProgress?.(slideParts.length, slideParts.length);
 
-      // R4 편차(코디네이터 보고): 브리프의 그림 재사용 테스트는 슬라이드에 텍스트가 전혀
-      // 없이 그림만 있는 덱을 성공 케이스로 둔다 — 텍스트만 보는 `!units.some(...)` 판정이면
-      // 이미지 추출 전에 항상 DOC_NO_TEXT 로 죽어 그 테스트가 브리프의 참조 구현으로는 통과할
-      // 수 없다(브리프 자체의 실패 계약 예시들은 그림이 아예 없어 이 조건으로도 여전히 잡힌다).
-      // 그래서 "그림 후보(imageAt)가 하나도 없을 때만" 텍스트 부재를 최종 판정에 넣는다.
-      if (!units.some((u) => u.trim()) && imageAt.length === 0) extractFail('DOC_NO_TEXT', 'no text in presentation');
-
       const images: ExtractedImage[] = [];
       let imageBudgetExceeded = false;
       if (opts.extractImages !== false) {
@@ -238,6 +231,13 @@ export function createPptxExtractor(deps: PptxExtractorDeps = {}): Extractor {
           if (fitted) images.push({ unitIndex, ...fitted });
         }
       }
+
+      // R7(컨트롤러 판정, R4 편차를 대체): 그림 **후보**(imageAt)가 아니라 실제로 **채택된**
+      // 그림(images)을 봐야 한다. extractImages=false 거나, 후보가 있어도 전부 지원하지 않는
+      // 형식(EMF/WMF 등 — fitImage 가 null)이면 후보는 있어도 실채택은 0장이라, 텍스트도 없는
+      // 문서를 "빈 문서 아님"으로 잘못 판정해 요약할 것이 없는 문서가 그대로 통과했다(R4 편차의
+      // 사각). 그래서 이미지 추출 루프 **뒤**에서, 실채택 수로 최종 판정한다.
+      if (!units.some((u) => u.trim()) && images.length === 0) extractFail('DOC_NO_TEXT', 'no text in presentation');
 
       return {
         units,
