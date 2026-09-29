@@ -41,7 +41,8 @@ export const _translations = {
   'unit.spoken.chapter': { ko: '{n}장', en: 'chapter {n}' },
   'citation.aria': { ko: '{unit} 원문 열기', en: 'Open source {unit}' },
   'citation.tooltip': { ko: '클릭하여 {unit} 원문 확인', en: 'Click to view source on {unit}' },
-  'citation.invalid': { ko: '유효하지 않은 페이지 ({page})', en: 'Invalid page ({page})' },
+  // QA35: {unit} = unit.spoken.* — 슬라이드 덱에서 "유효하지 않은 페이지" 로 말하지 않는다.
+  'citation.invalid': { ko: '유효하지 않은 위치 ({unit})', en: 'Invalid location ({unit})' },
   // 컬렉션 Q&A 교차 문서 인용 (multi-doc Phase 2)
   'citation.crossTooltip': { ko: '클릭하여 {name} {unit} 열기', en: 'Click to open {name} on {unit}' },
   'citation.crossAria': { ko: '{name} {unit} 원문 열기', en: 'Open {name} {unit}' },
