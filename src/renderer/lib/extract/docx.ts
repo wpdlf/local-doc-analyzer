@@ -2,12 +2,13 @@ import { parseXml, walk, localName, attr, childrenNamed } from './xml';
 import { readRels } from './ooxml';
 import { toGfmTable, MAX_GRID_CELLS_PER_AXIS } from './table';
 import { paginate, type Block } from './paginate';
-import { MAX_EXAMINED_IMAGES, MAX_PAGE_COUNT, MAX_TOTAL_IMAGES } from '../pdf-parser';
-import type { Extractor, ExtractedDoc, ExtractedHeading, ExtractedImage, ExtractOptions, ZipIndex } from './types';
+import { MAX_PAGE_COUNT } from '../pdf-parser';
+import type { Extractor, ExtractedDoc, ExtractedHeading, ExtractOptions, ZipIndex } from './types';
 import { DOCX_FORMAT_ID } from '../../../shared/document-formats';
 import { extractFail } from './errors';
 import { HEADING_STYLE_RE, onOff, outlineLevelOf, readStyles, type StyleTable } from './docx-styles';
 import { fitImage, type ImageFitter } from './image-fit';
+import { collectImages, throwIfAborted, yieldToEventLoop } from './common';
 
 const DOCUMENT_PART = 'word/document.xml';
 
@@ -23,10 +24,6 @@ export const MAX_TABLE_COLUMNS = MAX_GRID_CELLS_PER_AXIS;
  */
 const MAX_NEST_DEPTH = 16;
 
-function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) extractFail('ABORTED', 'aborted');
-}
-
 /**
  * 이만큼 요소를 처리할 때마다 이벤트 루프에 한 번 양보한다.
  *
@@ -36,10 +33,6 @@ function throwIfAborted(signal?: AbortSignal): void {
  * 처리 비용보다 훨씬 커서 너무 자주 양보하면 정상 문서가 느려진다 — 수백 요소 단위로 둔다.
  */
 const YIELD_EVERY = 200;
-
-function yieldToEventLoop(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
 
 // ─── 순회 규칙 ───
 
@@ -462,29 +455,13 @@ export function createDocxExtractor(deps: DocxExtractorDeps = {}): Extractor {
         unitIndex: unitOfBlock[h.blockIndex] ?? 0,
       }));
 
-      const images: ExtractedImage[] = [];
-      let imageBudgetExceeded = false;
-      if (opts.extractImages !== false && imageAt.length > 0) {
-        const rels = readRels(zip, DOCUMENT_PART);
-        const seen = new Set<string>();
-        let examined = 0;
-        for (const { relId, blockIndex } of imageAt) {
-          throwIfAborted(opts.signal);
-          if (examined >= MAX_EXAMINED_IMAGES) break;
-          examined += 1;
-          const path = rels.get(relId);
-          if (!path || seen.has(path)) continue;
-          const bytes = zip.bytes(path);
-          if (!bytes) continue;
-          seen.add(path);
-          if (images.length >= MAX_TOTAL_IMAGES) { imageBudgetExceeded = true; continue; }
-          // 형식은 확장자가 아니라 바이트로 가린다(EMF/WMF/TIFF 는 건너뛴다). 크기 규칙은 PDF
-          // 경로와 같다 — 50px 미만·4M 픽셀 초과는 건너뛰고, 긴 변 1024 초과는 줄인다.
-          const fitted = await fit(bytes);
-          if (!fitted) continue;
-          images.push({ unitIndex: unitOfBlock[blockIndex] ?? 0, ...fitted });
-        }
-      }
+      const rels = opts.extractImages !== false && imageAt.length > 0 ? readRels(zip, DOCUMENT_PART) : null;
+      const { images, imageBudgetExceeded } = rels
+        ? await collectImages(
+          imageAt.map(({ relId, blockIndex }) => ({ path: rels.get(relId), unitIndex: unitOfBlock[blockIndex] ?? 0 })),
+          zip, fit, opts.signal,
+        )
+        : { images: [], imageBudgetExceeded: false };
 
       return {
         units,

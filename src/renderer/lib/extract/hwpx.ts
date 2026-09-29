@@ -3,11 +3,12 @@ import { paginate, type Block } from './paginate';
 import { toGfmTable, placeGridCells, type GridCell } from './table';
 import { readOcfPackage, hasEncryptionData, type OcfPackage } from './ocf';
 import { readOutlineLevels } from './hwpx-header';
-import { MAX_EXAMINED_IMAGES, MAX_PAGE_COUNT, MAX_TOTAL_IMAGES } from '../pdf-parser';
-import type { Extractor, ExtractedDoc, ExtractedHeading, ExtractedImage, ExtractOptions, ZipIndex } from './types';
+import { MAX_PAGE_COUNT } from '../pdf-parser';
+import type { Extractor, ExtractedDoc, ExtractedHeading, ExtractOptions, ZipIndex } from './types';
 import { HWPX_FORMAT_ID } from '../../../shared/document-formats';
 import { extractFail } from './errors';
 import { fitImage, type ImageFitter } from './image-fit';
+import { collectImages, throwIfAborted, yieldToEventLoop } from './common';
 
 const HWPX_MIMETYPE = 'application/hwp+zip';
 const HWPX_PACKAGE = 'application/hwpml-package+xml';
@@ -21,10 +22,6 @@ const YIELD_EVERY = 200;
  * `shapeComment` 는 "그림입니다. 원본 그림의 이름: <파일명>" 자동 문구라 요약에 파일명이 샜다.
  */
 const SKIPPED = new Set(['ctrl', 'secPr', 'linesegarray', 'shapeComment', 'hiddenComment']);
-
-function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) extractFail('ABORTED', 'aborted');
-}
 
 /** hp:t 의 혼합 내용 → 텍스트. 런 단위로 trim 하지 않는다(공백만 있는 런이 실제 단어 사이 공백이다). */
 function tText(t: Element): string {
@@ -229,7 +226,7 @@ export function createHwpxExtractor(deps: HwpxExtractorDeps = {}): Extractor {
         for (const para of childrenNamed(root, 'p')) {
           processed += 1;
           if (processed % YIELD_EVERY === 0) {
-            await new Promise((r) => setTimeout(r, 0));
+            await yieldToEventLoop();
             opts.onProgress?.(si, sections.length);
           }
           throwIfAborted(opts.signal);
@@ -278,25 +275,13 @@ export function createHwpxExtractor(deps: HwpxExtractorDeps = {}): Extractor {
       }
       const headings: ExtractedHeading[] = headingAt.map((h) => ({ level: h.level, title: h.title, unitIndex: unitOfBlock[h.blockIndex] ?? 0 }));
 
-      const images: ExtractedImage[] = [];
-      let imageBudgetExceeded = false;
-      if (opts.extractImages !== false && imageAt.length > 0 && pkg) {
-        const seen = new Set<string>();
-        let examined = 0;
-        for (const { ref, blockIndex } of imageAt) {
-          throwIfAborted(opts.signal);
-          if (examined >= MAX_EXAMINED_IMAGES) break;
-          examined += 1;
-          const path = pkg.items.get(ref)?.path;
-          if (!path || seen.has(path)) continue;
-          const bytes = zip.bytes(path);
-          if (!bytes) continue;
-          seen.add(path);
-          if (images.length >= MAX_TOTAL_IMAGES) { imageBudgetExceeded = true; continue; }
-          const fitted = await fit(bytes);
-          if (fitted) images.push({ unitIndex: unitOfBlock[blockIndex] ?? 0, ...fitted });
-        }
-      }
+      const items = pkg?.items;
+      const { images, imageBudgetExceeded } = opts.extractImages !== false && imageAt.length > 0 && items
+        ? await collectImages(
+          imageAt.map(({ ref, blockIndex }) => ({ path: items.get(ref)?.path, unitIndex: unitOfBlock[blockIndex] ?? 0 })),
+          zip, fit, opts.signal,
+        )
+        : { images: [], imageBudgetExceeded: false };
       return { units, images, headings, unitKind: 'page', ...(imageBudgetExceeded ? { imageBudgetExceeded: true } : {}) };
     },
   };

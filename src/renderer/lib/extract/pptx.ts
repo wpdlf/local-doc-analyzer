@@ -2,11 +2,12 @@ import { parseXml, walk, localName, attr, childrenNamed, prefixedAttr } from './
 import { readRels } from './ooxml';
 import { textBodyText, skipNonText, type PptxGraphicsText } from './pptx-text';
 import { pptxGraphics } from './pptx-graphics';
-import { MAX_EXAMINED_IMAGES, MAX_PAGE_COUNT, MAX_TOTAL_IMAGES } from '../pdf-parser';
-import type { Extractor, ExtractedDoc, ExtractedHeading, ExtractedImage, ExtractOptions, ZipIndex } from './types';
+import { MAX_PAGE_COUNT } from '../pdf-parser';
+import type { Extractor, ExtractedDoc, ExtractedHeading, ExtractOptions, ZipIndex } from './types';
 import { PPTX_FORMAT_ID } from '../../../shared/document-formats';
 import { extractFail } from './errors';
 import { fitImage, type ImageFitter } from './image-fit';
+import { collectImages, throwIfAborted, yieldToEventLoop } from './common';
 
 const PRESENTATION_PART = 'ppt/presentation.xml';
 
@@ -22,14 +23,6 @@ const YIELD_EVERY_SLIDES = 20;
  */
 const NON_BODY_PLACEHOLDERS = new Set(['sldNum', 'dt', 'ftr', 'hdr', 'sldImg']);
 const TITLE_PLACEHOLDERS = new Set(['title', 'ctrTitle']);
-
-function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) extractFail('ABORTED', 'aborted');
-}
-
-function yieldToEventLoop(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
 
 /** XML 5종 엔티티 디코드 — `&amp;` 는 다른 넷을 먼저 풀고 마지막에 풀어야 이중 디코드가 안 된다. */
 function decodeXmlEntities(s: string): string {
@@ -225,24 +218,9 @@ export function createPptxExtractor(deps: PptxExtractorDeps = {}): Extractor {
       }
       opts.onProgress?.(slideParts.length, slideParts.length);
 
-      const images: ExtractedImage[] = [];
-      let imageBudgetExceeded = false;
-      if (opts.extractImages !== false) {
-        const seen = new Set<string>();
-        let examined = 0;
-        for (const { path, unitIndex } of imageAt) {
-          throwIfAborted(opts.signal);
-          if (examined >= MAX_EXAMINED_IMAGES) break;
-          examined += 1;
-          if (seen.has(path)) continue;
-          const bytes = zip.bytes(path);
-          if (!bytes) continue;
-          seen.add(path);
-          if (images.length >= MAX_TOTAL_IMAGES) { imageBudgetExceeded = true; continue; }
-          const fitted = await fit(bytes);
-          if (fitted) images.push({ unitIndex, ...fitted });
-        }
-      }
+      const { images, imageBudgetExceeded } = opts.extractImages !== false
+        ? await collectImages(imageAt, zip, fit, opts.signal)
+        : { images: [], imageBudgetExceeded: false };
 
       // R7(컨트롤러 판정, R4 편차를 대체): 그림 **후보**(imageAt)가 아니라 실제로 **채택된**
       // 그림(images)을 봐야 한다. extractImages=false 거나, 후보가 있어도 전부 지원하지 않는

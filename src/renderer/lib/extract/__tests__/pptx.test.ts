@@ -181,6 +181,26 @@ describe('pptx — 그림', () => {
     expect(doc.images.map((i) => i.unitIndex)).toEqual([0]);
   });
 
+  it('401장 모두에 같은 로고가 있어도 마지막 슬라이드의 고유 그림을 잃지 않는다(중복은 검사 예산 밖)', async () => {
+    const n = 401;
+    const slides: Record<string, string> = {};
+    const extra: Record<string, string | Uint8Array> = {
+      'ppt/media/logo.png': pngHeader(200, 100),
+      'ppt/media/unique.png': pngHeader(300, 100),
+    };
+    const order: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const last = i === n - 1;
+      slides[`s${i}.xml`] = slide(sp(`t${i}`) + pic('rIdL') + (last ? pic('rIdP') : ''));
+      extra[`ppt/slides/_rels/s${i}.xml.rels`] = `<Relationships ${REL}><Relationship Id="rIdL" Type="x/image" Target="../media/logo.png"/>`
+        + (last ? `<Relationship Id="rIdP" Type="x/image" Target="../media/unique.png"/>` : '') + `</Relationships>`;
+      order.push(`s${i}.xml`);
+    }
+    const doc = await pptxImg.extract(deck(slides, order, extra), { extractImages: true });
+    expect(doc.images.map((i) => [i.unitIndex, i.width])).toEqual([[0, 200], [n - 1, 300]]);
+    expect(doc.imageBudgetExceeded).toBeUndefined();
+  });
+
   it('extractImages=false 면 그림을 모으지 않는다', async () => {
     const doc = await pptxImg.extract(deck({ 's1.xml': slide(sp('a') + pic('rIdP')) }, ['s1.xml'], {
       'ppt/slides/_rels/s1.xml.rels': rels('../media/image1.png'), 'ppt/media/image1.png': pngHeader(200, 100),
