@@ -48,18 +48,68 @@ function relatedPart(frame: Element, elName: string, attrName: string, slidePart
   return xml ? parseXml(xml).documentElement : null;
 }
 
+/** 캐시 점 목록 — 상한 안의 값(idx 순서, 빠진 idx 는 빈 칸)과, 상한을 넘겨 잘린 원래 개수. */
+interface CachePoints {
+  values: string[];
+  /** 캐시가 말하는 전체 개수 — `c:ptCount` 와 가장 큰 idx+1 중 큰 쪽. values 보다 크면 잘린 것이다. */
+  total: number;
+}
+
 /** `c:pt` 들 → idx 순서의 값 배열(캐시에 빠진 idx 는 빈 칸). */
-function cachePoints(container: Element | undefined, limit: number): string[] {
-  if (!container) return [];
+function cachePoints(container: Element | undefined, limit: number): CachePoints {
+  if (!container) return { values: [], total: 0 };
   const out: string[] = [];
-  for (const pt of walk(container)) {
-    if (localName(pt) !== 'pt') continue;
-    const idx = Number.parseInt(attr(pt, 'idx') ?? '', 10);
-    if (!Number.isInteger(idx) || idx < 0 || idx >= limit) continue;
-    const v = childrenNamed(pt, 'v')[0];
+  let total = 0;
+  for (const e of walk(container)) {
+    const name = localName(e);
+    if (name === 'ptCount') {
+      const n = Number.parseInt(attr(e, 'val') ?? '', 10);
+      if (Number.isInteger(n) && n > total) total = n;
+      continue;
+    }
+    if (name !== 'pt') continue;
+    const idx = Number.parseInt(attr(e, 'idx') ?? '', 10);
+    if (!Number.isInteger(idx) || idx < 0) continue;
+    if (idx + 1 > total) total = idx + 1;
+    if (idx >= limit) continue;
+    const v = childrenNamed(e, 'v')[0];
     out[idx] = v?.textContent ?? '';
   }
-  return Array.from(out, (v) => v ?? '');
+  const values = Array.from(out, (v) => v ?? '');
+  return { values, total: Math.max(total, values.length) };
+}
+
+/**
+ * 항목 축(`c:cat`, 분산형은 `c:xVal`) → 항목 이름.
+ *
+ * QA35: 다단계 항목(`c:multiLvlStrCache` — 연도 아래 분기 같은 묶음)은 `c:lvl` 이 여럿이고
+ * **첫 lvl 이 가장 안쪽**(잎)이다. 예전엔 모든 lvl 의 점을 한 배열에 덮어써, 바깥 lvl 이 안쪽 값을
+ * 지워 머리글이 `Y2023 | Q2 | Y2024 | Q2` 로 나왔다(Q1 이 사라짐). 이제 안쪽 lvl 의 값을 쓰고,
+ * 바깥 lvl 이 **그 idx 에 값을 가진 곳에서만**(묶음의 첫 항목 — 캐시는 묶음 시작 idx 에만 값을 둔다)
+ * 바깥→안쪽 순으로 앞에 붙인다: `Y2023 Q1 | Q2 | Y2024 Q1 | Q2`. 모든 칸에 바깥 값을 반복하면 표가
+ * 길어질 뿐 정보가 늘지 않고, 묶음 경계는 첫 칸의 접두만으로 읽힌다.
+ */
+function categoryPoints(axis: Element | undefined, limit: number): CachePoints {
+  const multi = axis ? [...walk(axis)].find((e) => localName(e) === 'multiLvlStrCache') : undefined;
+  if (!multi) return cachePoints(axis, limit);
+  const levels = childrenNamed(multi, 'lvl').map((lvl) => cachePoints(lvl, limit).values);
+  const whole = cachePoints(multi, limit); // ptCount 는 multiLvlStrCache 직계에 있다
+  const inner = levels[0] ?? [];
+  const outer = levels.slice(1).reverse(); // 바깥쪽부터
+  const width = Math.max(inner.length, ...outer.map((l) => l.length));
+  const values = Array.from({ length: width }, (_, i) =>
+    [...outer.map((l) => l[i] ?? ''), inner[i] ?? ''].filter((v) => v.trim()).join(' '));
+  return { values, total: Math.max(whole.total, values.length) };
+}
+
+/** 계열 이름 — 참조 캐시(`c:tx > c:strRef > c:strCache > c:pt`) 또는 리터럴(`c:tx > c:v`). */
+function seriesName(ser: Element): string {
+  const tx = childrenNamed(ser, 'tx')[0];
+  if (!tx) return '';
+  // QA35: 리터럴 이름(`c:tx > c:v`)은 pt 가 없어 예전엔 빈 칸이 됐다(계열 구분이 사라짐).
+  const literal = childrenNamed(tx, 'v')[0];
+  if (literal) return literal.textContent ?? '';
+  return cachePoints(tx, 1).values[0] ?? '';
 }
 
 /**
@@ -71,7 +121,13 @@ function bodyText(el: Element | undefined): string {
   return el ? textBodyText(el).trim() : '';
 }
 
-/** 차트 → 제목 + 캐시 값 표. 원본 워크북(embeddings/)은 열지 않는다 — 캐시가 화면에 보이는 값이다. */
+/**
+ * 차트 → 제목 + 캐시 값 표. 원본 워크북(embeddings/)은 열지 않는다 — 캐시가 화면에 보이는 값이다.
+ *
+ * 분산형·거품형은 항목 축 대신 `c:xVal`/`c:yVal` 을 쓴다(QA35 — 예전엔 cat/val 만 봐 표가 이름만
+ * 남았다). x 값을 머리글로, y 값을 행으로 둔다. 항목·계열이 상한에 잘리면 표 뒤에 개수를 밝힌
+ * 표시 줄을 붙인다 — 잘린 것을 모르면 AI 가 표를 전체로 읽는다(조용한 손실).
+ */
 function chart(frame: Element, slidePart: string, zip: ZipIndex): string {
   const root = relatedPart(frame, 'chart', 'id', slidePart, zip);
   if (!root) return '';
@@ -82,17 +138,25 @@ function chart(frame: Element, slidePart: string, zip: ZipIndex): string {
   const tx = titleEl ? childrenNamed(titleEl, 'tx')[0] : undefined;
   const rich = tx ? childrenNamed(tx, 'rich')[0] : undefined;
   const title = bodyText(rich);
-  const series = [...walk(root)].filter((e) => localName(e) === 'ser').slice(0, MAX_CHART_SERIES);
+  const allSeries = [...walk(root)].filter((e) => localName(e) === 'ser');
+  const series = allSeries.slice(0, MAX_CHART_SERIES);
   let categories: string[] = [];
+  let categoryTotal = 0;
   const rows: string[][] = [];
   for (const ser of series) {
-    const cats = cachePoints(childrenNamed(ser, 'cat')[0], MAX_CHART_CATEGORIES);
-    if (cats.length > categories.length) categories = cats;
-    const name = cachePoints(childrenNamed(ser, 'tx')[0], 1)[0] ?? '';
-    rows.push([name, ...cachePoints(childrenNamed(ser, 'val')[0], MAX_CHART_CATEGORIES)]);
+    const axis = childrenNamed(ser, 'cat')[0] ?? childrenNamed(ser, 'xVal')[0];
+    const cats = categoryPoints(axis, MAX_CHART_CATEGORIES);
+    if (cats.values.length > categories.length) categories = cats.values;
+    const vals = cachePoints(childrenNamed(ser, 'val')[0] ?? childrenNamed(ser, 'yVal')[0], MAX_CHART_CATEGORIES);
+    categoryTotal = Math.max(categoryTotal, cats.total, vals.total);
+    rows.push([seriesName(ser), ...vals.values]);
   }
   const tableText = rows.length > 0 ? toGfmTable([['', ...categories], ...rows]) : '';
-  return [title, tableText].filter(Boolean).join('\n\n');
+  const cut: string[] = [];
+  if (categoryTotal > MAX_CHART_CATEGORIES) cut.push(`항목 categories ${MAX_CHART_CATEGORIES}/${categoryTotal}`);
+  if (allSeries.length > MAX_CHART_SERIES) cut.push(`계열 series ${MAX_CHART_SERIES}/${allSeries.length}`);
+  const marker = tableText && cut.length > 0 ? `… (${cut.join(' · ')})` : '';
+  return [title, tableText, marker].filter(Boolean).join('\n\n');
 }
 
 /** SmartArt → 글머리 목록. data 파트만 읽는다(drawing 파트는 같은 텍스트의 렌더 사본). */

@@ -91,6 +91,56 @@ describe('pptx 차트 (합성 — 실물 코퍼스에 없었다)', () => {
     const result = pptxGraphics.chart(frame, 'ppt/slides/slide1.xml', manyZip);
     expect(result).toContain('C49');
     expect(result).not.toContain('C50');
+    // QA35: 잘린 것을 밝힌다 — 모르면 AI 가 잘린 표를 전체로 읽는다.
+    expect(result.endsWith('\n\n… (항목 categories 50/51)')).toBe(true);
+  });
+
+  it('잘리지 않았으면 잘림 표시 줄을 붙이지 않는다', () => {
+    expect(pptxGraphics.chart(frame, 'ppt/slides/slide1.xml', zip)).not.toContain('…');
+  });
+
+  // QA35: ptCount 가 캐시 점보다 많다고 말하면(뒤쪽 점이 캐시에 없음) 그것도 잘림이다.
+  it('ptCount 가 상한을 넘으면 캐시 점이 적어도 잘림을 밝힌다', () => {
+    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:barChart><c:ser>`
+      + `<c:cat><c:strRef><c:strCache><c:ptCount val="80"/><c:pt idx="0"><c:v>Q1</c:v></c:pt></c:strCache></c:strRef></c:cat>`
+      + `<c:val><c:numRef><c:numCache><c:ptCount val="80"/><c:pt idx="0"><c:v>1</c:v></c:pt></c:numCache></c:numRef></c:val>`
+      + `</c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>`;
+    expect(pptxGraphics.chart(frame, 'ppt/slides/slide1.xml', zipWith(xml))).toContain('50/80');
+  });
+
+  // QA35: 다단계 항목 — 첫 c:lvl 이 안쪽(분기), 다음이 바깥(연도). 예전엔 바깥 lvl 이 안쪽 값을
+  // 덮어 `Y2023 | Q2 | Y2024 | Q2` 가 됐다(Q1 이 사라짐).
+  it('다단계 항목은 안쪽 값에, 바깥 값이 있는 칸에만 바깥 값을 앞에 붙인다', () => {
+    const lvl = (vals: [number, string][]) => `<c:lvl>${vals.map(([i, v]) => `<c:pt idx="${i}"><c:v>${v}</c:v></c:pt>`).join('')}</c:lvl>`;
+    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:barChart><c:ser>`
+      + `<c:tx><c:strRef><c:strCache><c:pt idx="0"><c:v>매출</c:v></c:pt></c:strCache></c:strRef></c:tx>`
+      + `<c:cat><c:multiLvlStrRef><c:multiLvlStrCache><c:ptCount val="4"/>`
+      + lvl([[0, 'Q1'], [1, 'Q2'], [2, 'Q1'], [3, 'Q2']]) + lvl([[0, 'Y2023'], [2, 'Y2024']])
+      + `</c:multiLvlStrCache></c:multiLvlStrRef></c:cat>`
+      + `<c:val><c:numRef><c:numCache>${[1, 2, 3, 4].map((v, i) => `<c:pt idx="${i}"><c:v>${v}</c:v></c:pt>`).join('')}</c:numCache></c:numRef></c:val>`
+      + `</c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>`;
+    expect(pptxGraphics.chart(frame, 'ppt/slides/slide1.xml', zipWith(xml)))
+      .toBe('|  | Y2023 Q1 | Q2 | Y2024 Q1 | Q2 |\n| --- | --- | --- | --- | --- |\n| 매출 | 1 | 2 | 3 | 4 |');
+  });
+
+  // QA35: 분산형은 c:cat/c:val 이 아니라 c:xVal/c:yVal 이다 — 예전엔 표가 계열 이름만 남았다.
+  it('분산형은 x 값을 머리글로, y 값을 행으로 둔다', () => {
+    const pts = (vals: number[]) => vals.map((v, i) => `<c:pt idx="${i}"><c:v>${v}</c:v></c:pt>`).join('');
+    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:scatterChart><c:ser>`
+      + `<c:tx><c:v>측정</c:v></c:tx>`
+      + `<c:xVal><c:numRef><c:numCache>${pts([1, 2, 3])}</c:numCache></c:numRef></c:xVal>`
+      + `<c:yVal><c:numRef><c:numCache>${pts([10, 20, 30])}</c:numCache></c:numRef></c:yVal>`
+      + `</c:ser></c:scatterChart></c:plotArea></c:chart></c:chartSpace>`;
+    expect(pptxGraphics.chart(frame, 'ppt/slides/slide1.xml', zipWith(xml)))
+      .toBe('|  | 1 | 2 | 3 |\n| --- | --- | --- | --- |\n| 측정 | 10 | 20 | 30 |');
+  });
+
+  // QA35: 리터럴 계열 이름(c:tx > c:v)은 pt 가 없어 예전엔 빈 칸이 됐다.
+  it('리터럴 계열 이름(c:tx > c:v)을 읽는다', () => {
+    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:barChart>`
+      + oneSeries.replace('<c:ser>', '<c:ser><c:tx><c:v>직접 입력</c:v></c:tx>')
+      + `</c:barChart></c:plotArea></c:chart></c:chartSpace>`;
+    expect(pptxGraphics.chart(frame, 'ppt/slides/slide1.xml', zipWith(xml))).toContain('| 직접 입력 | 7 |');
   });
 });
 
