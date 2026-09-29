@@ -1,6 +1,7 @@
 import { useAppStore } from '../lib/store';
 import { useT } from '../lib/i18n';
 import { switchToTab, closeTab, openNewTabView } from '../lib/tabs';
+import { formatUnitCount } from '../lib/citation';
 
 /**
  * 다중 문서 탭바 (multi-doc Phase 1).
@@ -57,7 +58,7 @@ export function TabBar() {
                 disabled={blocked && !isActive}
                 aria-current={isActive ? 'page' : undefined}
                 className="truncate disabled:cursor-not-allowed"
-                title={`${tab.fileName} (${tab.pageCount}p)`}
+                title={`${tab.fileName} (${formatUnitCount(tab.pageCount, tab.unitKind ?? 'page', 'short')})`}
               >
                 📄 {tab.fileName}
               </button>

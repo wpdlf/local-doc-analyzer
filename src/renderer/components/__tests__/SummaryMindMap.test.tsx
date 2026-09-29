@@ -50,7 +50,7 @@ describe('SummaryMindMap', () => {
   it('페이지 배지(CitationButton) 클릭 → citationTarget 설정', async () => {
     const user = userEvent.setup();
     render(<SummaryMindMap markdown={MD} />);
-    await user.click(screen.getByRole('button', { name: t('citation.aria', { page: 3 }) }));
+    await user.click(screen.getByRole('button', { name: t('citation.aria', { unit: t('unit.spoken.page', { n: '3' }) }) }));
     expect(useAppStore.getState().citationTarget?.page).toBe(3);
   });
 
@@ -59,7 +59,7 @@ describe('SummaryMindMap', () => {
     const user = userEvent.setup();
     render(<SummaryMindMap markdown={'# 결론\n\n환각 인용 [p.9].'} />); // 9 > 5
     // 버튼이 아니라 비활성 span 으로 렌더 → 클릭해도 citationTarget 미설정
-    expect(screen.queryByRole('button', { name: t('citation.aria', { page: 9 }) })).toBeNull();
+    expect(screen.queryByRole('button', { name: t('citation.aria', { unit: t('unit.spoken.page', { n: '9' }) }) })).toBeNull();
     const badge = screen.getByText('[p.9]');
     expect(badge.getAttribute('aria-disabled')).toBe('true');
     await user.click(badge);

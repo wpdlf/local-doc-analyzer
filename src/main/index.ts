@@ -22,7 +22,7 @@ import { generate, abortGenerate, abortAllRequests, checkAvailability, analyzeIm
 import { MAX_PDF_SIZE_BYTES, isLocalhostHost, isValidOllamaUrl, UPDATER_CACHE_DIR_NAME } from '../shared/constants';
 // Task 9: 진입 게이트(드롭 URL·다이얼로그 필터·재읽기)가 확장자를 각자 알고 있던 것을
 // document-formats.ts 단일 출처로 모은다.
-import { isSupportedExtension, DIALOG_FILTERS } from '../shared/document-formats';
+import { isSupportedExtension, DIALOG_FILTERS, SUPPORTED_LABEL } from '../shared/document-formats';
 import { validateSettingValue } from './settings-validate';
 // v0.18.19 patch R34 P2: settings 키 단일 출처. 이전엔 본 파일 두 곳에 별도 리터럴이 있었고
 // R33 Surface 4 P3 가 drift 가드 부재를 지적. settings-keys.ts 가 양쪽을 derive 함.
@@ -1079,7 +1079,7 @@ export function registerIpcHandlers(): void {
           const loaded = await readSessionMeta(sessionsDir, e.docHash);
           if (!loaded) return null;
           return searchPersistedSession(
-            { docHash: e.docHash, fileName: e.fileName, filePath: e.filePath, pageCount: e.pageCount },
+            { docHash: e.docHash, fileName: e.fileName, filePath: e.filePath, pageCount: e.pageCount, unitKind: e.unitKind },
             loaded.session,
             query,
           );
@@ -1724,7 +1724,7 @@ export function registerIpcHandlers(): void {
       // "파일 형식" 드롭다운을 "모든 파일"로 바꾸거나 경로를 직접 타이핑하면 임의 확장자가
       // 그대로 넘어온다. file:open-path 가 이미 하는 서버측 확장자 재검증을 여기도 건다.
       if (!isSupportedExtension(filePath)) {
-        return { error: 'PDF · Word 파일만 열 수 있습니다.', errorKey: 'fileUnsupported' };
+        return { error: `${SUPPORTED_LABEL} 파일만 열 수 있습니다.`, errorKey: 'fileUnsupported', errorParams: { list: SUPPORTED_LABEL } };
       }
       // drop 핸들러와 동일한 방어 — 심볼릭 링크/비정규 파일 거부.
       const lstat = await fsp.lstat(filePath);
@@ -1767,7 +1767,7 @@ export function registerIpcHandlers(): void {
       return { error: '잘못된 경로입니다.', errorKey: 'fileInvalidPath' };
     }
     if (!isSupportedExtension(targetPath)) {
-      return { error: 'PDF · Word 파일만 열 수 있습니다.', errorKey: 'fileUnsupported' };
+      return { error: `${SUPPORTED_LABEL} 파일만 열 수 있습니다.`, errorKey: 'fileUnsupported', errorParams: { list: SUPPORTED_LABEL } };
     }
     // QA20(B-MED): UNC(`\\server\share`) 차단 — 드롭 경로(will-navigate)는 "UNC 경로 차단:
     // 네트워크 읽기 방지"를 이미 하는데 이 경로만 빠져 있던 비대칭. 손상된 렌더러가 원격 경로를

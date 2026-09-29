@@ -121,4 +121,11 @@ describe('TabBar', () => {
     await user.click(closeBtn);
     expect(M.closeTab).not.toHaveBeenCalled();
   });
+
+  it('탭 제목의 개수 표기가 unitKind 를 따른다 (P4)', () => {
+    setState({ tabs: [{ ...tab('/d/deck.pptx'), pageCount: 12, unitKind: 'slide' }, tab('/d/a.pdf')], active: '/d/a.pdf' });
+    render(<TabBar />);
+    expect(screen.getByText(/deck\.pptx/).closest('button')!.getAttribute('title')).toBe('deck.pptx (12슬라이드)');
+    expect(screen.getByText(/a\.pdf/).closest('button')!.getAttribute('title')).toBe('a.pdf (3p)');
+  });
 });

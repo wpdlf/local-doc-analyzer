@@ -2,7 +2,7 @@
 // Plan SC: SC-02 (인용 토큰 → 클릭 가능), SC-03 (클릭 → 뷰어 스크롤)
 import { useAppStore } from '../lib/store';
 import { useT } from '../lib/i18n';
-import { clampCitationPage, sanitizeDocLabelName, formatUnitLabel } from '../lib/citation';
+import { clampCitationPage, sanitizeDocLabelName, formatUnitLabel, formatUnitSpoken } from '../lib/citation';
 import { setCitationReturnFocus } from '../lib/citation-focus';
 import { switchToTab } from '../lib/tabs';
 
@@ -105,8 +105,8 @@ export function CitationButton({ page, docName }: CitationButtonProps) {
     <button
       type="button"
       onClick={handleClick}
-      title={isCrossDoc && docName ? t('citation.crossTooltip', { name: docName, page: validPage }) : t('citation.tooltip', { page: validPage })}
-      aria-label={isCrossDoc && docName ? t('citation.crossAria', { name: docName, page: validPage }) : t('citation.aria', { page: validPage })}
+      title={isCrossDoc && docName ? t('citation.crossTooltip', { name: docName, unit: formatUnitSpoken(validPage, unitKind) }) : t('citation.tooltip', { unit: formatUnitSpoken(validPage, unitKind) })}
+      aria-label={isCrossDoc && docName ? t('citation.crossAria', { name: docName, unit: formatUnitSpoken(validPage, unitKind) }) : t('citation.aria', { unit: formatUnitSpoken(validPage, unitKind) })}
       className={`inline px-1 mx-0.5 text-xs font-medium rounded border transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${
         isActive
           ? 'bg-blue-200 dark:bg-blue-800 border-blue-300 dark:border-blue-700 text-blue-900 dark:text-blue-100'

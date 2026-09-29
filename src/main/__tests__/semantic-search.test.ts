@@ -213,6 +213,20 @@ describe('runSemanticSearch (main 코사인)', () => {
     const out = await runSemanticSearch(DIR, [1, 0], 'nomic', 2);
     expect(out.results.map((r) => r.docHash)).toEqual(['b'.repeat(64), 'a'.repeat(64)]);
   });
+
+  it('의미 검색 결과도 manifest 의 unitKind 를 싣는다 (P4)', async () => {
+    store.listSessions.mockResolvedValue([entry({ fileName: 'deck.pptx', unitKind: 'slide' })]);
+    setIndex({ vecs: [[1, 0]] });
+    const out = await runSemanticSearch(DIR, [1, 0], 'nomic', 2);
+    expect(out.results[0]!.unitKind).toBe('slide');
+  });
+
+  it('unitKind 없는 옛 항목은 필드를 싣지 않는다', async () => {
+    store.listSessions.mockResolvedValue([entry({})]);
+    setIndex({ vecs: [[1, 0]] });
+    const out = await runSemanticSearch(DIR, [1, 0], 'nomic', 2);
+    expect('unitKind' in out.results[0]!).toBe(false);
+  });
 });
 
 /**

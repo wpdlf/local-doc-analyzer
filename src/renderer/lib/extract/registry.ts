@@ -1,4 +1,6 @@
 import { docxExtractor } from './docx';
+import { pptxExtractor } from './pptx';
+import { hwpxExtractor } from './hwpx';
 import type { Extractor, ZipIndex } from './types';
 
 /**
@@ -7,7 +9,7 @@ import type { Extractor, ZipIndex } from './types';
  * 네 포맷 전부 zip 이라 매직만으로는 구분되지 않는다. 엔트리 목록으로 sniff 한다 —
  * 확장자는 힌트일 뿐 신뢰하지 않는다(위장 파일).
  */
-export const ZIP_EXTRACTORS: readonly Extractor[] = [docxExtractor];
+export const ZIP_EXTRACTORS: readonly Extractor[] = [docxExtractor, pptxExtractor, hwpxExtractor];
 
 export function resolveExtractor(zip: ZipIndex): Extractor | null {
   return ZIP_EXTRACTORS.find((e) => e.sniff(zip)) ?? null;

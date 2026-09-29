@@ -53,6 +53,7 @@ import App from '../App';
 import { useAppStore } from '../lib/store';
 import { DEFAULT_SETTINGS } from '../types';
 import { t } from '../lib/i18n';
+import { SUPPORTED_LABEL } from '../../shared/document-formats';
 
 const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
 const CFB_MAGIC = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
@@ -116,7 +117,7 @@ describe('App — 창 DOM 드롭 게이트 (QA34)', () => {
     await drop(fileWith('fake.docx', [1, 2, 3, 4, 5, 6, 7, 8]));
     await settle();
     expect(openDocumentData).not.toHaveBeenCalled();
-    expect(useAppStore.getState().error?.message).toBe(t('uploader.notPdf'));
+    expect(useAppStore.getState().error?.message).toBe(t('uploader.notPdf', { list: SUPPORTED_LABEL }));
   });
 
   // 확장자 게이트: zip 매직을 가진 .xlsx 는 매직 선검사만으로는 통과한다 — 확장자 검사가
@@ -125,7 +126,18 @@ describe('App — 창 DOM 드롭 게이트 (QA34)', () => {
     await drop(fileWith('sheet.xlsx', ZIP_MAGIC));
     await settle();
     expect(openDocumentData).not.toHaveBeenCalled();
-    expect(useAppStore.getState().error?.message).toBe(t('uploader.notPdf'));
+    expect(useAppStore.getState().error?.message).toBe(t('uploader.notPdf', { list: SUPPORTED_LABEL }));
+  });
+});
+
+// Task3(P4 선행): "PDF · Word 파일만 지원됩니다" 가 사전에 하드코딩돼 있으면 포맷 등록(Task5·8)
+// 순간 문구가 틀려진다 — 목록에서 도출한 {list} 를 받는지 사전 자체로 증명한다.
+describe('uploader.notPdf 사전 항목 — 지원 목록을 {list} 로 도출한다 (P4 선행)', () => {
+  it('지원하지 않는 형식 안내는 지원 목록을 문구에 도출한다 (P4 — 포맷이 늘면 자동으로 따라옴)', async () => {
+    const { _translations } = await import('../lib/i18n');
+    const entry = (_translations as Record<string, { ko: string; en: string }>)['uploader.notPdf']!;
+    expect(entry.ko).toContain('{list}');
+    expect(entry.en).toContain('{list}');
   });
 });
 
@@ -134,11 +146,15 @@ describe('App — 파일 열기 다이얼로그 거부 사유 번역 (QA34)', ()
   it('main 이 errorKey 를 실어 보내면 UI 언어로 번역한 배너를 띄운다', async () => {
     useAppStore.setState((s) => ({ settings: { ...s.settings, uiLanguage: 'en' } }));
     const openPdf = window.electronAPI.file.openPdf as unknown as ReturnType<typeof vi.fn>;
-    openPdf.mockResolvedValueOnce({ error: 'PDF · Word 파일만 열 수 있습니다.', errorKey: 'fileUnsupported' });
+    openPdf.mockResolvedValueOnce({
+      error: `${SUPPORTED_LABEL} 파일만 열 수 있습니다.`,
+      errorKey: 'fileUnsupported',
+      errorParams: { list: SUPPORTED_LABEL },
+    });
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, bubbles: true }));
     });
-    await vi.waitFor(() => expect(useAppStore.getState().error?.message).toBe('Only PDF and Word files can be opened.'));
+    await vi.waitFor(() => expect(useAppStore.getState().error?.message).toBe(t('mainerr.fileUnsupported', { list: SUPPORTED_LABEL })));
     expect(openDocumentData).not.toHaveBeenCalled();
   });
 });

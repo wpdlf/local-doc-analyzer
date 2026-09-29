@@ -93,6 +93,22 @@ describe('CitationButton (Top5 #4) — 유효 범위 페이지', () => {
     render(<CitationButton page={3} />);
     expect(screen.getByRole('button').textContent).toBe('[슬라이드 3]');
   });
+
+  it('슬라이드 문서의 인용 버튼은 접근성 이름·툴팁도 슬라이드로 말한다 (P4)', () => {
+    useAppStore.setState((s) => ({
+      settings: { ...s.settings, uiLanguage: 'ko' },
+      document: { ...s.document!, fileName: 'deck.pptx', unitKind: 'slide' },
+    }));
+    render(<CitationButton page={3} />);
+    const btn = screen.getByRole('button', { name: '슬라이드 3 원문 열기' });
+    expect(btn.getAttribute('title')).toBe('클릭하여 슬라이드 3 원문 확인');
+  });
+
+  it('PDF(unitKind 없음)의 접근성 이름은 종전 문구 그대로', () => {
+    useAppStore.setState((s) => ({ settings: { ...s.settings, uiLanguage: 'ko' } }));
+    render(<CitationButton page={2} />);
+    expect(screen.getByRole('button', { name: '2 페이지 원문 열기' })).toBeTruthy();
+  });
 });
 
 describe('CitationButton (Top5 #4) — 범위 초과 페이지', () => {

@@ -268,7 +268,10 @@ describe('i18n 정적 키 가드 (QA28)', () => {
   // unitKind 는 닫힌 합타입(UnitKind = 'page'|'slide'|'chapter')이라 citation.unit.page/slide/
   // chapter 3개로 완결되며, citation.test.ts 의 formatUnitLabel 테스트가 세 값 모두를 실제로
   // 호출해 ko/en 라벨을 검증한다.
-  const DYNAMIC_PREFIXES = ['mainprog.', 'mainerr.', 'citation.unit.'];
+  // P4: formatUnitCount/formatUnitSpoken(citation.ts) 이 같은 방식으로 `unit.count.${unitKind}`·
+  // `unit.countShort.${unitKind}`·`unit.spoken.${unitKind}` 를 조합한다 — 마찬가지로 닫힌
+  // 합타입이라 각 3개(page/slide/chapter)로 완결되고, citation.test.ts 가 세 값 전부를 호출한다.
+  const DYNAMIC_PREFIXES = ['mainprog.', 'mainerr.', 'citation.unit.', 'unit.count.', 'unit.countShort.', 'unit.spoken.'];
   const isDynamic = (k: string) => DYNAMIC_PREFIXES.some((p) => k.startsWith(p));
 
   function walk(dir: string, out: string[] = []): string[] {
@@ -333,7 +336,9 @@ describe('포맷 무관 경로의 "PDF" 문구 가드 (QA34)', () => {
   // pdfjs 로만 도는 모듈 — 이 안의 PDF 문구는 정확하다.
   const PDF_ONLY_MODULES = ['renderer/lib/pdf-parser.ts', 'renderer/components/PdfViewer.tsx'];
   const PDF_FEATURE_KEYS = new Set([
-    'uploader.notPdf', // "PDF · Word 파일만 지원" — 포맷 나열 자체
+    // Task3(P4 선행): uploader.notPdf 는 이제 {list} 로 포맷을 도출해 값 자체에 "PDF" 리터럴이
+    // 남지 않는다(SUPPORTED_LABEL 이 채운다) — 그래서 이 스캔의 pdfKeys 후보에도 더는 안 걸린다.
+    // 항목은 그 경위를 남기려 유지한다(제거해도 가드 결과는 같다).
     'uploader.ocrProgress', // 스캔 PDF OCR 은 PDF 파이프라인 전용 기능
     'settings.ocrTitle', 'settings.ocrLabel', 'settings.ocrDesc',
     'viewer.exportPdf', 'viewer.exportPdfAria', 'viewer.pdfFail', // 출력 포맷이 PDF

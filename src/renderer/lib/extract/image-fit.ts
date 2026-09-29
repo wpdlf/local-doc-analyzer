@@ -20,9 +20,11 @@ export const MAX_IMAGE_PIXELS = 4_000_000;
 export const JPEG_QUALITY = 0.8;
 
 export type FittedMime = 'image/png' | 'image/jpeg';
+/** 디코드는 되지만 Vision 으로 그대로 보낼 수 없는 원본 형식 — 항상 재인코딩한다. */
+export type SourceMime = FittedMime | 'image/bmp';
 
 export interface ImageProbe {
-  mimeType: FittedMime;
+  mimeType: SourceMime;
   width: number;
   height: number;
 }
@@ -46,7 +48,7 @@ export interface ImageCodec {
    */
   reencode(
     bytes: Uint8Array,
-    mimeType: FittedMime,
+    mimeType: SourceMime,
     target: { width: number; height: number } | null,
   ): Promise<{ bytes: Uint8Array; mimeType: FittedMime } | null>;
 }
@@ -98,6 +100,14 @@ export function probeImage(b: Uint8Array): ImageProbe | null {
       o += 2 + len;
     }
   }
+  // BMP: 'BM' + BITMAPFILEHEADER(14) 뒤 BITMAPINFOHEADER 의 너비·높이(int32 LE). 높이가 음수면
+  // top-down 저장이라는 뜻일 뿐 크기는 절댓값이다. OS/2 식 12바이트 헤더(BITMAPCOREHEADER)는
+  // 실물에 없고 드물어 받지 않는다(헤더 크기 40 이상만).
+  if (b.length >= 26 && b[0] === 0x42 && b[1] === 0x4d) {
+    const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    if (v.getUint32(14, true) < 40) return null;
+    return { mimeType: 'image/bmp', width: Math.abs(v.getInt32(18, true)), height: Math.abs(v.getInt32(22, true)) };
+  }
   return null;
 }
 
@@ -126,9 +136,11 @@ export function createImageFitter(codec: ImageCodec): ImageFitter {
     if (width < MIN_IMAGE_SIZE || height < MIN_IMAGE_SIZE) return null;
     // 디코드하면 픽셀×4 바이트가 한 번에 잡힌다(OOM 방지). 헤더 값이라 디코드 전에 거른다.
     if (width * height > MAX_IMAGE_PIXELS) return null;
+    // BMP 는 줄일 필요가 없어도 제 크기로 재인코딩한다 — Vision API(Claude·OpenAI)가 받지 않는다.
+    const target = downscaleTarget(width, height) ?? (mimeType === 'image/bmp' ? { width, height } : null);
     let out: Awaited<ReturnType<ImageCodec['reencode']>>;
     try {
-      out = await codec.reencode(bytes, mimeType, downscaleTarget(width, height));
+      out = await codec.reencode(bytes, mimeType, target);
     } catch {
       out = null;
     }
@@ -150,7 +162,7 @@ export const canvasCodec: ImageCodec = {
     }
     let canvas: OffscreenCanvas | null = null;
     try {
-      if (!target) return { bytes, mimeType };
+      if (!target) return mimeType === 'image/bmp' ? null : { bytes, mimeType };
       if (typeof OffscreenCanvas === 'undefined') return null;
       canvas = new OffscreenCanvas(target.width, target.height);
       const ctx = canvas.getContext('2d');

@@ -138,6 +138,37 @@ describe('createImageFitter', () => {
   });
 });
 
+/** 최소 BMP 헤더: 'BM' + 파일 헤더 14바이트 + BITMAPINFOHEADER 의 너비(18)·높이(22) int32 LE. */
+function bmpHeader(width: number, height: number): Uint8Array {
+  const b = new Uint8Array(54);
+  b[0] = 0x42; b[1] = 0x4d;
+  const v = new DataView(b.buffer);
+  v.setUint32(14, 40, true);
+  v.setInt32(18, width, true);
+  v.setInt32(22, height, true);
+  return b;
+}
+
+describe('BMP (P4 — HWPX 본문 그림의 다수)', () => {
+  it('헤더에서 크기를 읽는다 — 높이가 음수(top-down)여도 절댓값', () => {
+    expect(probeImage(bmpHeader(300, -200))).toEqual({ mimeType: 'image/bmp', width: 300, height: 200 });
+  });
+
+  it('작아서 줄일 필요가 없어도 **항상** PNG/JPEG 로 재인코딩한다 — Vision API 가 BMP 를 받지 않는다', async () => {
+    const calls: unknown[] = [];
+    const codec = { async reencode(_b: Uint8Array, mime: string, target: unknown) { calls.push([mime, target]); return { bytes: new Uint8Array([1]), mimeType: 'image/jpeg' as const }; } };
+    const out = await createImageFitter(codec)(bmpHeader(300, 200));
+    expect(calls).toEqual([['image/bmp', { width: 300, height: 200 }]]);
+    expect(out?.mimeType).toBe('image/jpeg');
+  });
+
+  it('50px 미만 BMP 는 디코드 없이 건너뛴다', async () => {
+    const codec = { reencode: vi.fn() };
+    expect(await createImageFitter(codec)(bmpHeader(40, 40))).toBeNull();
+    expect(codec.reencode).not.toHaveBeenCalled();
+  });
+});
+
 describe('PDF 경로와 크기 규칙 drift', () => {
   it('pdf-parser.ts 의 같은 이름 상수와 값이 같다', () => {
     // pdf-parser.ts 는 이 상수들을 export 하지 않아 import 로 묶을 수 없다. 원문(주석 제거)에서

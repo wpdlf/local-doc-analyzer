@@ -205,6 +205,8 @@ describe('document-open.ts — zip 해제 순서·취소 (QA34)', () => {
     expect(filter!('ppt/media/image2.jpeg')).toBe(false);
     expect(filter!('word/document.xml')).toBe(true);
     expect(filter!('word/_rels/document.xml.rels')).toBe(true);
+    expect(filter!('BinData/image1.bmp')).toBe(false);
+    expect(filter!('Contents/section0.xml')).toBe(true);
 
     setImages(true);
     await openDocumentData(makeZipBytes(), 'b.docx', '/x/b.docx');

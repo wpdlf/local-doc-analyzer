@@ -24,8 +24,18 @@ describe('진입 게이트가 받아들이는 것 / 막는 것 (순수 함수)',
     expect(isSupportedExtension('C:/x/보고서.docx')).toBe(true);
   });
 
-  it('아직 지원하지 않는 포맷은 막는다 (P4 에서 열린다)', () => {
-    for (const p of ['a.pptx', 'a.hwpx', 'a.epub', 'a.hwp']) {
+  // P4a: PPTX 가 열린다(이 태스크의 등록). 나머지(HWPX·EPUB)는 아직 P4 후속.
+  it('PPTX 가 통과한다', () => {
+    expect(isSupportedExtension('C:/x/발표.pptx')).toBe(true);
+  });
+
+  // Task7: HWPX 가 열린다(hwpxExtractor 등록). 나머지(EPUB)는 아직 P4 후속.
+  it('HWPX 가 통과한다', () => {
+    expect(isSupportedExtension('C:/x/보고서.hwpx')).toBe(true);
+  });
+
+  it('아직 지원하지 않는 포맷은 막는다 (P4 후속에서 열린다)', () => {
+    for (const p of ['a.epub', 'a.hwp']) {
       expect(isSupportedExtension(p), p).toBe(false);
     }
   });

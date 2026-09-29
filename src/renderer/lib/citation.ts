@@ -294,18 +294,32 @@ export function formatPromptPageLabel(page?: number): string {
  *
  * source-scan 가드(`source-scan.test.ts`)가 여기를 거치지 않은 'p.' **문자열 리터럴/템플릿
  * 조립**을 잡는다 — 열거하면 사각이 생기므로(QA33 I3) 위치를 나열하지 않고 소스 전체에서
- * 도출한다. **주의**: 그 가드는 소스 텍스트 패턴만 본다. `t('search.page')`(GlobalSearch
- * 검색 스니펫)처럼 **i18n 키 참조**를 거쳐 라벨을 내는 자리는 코드 상 'p.' 문자열이 전혀
- * 없으므로 이 가드로는 원천적으로 못 잡는다 — 실제로 `search.page` 키는 `unitKind` 와
- * 무관하게 항상 `'p.{page}'` 를 반환해 이 함수를 우회하고 있다(알려진 상태, Task12 코디네이터
- * 판단으로 보류 — 고치려면 검색 결과에 `unitKind` 를 실어야 하는데 main 프로세스 검색
- * 인덱스/IPC 스키마까지 건드리는 별도 작업이다). 가드가 지키는 범위를 부풀려 적으면, 이번
- * 태스크의 계획 결함(함수 이름이 "표시용"처럼 들려서 프롬프트 계약을 깬 시도로 이어진 것)과
- * 같은 실패 형태 — 보호를 약속하는 주석이 실제로는 보호하지 않는 것 — 를 반복하게 된다.
+ * 도출한다. **주의**: 그 가드는 소스 텍스트 패턴만 본다 — i18n 키 참조로 라벨을 내는 자리는
+ * 코드에 'p.' 가 없으므로 못 잡는다. 그런 우회였던 `search.page`(GlobalSearch)·`recent.pages`
+ * 는 P4 에서 지우고 이 함수·formatUnitCount 로 옮겼다(검색 결과가 unitKind 를 싣게 됐다).
  */
 export function formatUnitLabel(page?: number, unitKind: UnitKind = 'page'): string {
   if (page === undefined || !Number.isFinite(page)) return '';
   return t(`citation.unit.${unitKind}` as TranslationKey, { n: String(page) });
+}
+
+/**
+ * 단위 **개수** 의 표시용 단일 통로(P4) — "12페이지" / "슬라이드 12장" / "(2p)".
+ *
+ * 최근 문서 목록·헤더·탭이 각자 `${pageCount}p`·`recent.pages` 를 조립해 unitKind 를 몰랐다.
+ * 여기를 거치지 않은 개수 조립은 source-scan 가드가 잡는다.
+ */
+export function formatUnitCount(count: number, unitKind: UnitKind = 'page', style: 'long' | 'short' = 'long'): string {
+  const key = style === 'short' ? `unit.countShort.${unitKind}` : `unit.count.${unitKind}`;
+  return t(key as TranslationKey, { n: String(count) });
+}
+
+/**
+ * 단위의 **말하기용** 단일 통로(P4) — 스크린리더·툴팁 문장에 끼워 넣는 "2 페이지"/"슬라이드 2"/"2장".
+ * 버튼에 보이는 짧은 라벨(`formatUnitLabel`, "p.2")과 달리 문장 안에서 자연스럽게 읽히는 형태다.
+ */
+export function formatUnitSpoken(page: number, unitKind: UnitKind = 'page'): string {
+  return t(`unit.spoken.${unitKind}` as TranslationKey, { n: String(page) });
 }
 
 /**

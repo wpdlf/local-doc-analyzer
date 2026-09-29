@@ -203,6 +203,30 @@ M400 S/W (기능 개발) 상품 페이지 데이터 CRUD 기능 개발 ... 12/04
 잘려 있다**(마지막 글자가 깨진 채 끝난다). 요약 근거로 쓰면 조용한 절단이 된다 — `num_ctx` 무음
 절단(Ollama `num_ctx` 미전송으로 프롬프트 앞부분이 조용히 잘리던 건, v1.4.0)과 같은 클래스다.
 
+### 3.5 P4 구현 중 실물에서 발견한 것 (HWPX·PPTX)
+
+**OPF href 는 표준 경로가 우선한다.** HWPX 는 EPUB 와 같은 OCF/OPF 컨테이너를 쓰지만(§3.1),
+`content.hpf`(OPF) 의 `href` 는 HWPX 관행상 **패키지 루트 기준**으로 적힌다(OPF 가
+`Contents/content.hpf` 에 있어도 href 는 OPF 상대인 `section0.xml` 이 아니라 루트 상대인
+`Contents/section0.xml`). 처음엔 "루트에 그 경로가 있으면 루트
+기준, 없으면 OPF 상대"로 짰으나, 표준(OPF, EPUB 가 따르는 규약)과 HWPX 관행이 충돌하는 자리를
+실물·테스트로 대조한 결과 **반대가 맞다** — OPF 상대 경로가 실제로 존재하면(`zip.has`) 그것을
+우선하고, 없을 때만 href 를 루트 기준 그대로 쓴다. 표준 경로가 존재하는 모호한 경우엔 표준이
+이기고, HWPX 처럼 표준 파트가 없는 경우엔 관행이 그대로 살아난다(`ocf.ts` `resolveHref`).
+
+**HWPX `shapeComment` 는 파일명이 새는 자동 문구다.** 그림·도형 컨트롤마다 한글이 접근성용으로
+"그림입니다. 원본 그림의 이름: `<원본 파일명>`" · "사각형입니다." 같은 자동 캡션(`hp:shapeComment`)
+을 심어 둔다. 이걸 걸러내지 않으면 사용자 PC 의 원본 파일명이 요약에 그대로 노출된다 — `ctrl` ·
+`secPr` · `linesegarray` · `shapeComment` · `hiddenComment` 를 서브트리 단위로 건너뛰는 스킵 집합에
+넣어 제외한다(`hwpx.ts`). 실물 스모크(로컬, Task11) 2개 파일 전부에서 이 문구가 추출 결과에
+나타나지 않음을 확인했다.
+
+**PPTX 표의 "Google 자기 닫힘 병합 칸".** PowerPoint 로 저장한 표는 세로 병합으로 가려진 칸도
+`<a:tc>…</a:tc>` 를 온전히 쓰지만, **Google Slides 로 내보낸 파일은 병합돼 가려진 칸을
+`<a:tc vMerge="1"/>` 처럼 자기 닫힘으로 쓰고 `txBody` 가 없다.** 이걸 "내용 있는 칸"으로 오인하면
+병합 칸이 원래 칸과 별개의 빈 칸으로 잘못 렌더된다. HWPX·DOCX 와 같은 규칙(세로 병합은 위 칸
+텍스트를 복사, 가로 병합은 빈 칸)으로 처리한다(`pptx-graphics.ts`).
+
 ---
 
 ## §4. 진입 경로와 게이트 단일화
@@ -521,8 +545,8 @@ P2 가 가장 위험하다 — 기존 PDF 경로를 건드리는 유일한 구�
 | # | 항목 | 처리 |
 |---|---|---|
 | A1 | 제공받은 HWPX 샘플에 개인정보성 내용 — 공개 저장소에 커밋 불가 | 커밋용 최소 픽스처를 새로 작성 (§8.1) |
-| A2 | HWPX 이미지(`BinData/`) 구조 미확인 — 샘플에 그림이 없었다 | 그림이 든 HWPX 로 확인 후 `hwpx.ts` 이미지 경로 확정 |
-| A3 | DOCX · PPTX · EPUB 세부 구조는 문서 지식 기반, 실물 미확인 | 구현 1단계에서 각 포맷 실물 1개씩 확인 |
+| A2 | HWPX 이미지(`BinData/`) 구조 미확인 — 샘플에 그림이 없었다 | ✅ 처리 완료(P4, Task11) — 그림이 든 실물 HWPX 로 로컬 스모크 확인, BMP 포함 정상 추출 |
+| A3 | DOCX · PPTX · EPUB 세부 구조는 문서 지식 기반, 실물 미확인 | DOCX ✅ 처리 완료(P1 · QA34 실물 검증). PPTX ✅ 처리 완료(P4, Task11 — 실물 25개). EPUB 는 미해결로 남는다(P4b 선행조건) |
 | A4 | `fflate` 버전 핀 · 번들 증가량 | 설치 후 실측, `audit-shipped` 분류 |
 | A5 | 텍스트 뷰어 렌더 성능 | 500 단위 문서로 실측 (§5.3) |
 
@@ -536,12 +560,14 @@ P2 가 가장 위험하다 — 기존 PDF 경로를 건드리는 유일한 구�
 | HWPX 쪽나눠 = `hp:p/@pageBreak` | ✅ 실물 확인 |
 | HWPX `hp:tbl/@pageBreak` 의미 충돌 | ✅ 실물 확인 |
 | HWPX 표 중첩 (`hp:tbl>hp:tr>hp:tc>hp:subList>hp:p`) | ✅ 실물 확인 |
-| HWPX 이미지(`BinData/`) | ❌ 미확인 — 샘플에 그림 없음 (A2) |
+| HWPX 이미지(`BinData/`) | ✅ 실물 확인 (P4, Task11 로컬 스모크 — BMP 포함, 셀 안 인라인 그림 정상 추출) |
 | 게이트 5곳 위치 | ✅ 소스 확인 |
 | userData = `%APPDATA%\summary-lecture-material` (세션 7 · settings 349B · collections 빈 값) | ✅ 디스크 확인 |
 | 이 기계에 설치본 없음 (언인스톨 레지스트리 무항목) | ✅ 확인 — §7.0 의 근거 |
 | 릴리즈 워크플로 글로브 (`*Setup*`) | ✅ 소스 확인 |
 | 세션 스키마 불일치 처리 (read-old/write-new) | ✅ 소스 확인 |
 | `remark-gfm` 번들 포함 | ✅ `shippedDevDependencies` 확인 |
-| DOCX / PPTX / EPUB 세부 구조 | ❌ 문서 지식 기반, 실물 미확인 (A3) |
+| DOCX 세부 구조 | ✅ 실물 확인 (P1 · QA34 — 실물 DOCX 로 추출 검증) |
+| PPTX 세부 구조 | ✅ 실물 확인 (P4, Task11 — Downloads 실 파일 25개, 단위 수 대 `sldIdLst` 독립 대조 전부 일치, `‹#›` 누출 0) |
+| EPUB 세부 구조 | ❌ 미확인 (A3, P4b 선행조건 — 실물 샘플 확보) |
 | `fflate` API·크기 | ❌ 미확인 (A4) |

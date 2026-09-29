@@ -140,6 +140,14 @@ describe('RecentDocuments', () => {
     render(<StrictMode><RecentDocuments /></StrictMode>);
     await waitFor(() => expect(screen.getByText(/강의1\.pdf/)).toBeTruthy());
   });
+
+  it('슬라이드 문서는 "슬라이드 N장" 으로 센다 (P4)', async () => {
+    M.list.mockResolvedValue([{ ...entry('h2', 'deck.pptx', 12), unitKind: 'slide' }]);
+    render(<RecentDocuments />);
+    await waitFor(() => expect(screen.getByText(/deck\.pptx/)).toBeTruthy());
+    expect(screen.getByText(/슬라이드 12장/)).toBeTruthy();
+    expect(screen.queryByText(/12페이지/)).toBeNull();
+  });
 });
 
 // QA26(C-High): 원본 파일이 없을 때의 세션 폴백.

@@ -8,6 +8,7 @@ import { GlobalSearch } from './components/GlobalSearch';
 import { CollectionsList } from './components/CollectionsList';
 import { TabBar } from './components/TabBar';
 import { closeTab } from './lib/tabs';
+import { formatUnitCount } from './lib/citation';
 import { SummaryViewer } from './components/SummaryViewer';
 import { SummaryTypeSelector } from './components/SummaryTypeSelector';
 import { StatusBar } from './components/StatusBar';
@@ -21,7 +22,7 @@ import { useSessionPersistence } from './lib/use-session';
 import { prefetchMarkdownRenderer } from './lib/safe-markdown';
 import { MAX_PDF_SIZE_BYTES } from '../shared/constants';
 // Task 9: 확장자·매직바이트 판별을 document-formats.ts 단일 출처로 모은다.
-import { isSupportedExtension, hasPdfMagic, hasZipMagic, hasCfbMagic } from '../shared/document-formats';
+import { isSupportedExtension, hasPdfMagic, hasZipMagic, hasCfbMagic, SUPPORTED_LABEL } from '../shared/document-formats';
 import { selectUpdateBanner, shouldResetDismiss, type UpdateBanner } from './lib/update-banner';
 import type { UpdateState } from '../shared/update-types';
 import logoImg from './assets/logo.png';
@@ -310,7 +311,7 @@ export default function App() {
       // 게이트이고, 여기서는 확장자만 본다.
       const isSupported = isSupportedExtension(file.name);
       if (!isSupported) {
-        useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: t('uploader.notPdf') });
+        useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: t('uploader.notPdf', { list: SUPPORTED_LABEL }) });
         return;
       }
       // 파일 전체를 arrayBuffer() 로 materialize 하기 전에 크기 + 매직바이트 선검증.
@@ -340,7 +341,7 @@ export default function App() {
         // Task9/10: 매직바이트 판정도 document-formats.ts 단일 출처(hasPdfMagic/hasZipMagic/hasCfbMagic)를 쓴다.
         // ⚠️ App.drop.test.tsx 가 이 조건의 세 갈래를 실제 DOM 드롭으로 걷는다(E2E 는 IPC 주입이라 못 본다).
         if (!hasPdfMagic(header) && !hasZipMagic(header) && !hasCfbMagic(header)) {
-          useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: t('uploader.notPdf') });
+          useAppStore.getState().setError({ code: 'PDF_PARSE_FAIL', message: t('uploader.notPdf', { list: SUPPORTED_LABEL }) });
           return;
         }
       } catch {
@@ -742,7 +743,7 @@ export default function App() {
           <div className="flex flex-col items-center gap-6">
             <div className="w-full flex items-center justify-between px-4 py-3 bg-gray-100 dark:bg-gray-800 rounded-lg">
               <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                📎 {document.fileName} ({document.pageCount}p)
+                📎 {document.fileName} ({formatUnitCount(document.pageCount, document.unitKind ?? 'page', 'short')})
                 {document.isOcr && (
                   <span className="ml-2 px-1.5 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded">
                     OCR

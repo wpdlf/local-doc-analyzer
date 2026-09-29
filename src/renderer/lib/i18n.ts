@@ -34,12 +34,17 @@ export const _translations = {
   'common.blockedLink': { ko: '차단된 링크 (지원하지 않는 URL 형식)', en: 'Blocked link (unsupported URL scheme)' },
 
   // ─── Page citation / PDF viewer (page-citation-viewer) ───
-  'citation.aria': { ko: '{page} 페이지 원문 열기', en: 'Open source page {page}' },
-  'citation.tooltip': { ko: '클릭하여 {page} 페이지 원문 확인', en: 'Click to view source on page {page}' },
+  // P4: 스크린리더·툴팁용 단위 표현("2 페이지" / "슬라이드 2" / "2장"). 버튼에 보이는 짧은 라벨
+  // (citation.unit.*, "p.2")과 달리 문장 안에서 읽힌다.
+  'unit.spoken.page': { ko: '{n} 페이지', en: 'page {n}' },
+  'unit.spoken.slide': { ko: '슬라이드 {n}', en: 'slide {n}' },
+  'unit.spoken.chapter': { ko: '{n}장', en: 'chapter {n}' },
+  'citation.aria': { ko: '{unit} 원문 열기', en: 'Open source {unit}' },
+  'citation.tooltip': { ko: '클릭하여 {unit} 원문 확인', en: 'Click to view source on {unit}' },
   'citation.invalid': { ko: '유효하지 않은 페이지 ({page})', en: 'Invalid page ({page})' },
   // 컬렉션 Q&A 교차 문서 인용 (multi-doc Phase 2)
-  'citation.crossTooltip': { ko: '클릭하여 {name} {page}페이지로 이동', en: 'Click to open {name} on page {page}' },
-  'citation.crossAria': { ko: '{name} {page}페이지 원문 열기', en: 'Open {name} page {page}' },
+  'citation.crossTooltip': { ko: '클릭하여 {name} {unit} 열기', en: 'Click to open {name} on {unit}' },
+  'citation.crossAria': { ko: '{name} {unit} 원문 열기', en: 'Open {name} {unit}' },
   'citation.docClosed': { ko: '{name} 문서가 열려 있지 않아 이동할 수 없습니다', en: 'Cannot navigate — {name} is not open' },
   // QA21(D-MED): 같은 이름의 문서가 둘 이상 열려 있으면 어느 쪽인지 판정할 수 없다 — 이전에는
   // 앞의 것으로 조용히 점프했다(활성 문서와 이름이 겹치면 활성 문서로). 표면화가 정답.
@@ -49,6 +54,14 @@ export const _translations = {
   'citation.unit.page': { ko: 'p.{n}', en: 'p.{n}' },
   'citation.unit.slide': { ko: '슬라이드 {n}', en: 'Slide {n}' },
   'citation.unit.chapter': { ko: '{n}장', en: 'Ch. {n}' },
+  // P4: 단위 **개수** 표기의 단일 출처(formatUnitCount). long = 최근 문서 목록, short = 헤더·탭 괄호.
+  // page 의 short 는 종전 "(2p)" 표기를 그대로 둔다(E2E·사용자 익숙함).
+  'unit.count.page': { ko: '{n}페이지', en: '{n} pages' },
+  'unit.count.slide': { ko: '슬라이드 {n}장', en: '{n} slides' },
+  'unit.count.chapter': { ko: '{n}개 장', en: '{n} chapters' },
+  'unit.countShort.page': { ko: '{n}p', en: '{n}p' },
+  'unit.countShort.slide': { ko: '{n}슬라이드', en: '{n} slides' },
+  'unit.countShort.chapter': { ko: '{n}장', en: '{n} ch.' },
   'pdfviewer.title': { ko: '원문 보기', en: 'Source Viewer' },
   'pdfviewer.close': { ko: '뷰어 닫기', en: 'Close viewer' },
   'pdfviewer.loading': { ko: 'PDF 로드 중...', en: 'Loading PDF...' },
@@ -139,7 +152,7 @@ export const _translations = {
   'uploader.fileTooLarge': { ko: '파일이 너무 큽니다 ({size}MB). 최대 100MB까지 지원합니다.', en: 'File too large ({size}MB). Maximum 100MB supported.' },
   'uploader.cannotRead': { ko: '문서를 읽을 수 없습니다.', en: 'Cannot read document.' },
   'uploader.multipleFiles': { ko: '한 번에 하나의 파일만 처리할 수 있습니다. 첫 번째 파일({name})만 열었습니다.', en: 'Only one file can be processed at a time. Opening the first file ({name}) only.' },
-  'uploader.notPdf': { ko: 'PDF · Word 파일만 지원됩니다.', en: 'Only PDF and Word files are supported.' },
+  'uploader.notPdf': { ko: '{list} 파일만 지원됩니다.', en: 'Only these file types are supported: {list}.' },
   // ─── openDocumentData 진입 가드(모든 파일 열기 경로 공통) ───
   'pdf.busyGenerating': { ko: '요약 진행 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while summarizing.' },
   'pdf.busyQa': { ko: 'Q&A 답변 생성 중에는 새 파일을 열 수 없습니다.', en: 'Cannot open a new file while answering Q&A.' },
@@ -520,7 +533,7 @@ export const _translations = {
   'mainprog.success': { ko: '다운로드 완료!', en: 'Download complete!' },
   'mainprog.preparing': { ko: '모델 다운로드 준비 중...', en: 'Preparing model download...' },
   // ─── main 파일 열기(file:open-pdf · file:open-path) 거부 사유 — QA34: 종전엔 한국어 원문이 영어 UI 에 그대로 ───
-  'mainerr.fileUnsupported': { ko: 'PDF · Word 파일만 열 수 있습니다.', en: 'Only PDF and Word files can be opened.' },
+  'mainerr.fileUnsupported': { ko: '{list} 파일만 열 수 있습니다.', en: 'Only these file types can be opened: {list}.' },
   'mainerr.fileSymlink': { ko: '심볼릭 링크는 열 수 없습니다.', en: 'Symbolic links cannot be opened.' },
   'mainerr.fileNotRegular': { ko: '일반 파일이 아닙니다.', en: 'This is not a regular file.' },
   'mainerr.fileTooLarge': { ko: '파일이 너무 큽니다 (최대 100MB).', en: 'The file is too large (max 100MB).' },
@@ -573,7 +586,6 @@ export const _translations = {
   'recent.empty': { ko: '저장된 세션이 없습니다. 문서를 분석하면 여기에 나타납니다.', en: 'No saved sessions yet. Analyzed documents will appear here.' },
   'recent.open': { ko: '열기', en: 'Open' },
   'recent.delete': { ko: '세션 삭제', en: 'Delete session' },
-  'recent.pages': { ko: '{count}페이지', en: '{count} pages' },
   'recent.indexed': { ko: '인덱스 {count}청크', en: '{count} chunks indexed' },
   // QA24(C-M2): "불러오지 못함" 과 "정말 없음" 을 구분 — collection.loadFailed 와 같은 계약.
   'recent.loadFailed': { ko: '최근 문서 목록을 불러오지 못했습니다. 세션은 그대로 있습니다.', en: 'Could not load the recent documents list. Your sessions are still there.' },
@@ -588,7 +600,6 @@ export const _translations = {
   'search.noResults': { ko: '"{query}"에 대한 결과가 없습니다.', en: 'No results for "{query}".' },
   'search.resultsCount': { ko: '검색 결과 {count}건', en: '{count} results found' },
   'search.inSummary': { ko: '요약 포함', en: 'in summary' },
-  'search.page': { ko: 'p.{page}', en: 'p.{page}' },
   'search.summaryLabel': { ko: '요약', en: 'Summary' },
   'search.modeLabel': { ko: '검색 모드', en: 'Search mode' },
   'search.modeKeyword': { ko: '키워드', en: 'Keyword' },

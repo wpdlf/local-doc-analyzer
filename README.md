@@ -4,13 +4,13 @@
 
 **A local AI-powered document summarization tool that runs entirely on your PC.**
 
-Most AI summarization services require uploading your documents to an external server — this app runs **the AI inside your own computer**. Currently supports **PDF and Word (.docx)**, with HWPX, PPTX, and EPUB planned.
+Most AI summarization services require uploading your documents to an external server — this app runs **the AI inside your own computer**. Currently supports **PDF, Word, PowerPoint, and HWPX (한글)**, with EPUB planned.
 
 - **Fully offline operation** — the Ollama local AI engine runs directly on your PC, so your documents never leave your machine
 - **Unified text + image analysis** — analyzes not only text but also embedded charts, diagrams, and tables with Vision AI
 - **Scanned PDF OCR** — image-based scanned PDFs are recognized page by page with Vision AI
 - **RAG-based Q&A chat** — embedding-based semantic search finds the most relevant parts of your document, and answers are automatically verified against the source
-- **Page citations + document viewer** — summaries and answers carry `[p.12]` source citations; click one to open the original location instantly (a rendered page for PDFs, a text panel for Word documents). PDFs with a built-in table of contents (bookmarks) also get an outline sidebar for one-click navigation
+- **Page citations + document viewer** — summaries and answers carry `[p.12]` source citations; click one to open the original location instantly (a rendered page for PDFs, a text panel for Word/PowerPoint/HWPX documents). PDFs with a built-in table of contents (bookmarks) also get an outline sidebar for one-click navigation
 - **Summary mind-map** — flip any summary into an interactive mind-map of its heading structure; collapse/expand branches and click a node's `[p.N]` badge to jump to that page in the source viewer
 - **Formulas rendered as formulas** — mathematical notation the AI carries over from the source is typeset instead of left as raw LaTeX, in summaries, Q&A answers, and exported PDFs
 - **Multi-document tabs + cross-document Q&A** — open several documents as tabs and ask a single question across them; answers cite the source document and jump to the right page
@@ -77,7 +77,7 @@ gh attestation verify ./Local-Doc-Analyzer-Setup-x.x.x.exe --repo wpdlf/local-do
 ## How to Use
 
 ### 1. Upload a Document
-- **Drag & drop** a PDF or Word (.docx) file onto the app window, click **Select File**, or press **Ctrl+O**
+- **Drag & drop** a PDF, Word (.docx), PowerPoint (.pptx), or HWPX (한글, .hwpx) file onto the app window, click **Select File**, or press **Ctrl+O**
 - Previously analyzed documents appear in the **Recent Documents** list at the bottom of the upload screen; reopening the same document **automatically restores** its summary, Q&A, and search index
 - **Search across saved documents** — the search bar on the upload screen finds a keyword across every saved session (page text, summaries, filenames); results show matching pages with highlighted snippets — click one to open
 - **Multiple documents as tabs** — opening another document adds a tab at the top; click tabs to move between documents and continue each one's summary and Q&A (auto-saved and restored on switch). Use the `＋` button to add a document
@@ -111,7 +111,7 @@ gh attestation verify ./Local-Doc-Analyzer-Setup-x.x.x.exe --repo wpdlf/local-do
 
 ### 5. Page Citations + Document Viewer
 - Every key fact in summaries and Q&A answers gets an automatic **`[p.12]`-style page citation**
-- **Click** a citation to open the **document viewer panel** on the right at that exact location — a rendered page for PDFs, or a text panel scrolled to the matching section for Word documents — verify potential AI hallucinations with one click
+- **Click** a citation to open the **document viewer panel** on the right at that exact location — a rendered page for PDFs, or a text panel scrolled to the matching section for Word/PowerPoint/HWPX documents — verify potential AI hallucinations with one click
 - **Outline navigation (PDF only)** — when a PDF carries a built-in table of contents (bookmarks), a ☰ button in the viewer opens an outline sidebar; click any heading to jump to its page (re-clicking the current section re-scrolls to it)
 - **Zoom** — `−` / `+` buttons in the viewer header (25% steps), `Ctrl`+mouse wheel (10% steps), or `Ctrl`+`=` / `Ctrl`+`-` / `Ctrl`+`0` while the viewer is open; 50–300%, click the percentage (or `Ctrl`+`0`) to return to fit-to-width (on very large pages such as engineering drawings the ceiling drops below 300% to protect memory, and the percentage shown is the scale actually rendered). The page you were reading stays in place when the scale changes, and the level is remembered across restarts — useful for small-print papers and scanned documents
 - Drag the center divider (or use the keyboard: Tab focus then `←`/`→`, `Home`/`End`) to adjust the split between 20–80%; the ratio is saved across restarts
@@ -146,7 +146,7 @@ To use an external AI:
 
 ## Document Image Analysis
 
-Charts, diagrams, tables, and photos embedded in PDF and Word documents are analyzed automatically by Vision AI and incorporated into the summary.
+Charts, diagrams, tables, and photos embedded in PDF, Word, PowerPoint, and HWPX documents are analyzed automatically by Vision AI and incorporated into the summary.
 
 - Images are extracted from the document and semantically analyzed by a Vision model
 - Analysis results are merged into the surrounding text, improving summary quality
@@ -188,6 +188,7 @@ For image-based/scanned PDFs where text extraction fails, Vision AI recognizes t
 - Large document support — long documents are split, processed in parallel batches, and merged into a unified summary (up to 500 pages)
 - Automatic answer verification — Q&A answers are checked sentence-by-sentence against document embeddings and refined when grounding is weak
 - Word documents read the way the author wrote them — headings are recognized from the document's own styles (including the localized heading styles Korean Word uses), tables keep merged cells in their columns and are passed on as tables rather than run-on text, and the author's page and section breaks decide where a "page" ends
+- PowerPoint and HWPX (한글) keep their own structure too — PowerPoint is read slide-by-slide (each slide title becomes a heading, speaker notes are included), and HWPX tables preserve merged cells and column layout as real tables rather than run-on text. Known limits: text that lives only in a PowerPoint slide layout or master (not the slide itself) isn't read; EMF/WMF, GIF and TIFF images aren't analyzed by Vision (no downscaling failure — they're simply skipped); HWPX footnotes, endnotes, headers, and footers are excluded from the extracted text; HWPX equations (`hp:equation`) aren't extracted
 
 **Usability**
 - Real-time streaming — summaries appear as they are generated, with auto-scroll (pauses when you scroll manually)
@@ -515,7 +516,7 @@ The threat model and mitigations currently in place. For the detailed per-versio
 | API key protection | `safeStorage` (OS keychain) encryption, decrypted only in Main, never sent to the renderer, prototype-pollution hardened (`Object.create(null)` + provider whitelist) |
 | SSRF | Ollama URLs restricted to localhost (`isLocalhostHost`, incl. IPv6 `[::1]` normalization); handlers like `ai:check-available` use the canonical URL from the settings store instead of renderer-supplied URLs, closing the port-probe oracle |
 | IPC input validation | Type/range/length validation in every IPC handler; shared constants module (`src/shared/constants.ts`) prevents main/renderer drift |
-| File access | `.pdf` extension + `%PDF-` magic-byte preflight + `lstat` symlink rejection + 100MB cap. Session directories are keyed by content hash (`/^[a-f0-9]{64}$/` whitelist), blocking path traversal |
+| File access | Main accepts only the supported extensions (`.pdf`/`.docx`/`.pptx`/`.hwpx`), rejects UNC (network) paths on drop and recent-file reopen, rejects symlinks (`lstat`) and non-regular files, and caps size at 100MB. The renderer then sniffs the content instead of trusting the extension: `%PDF-` magic → PDF pipeline; a zip container (`PK\x03\x04`) → per-format sniff of the package parts (DOCX/PPTX/HWPX); password-protected OOXML (a CFB container) and encrypted HWPX are rejected. Zip-bomb caps: entry count and total inflated bytes (300MB), checked before inflating. Session directories are keyed by content hash (`/^[a-f0-9]{64}$/` whitelist), blocking path traversal |
 | Navigation/permissions | `will-navigate` + `will-redirect` blocked (only the packaged renderer URL allowed), permission requests/checks denied by default (`clipboard-sanitized-write` excepted), DevTools disabled in production, external URLs matched against an exact-hostname whitelist |
 | Markdown/XSS | URL scheme allowlist (`https/http/mailto/#`), `javascript:`/`data:` etc. blocked, control characters and bidi overrides blocked, external images blocked |
 | PDF export | Summary HTML rendered through the same Markdown sanitization (no raw HTML/scripts, scheme allowlist) and printed in a locked offscreen window (Node disabled, sandbox, JavaScript disabled) |

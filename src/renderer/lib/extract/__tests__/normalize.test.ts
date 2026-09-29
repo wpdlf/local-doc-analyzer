@@ -44,9 +44,60 @@ describe('toPdfDocument', () => {
       meta,
     );
     expect(doc.chapters.map((c) => [c.title, c.startPage, c.endPage])).toEqual([
-      ['1장', 1, 2],
-      ['2장', 2, 3],
+      ['1장', 1, 1],
+      ['2장', 2, 2],
     ]);
+    expect(doc.chapters.map((c) => c.text)).toEqual(['1장 본문', '2장 본문']);
+  });
+
+  // R14: endPage 는 소비자(labelChaptersWithPages · page-range · detectChapters)가 모두
+  // **inclusive** 로 읽는다(slice(startPage-1, endPage)). 예전 값(next+1)은 다음 챕터 첫 단위와
+  // 겹쳐, PPTX 에서는 슬라이드마다 두 챕터에 들어가 이중 요약됐다. 첫 제목 앞 단위(머리말)는
+  // detectChapters 처럼 첫 챕터에 접는다 — 버리면 요약에서 조용히 빠진다.
+  it('슬라이드마다 제목이 있으면 챕터가 겹치지 않는다 (R14)', () => {
+    const doc = toPdfDocument(
+      {
+        ...base,
+        units: ['a', 'b', 'c'],
+        headings: [0, 1, 2].map((u) => ({ level: 1, title: `t${u}`, unitIndex: u })),
+      },
+      meta,
+    );
+    expect(doc.chapters.map((c) => [c.startPage, c.endPage])).toEqual([[1, 1], [2, 2], [3, 3]]);
+    expect(doc.chapters.map((c) => c.text)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('첫 제목 앞 단위(머리말)는 첫 챕터에 접는다 (R14)', () => {
+    const doc = toPdfDocument(
+      {
+        ...base,
+        units: ['머리말', 'h1', 'h2', 'x'],
+        headings: [
+          { level: 1, title: 'h1', unitIndex: 1 },
+          { level: 1, title: 'h2', unitIndex: 2 },
+        ],
+      },
+      meta,
+    );
+    expect(doc.chapters.map((c) => [c.startPage, c.endPage])).toEqual([[1, 2], [3, 4]]);
+    expect(doc.chapters[0]!.text).toBe(['머리말', 'h1'].join('\n\n'));
+  });
+
+  it('같은 단위에 제목이 둘이어도 endPage < startPage 가 되지 않는다 (R14)', () => {
+    const doc = toPdfDocument(
+      {
+        ...base,
+        units: ['a', 'b', 'c'],
+        headings: [
+          { level: 1, title: 'h0', unitIndex: 0 },
+          { level: 1, title: 'h1a', unitIndex: 1 },
+          { level: 2, title: 'h1b', unitIndex: 1 },
+        ],
+      },
+      meta,
+    );
+    for (const c of doc.chapters) expect(c.endPage).toBeGreaterThanOrEqual(c.startPage);
+    expect(doc.chapters.map((c) => [c.startPage, c.endPage])).toEqual([[1, 1], [2, 2], [2, 3]]);
   });
 
   it('제목이 없으면 detectChapters 폴백을 쓴다', () => {
@@ -84,7 +135,16 @@ describe('toPdfDocument', () => {
       meta,
     );
     expect(doc.chapters.map((c) => [c.title, c.startPage, c.endPage])).toEqual([
-      ['다장', 2, 3],
+      ['다장', 1, 2],
+    ]);
+    // 첫 챕터는 머리말을 접어 1 에서 시작하므로, clamp 는 두 번째 챕터의 시작·첫 챕터의 끝에서 보인다.
+    const two = toPdfDocument(
+      { ...base, headings: [{ level: 1, title: '가장', unitIndex: 0 }, { level: 1, title: '다장', unitIndex: 5 }] },
+      meta,
+    );
+    expect(two.chapters.map((c) => [c.title, c.startPage, c.endPage])).toEqual([
+      ['가장', 1, 1],
+      ['다장', 2, 2],
     ]);
   });
 });

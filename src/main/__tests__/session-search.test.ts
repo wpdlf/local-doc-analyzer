@@ -100,6 +100,27 @@ describe('searchPersistedSession — 키워드 매칭', () => {
   });
 });
 
+describe('searchPersistedSession — unitKind (P4)', () => {
+  it('검색 결과가 manifest 의 unitKind 를 싣는다 — 슬라이드 문서의 스니펫 라벨이 p.N 이 되지 않게', () => {
+    const r = searchPersistedSession(
+      { docHash: 'h', fileName: 'deck.pptx', filePath: '/d/deck.pptx', pageCount: 3, unitKind: 'slide' },
+      { pageTexts: ['alpha', 'beta keyword', 'gamma'] },
+      'keyword',
+    );
+    expect(r?.unitKind).toBe('slide');
+    expect(r?.snippets[0]?.page).toBe(2);
+  });
+
+  it('unitKind 가 없는 옛 manifest 항목은 필드를 싣지 않는다(부재 = page)', () => {
+    const r = searchPersistedSession(
+      { docHash: 'h', fileName: 'a.pdf', filePath: '/d/a.pdf', pageCount: 1 },
+      { pageTexts: ['keyword'] },
+      'keyword',
+    );
+    expect(r && 'unitKind' in r).toBe(false);
+  });
+});
+
 describe('rankSearchResults', () => {
   const mk = (docHash: string, score: number): GlobalSearchResult => ({
     docHash, fileName: 'f', filePath: '/f', pageCount: 1, score, inSummary: false, snippets: [],
