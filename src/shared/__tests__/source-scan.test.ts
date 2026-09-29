@@ -300,6 +300,9 @@ function assertScanIsWide(files: readonly string[]): void {
   // fix I1: 파일-타입 패턴이 `.tsx` 를 빼도 위 3개 단언은 여전히 초록이었다(렌더러 컴포넌트가
   // 전부 .tsx 라 스캔에서 통째로 빠져도 안 걸림). `.tsx` 대표성을 직접 못박는다.
   expect(rel.some((f) => f.endsWith('.tsx')), '.tsx 가 스캔 대상에 없다 — 파일-타입 패턴이 좁혀졌다').toBe(true);
+  // QA35(S04): 위 단언은 renderer 의 **어느** 파일이든 하나만 있으면 통과한다 — components 디렉터리만
+  // 통째로 빠져도(표시 문자열 조립의 대부분이 거기다) 초록이었다.
+  expect(rel.some((f) => f.startsWith('src/renderer/components/')), 'src/renderer/components 가 스캔 대상에 없다 — 범위가 좁혀졌다').toBe(true);
 }
 
 describe('확장자 리터럴은 document-formats.ts 밖에 두지 않는다', () => {
@@ -527,10 +530,18 @@ describe('인용 표시 라벨은 formatUnitLabel 밖에서 조립하지 않는�
   // P4: 단위 개수를 formatUnitCount 밖에서 조립하면 unitKind 를 모른다("(12p)" 가 슬라이드 덱에).
   // i18n 키 참조(recent.pages·search.page)로 우회하던 자리도 함께 막는다 — 키를 지웠으니 다시
   // 쓰면 tsc 가 먼저 잡지만, 같은 모양의 새 키를 만드는 우회까지는 못 막으므로 문자열로도 본다.
-  const UNIT_COUNT_RE = /\}p\)|\{count\}페이지|['"`]recent\.pages['"`]|['"`]search\.page['"`]/;
+  //
+  // QA35(S02): 종전 `\}p\)` 는 **템플릿 괄호형**(`${n}p)`)만 잡았다 — JSX 텍스트 `{e.pageCount}p`
+  // (뒤가 `<`)·`{n}페이지` 는 전부 통과했다. 보간 닫는 중괄호 바로 뒤의 단위 접미를 본다:
+  // `}p` 는 식별자가 이어지지 않을 때만(`${w}px` 는 CSS 라 제외), 한국어 단위는 공백 허용.
+  // (S03: 종전 `{count}페이지` 대안은 이 일반형에 포함된다 — 양성 샘플로 따로 고정한다.)
+  const UNIT_COUNT_RE = /\}p(?![A-Za-z0-9_])|\}\s*(?:페이지|쪽|슬라이드)|['"`]recent\.pages['"`]|['"`]search\.page['"`]/;
+
+  // QA35(S04): 스캔 집합을 한 곳에서 만든다 — 아래 음성 대조가 **이 가드가 실제로 쓰는** 집합을 본다.
+  const unitCountScanSet = (): string[] => walkSourceFiles('src', /\.tsx?$/);
 
   it('단위 개수·검색 페이지 라벨은 formatUnitCount/formatUnitLabel 밖에서 조립하지 않는다', () => {
-    const scanned = walkSourceFiles('src', /\.tsx?$/);
+    const scanned = unitCountScanSet();
     assertScanIsWide(scanned);
     const offenders: string[] = [];
     for (const file of scanned) {
@@ -549,6 +560,36 @@ describe('인용 표시 라벨은 formatUnitLabel 밖에서 조립하지 않는�
     expect(UNIT_COUNT_RE.test("tr('recent.pages', { count })")).toBe(true);
     expect(UNIT_COUNT_RE.test("tr('search.page', { page })")).toBe(true);
     expect(UNIT_COUNT_RE.test("formatUnitCount(n, k, 'short')")).toBe(false);
+  });
+
+  // QA35(S02/S03): JSX 텍스트형과 한국어 단위 접미. 종전 정규식은 이 넷을 전부 놓쳤다.
+  it('개수 조립 가드가 JSX 텍스트형·한국어 접미도 잡는다 (양성 샘플)', () => {
+    expect(UNIT_COUNT_RE.test('<span>{e.pageCount}p</span>')).toBe(true);
+    expect(UNIT_COUNT_RE.test('<span>{n}페이지</span>')).toBe(true);
+    expect(UNIT_COUNT_RE.test('<span>{doc.pageCount} 쪽</span>')).toBe(true);
+    expect(UNIT_COUNT_RE.test('`총 {count}페이지`')).toBe(true); // S03: 종전 `{count}페이지` 대안
+    expect(UNIT_COUNT_RE.test('`${n}슬라이드`')).toBe(true);
+  });
+
+  it('개수 조립 가드는 CSS 치수·식별자를 오탐하지 않는다 (음성 샘플)', () => {
+    expect(UNIT_COUNT_RE.test('style={{ width: `${w}px` }}')).toBe(false);
+    expect(UNIT_COUNT_RE.test('const o = { a }; parse(x)')).toBe(false);
+    expect(UNIT_COUNT_RE.test('if (x) { return; } pageCount')).toBe(false);
+  });
+
+  // QA35(S04): assertScanIsWide 는 개수·디렉터리 대표성만 본다 — 스캔이 `renderer/components` 만
+  // 빠지도록 좁혀져도(예: 제외 패턴 추가) 초록이다. 그런데 개수 표기의 실제 조립 지점은 대부분
+  // 컴포넌트다(헤더·탭·최근 문서). 알려진 조립 지점이 스캔 목록에 실제로 있는지 못박는다.
+  it('개수 가드의 스캔 대상에 renderer/components 의 알려진 조립 지점이 들어 있다 (음성 대조)', () => {
+    const scanned = unitCountScanSet().map((f) => f.replace(/\\/g, '/'));
+    for (const known of [
+      'src/renderer/components/SummaryViewer.tsx',
+      'src/renderer/components/TabBar.tsx',
+      'src/renderer/components/RecentDocuments.tsx',
+      'src/renderer/App.tsx',
+    ]) {
+      expect(scanned, `${known} 이 스캔에서 빠졌다 — 그 파일의 개수 조립은 가드 밖이다`).toContain(known);
+    }
   });
 });
 
