@@ -516,7 +516,7 @@ PDF 파일
 | API 키 보호 | `safeStorage`(OS 키체인) 암호화, Main 프로세스에서만 복호화, Renderer에 키 미전달, prototype pollution 차단(`Object.create(null)` + provider 화이트리스트) |
 | SSRF | Ollama URL은 localhost만 허용(`isLocalhostHost` — IPv6 `[::1]` 정규화 포함), `ai:check-available` 등은 renderer 전달 URL 대신 설정 store의 정규 URL만 사용해 포트 프로브 오라클 차단 |
 | IPC 입력 검증 | 모든 IPC 핸들러에서 타입/범위/길이 검증, 공유 상수 모듈(`src/shared/constants.ts`)로 main/renderer drift 방지 |
-| 파일 접근 | `.pdf` 확장자 + `%PDF-` 매직바이트 선행 검사 + `lstat` 심볼릭링크 거부 + 100MB 캡. 세션 디렉토리는 콘텐츠 해시(`/^[a-f0-9]{64}$/` 화이트리스트)로 식별해 경로 traversal 차단 |
+| 파일 접근 | Main 은 지원 확장자(`.pdf`/`.docx`/`.pptx`/`.hwpx`)만 받고, 드롭·최근 파일 재열기에서 UNC(네트워크) 경로를 거부하고, 심볼릭링크(`lstat`)·일반 파일이 아닌 경로를 거부하며 100MB 캡을 건다. 이어서 렌더러가 확장자를 믿지 않고 내용으로 판별한다: `%PDF-` 매직 → PDF 파이프라인, zip 컨테이너(`PK\x03\x04`) → 패키지 파트로 포맷별 판별(DOCX/PPTX/HWPX), 암호가 걸린 OOXML(CFB 컨테이너)·암호화 HWPX 는 거부. zip 폭탄 상한: 엔트리 수 · 해제 총량(300MB)을 해제 전에 검사. 세션 디렉토리는 콘텐츠 해시(`/^[a-f0-9]{64}$/` 화이트리스트)로 식별해 경로 traversal 차단 |
 | 네비게이션/권한 | `will-navigate` + `will-redirect` 차단(packaged renderer URL만 허용), 권한 요청/조회 기본 거부(`clipboard-sanitized-write`만 예외), 프로덕션 DevTools 비활성화, 외부 URL은 정확 호스트명 화이트리스트 |
 | Markdown/XSS | URL scheme allowlist(`https/http/mailto/#`), `javascript:`/`data:` 등 차단, 제어문자·bidi override 차단, 외부 이미지 차단 |
 | PDF 내보내기 | 요약 HTML을 앱 내 마크다운과 동일하게 새니타이즈(raw HTML/스크립트 차단, 스킴 화이트리스트) 후, 잠금 오프스크린 창(Node 차단·sandbox·JS 비활성)에서 인쇄 |
