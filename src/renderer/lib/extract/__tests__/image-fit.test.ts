@@ -169,6 +169,45 @@ describe('BMP (P4 — HWPX 본문 그림의 다수)', () => {
   });
 });
 
+// QA35(B05): 그림 바이트는 신뢰할 수 없는 zip 에서 온다. 헤더가 잘린 조각에서 probeImage 가
+// RangeError 를 던지면 그림 하나 때문에 문서 열기 전체가 실패한다.
+describe('probeImage — 잘린 헤더에서도 throw 하지 않는다 (QA35 B05)', () => {
+  it('20바이트 "BM" 조각은 null', () => {
+    const b = new Uint8Array(20); b[0] = 0x42; b[1] = 0x4d; b[14] = 40;
+    expect(() => probeImage(b)).not.toThrow();
+    expect(probeImage(b)).toBeNull();
+  });
+
+  it('정상 헤더(PNG·JPEG·BMP)의 모든 접두 조각에서 throw 없이 null 또는 정상 값', () => {
+    for (const full of [pngHeader(300, 200), jpegHeader(640, 480), bmpHeader(300, 200)]) {
+      for (let n = 0; n < full.length; n++) {
+        const probe = probeImage(full.subarray(0, n));
+        if (probe) {
+          expect(Number.isFinite(probe.width) && Number.isFinite(probe.height)).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('JPEG SOF 가 잘려 크기를 읽을 수 없으면 null(NaN 크기를 내지 않는다)', () => {
+    const j = jpegHeader(640, 480);
+    const sof = j.length - 10; // 0xff 0xc0 위치
+    expect(probeImage(j.subarray(0, sof + 6))).toBeNull();
+  });
+
+  it('createImageFitter 는 probe 가 던져도 null 로 건너뛴다', async () => {
+    const codec = stubCodec();
+    const hostile = new Proxy(pngHeader(300, 200), {
+      get(target, key) {
+        if (key === '0') throw new Error('hostile read');
+        return Reflect.get(target, key);
+      },
+    }) as Uint8Array;
+    await expect(createImageFitter(codec)(hostile)).resolves.toBeNull();
+    expect(codec.reencode).not.toHaveBeenCalled();
+  });
+});
+
 describe('PDF 경로와 크기 규칙 drift', () => {
   it('pdf-parser.ts 의 같은 이름 상수와 값이 같다', () => {
     // pdf-parser.ts 는 이 상수들을 export 하지 않아 import 로 묶을 수 없다. 원문(주석 제거)에서
