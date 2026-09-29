@@ -59,7 +59,7 @@ describe('openZip', () => {
 
   it('상한 상수를 리터럴로 고정한다 (다른 테스트는 상수를 import 해 쓰므로 값이 바뀌어도 초록이다)', () => {
     expect(MAX_UNZIPPED_BYTES).toBe(300 * 1024 * 1024);
-    expect(MAX_ZIP_ENTRIES).toBe(2000);
+    expect(MAX_ZIP_ENTRIES).toBe(10_000);
   });
 
   it('filter 가 거부한 엔트리는 풀지 않는다 — 해제 총량에도 넣지 않는다', () => {

@@ -10,8 +10,16 @@ import { extractFail } from './errors';
  */
 export const MAX_UNZIPPED_BYTES = 300 * 1024 * 1024;
 
-/** 엔트리 수 상한 — 수십만 개의 빈 엔트리로 메모리를 밀어내는 형태를 막는다. */
-export const MAX_ZIP_ENTRIES = 2000;
+/**
+ * 엔트리 수 상한 — 수십만 개의 빈 엔트리로 메모리를 밀어내는 형태를 막는다.
+ *
+ * R15: 2000 이던 때는 정상적인 ~400장 PPTX 덱(슬라이드마다 slideN.xml · 그 rels · 빈 노트
+ * notesSlideN.xml · 그 rels 로 ≈4 엔트리)을 "너무 크다"는 엉뚱한 사유로 거절했다. 상한을 단위
+ * 상한(MAX_PAGE_COUNT 500)에서 도출한다: 500장 × 슬라이드당 파트 ~6(슬라이드·노트·차트/다이어그램
+ * 파트와 각 rels) ≈ 3000 + 미디어·레이아웃·마스터·테마 수천 → 10000. 메모리 방어의 본체는 여전히
+ * 해제 총량 상한(MAX_UNZIPPED_BYTES 300MB)이고, 이 상한은 엔트리 목록 순회 비용만 묶는다.
+ */
+export const MAX_ZIP_ENTRIES = 10_000;
 
 export interface OpenZipOptions {
   /**
