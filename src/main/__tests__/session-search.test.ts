@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { searchPersistedSession, rankSearchResults } from '../session-search';
-import type { GlobalSearchResult } from '../../shared/session-types';
+import { searchPersistedSession, rankSearchResults, toSearchableMeta } from '../session-search';
+import type { GlobalSearchResult, SessionManifestEntry } from '../../shared/session-types';
 
 const META = { docHash: 'a'.repeat(64), fileName: 'lecture.pdf', filePath: '/x/lecture.pdf', pageCount: 3 };
 
@@ -129,5 +129,31 @@ describe('rankSearchResults', () => {
   it('점수 내림차순 정렬 + 상한 적용', () => {
     const ranked = rankSearchResults([mk('a', 2), mk('b', 9), mk('c', 5)], 2);
     expect(ranked.map((r) => r.docHash)).toEqual(['b', 'c']);
+  });
+});
+
+// QA35(W14): session:search 핸들러(index.ts, 커버리지 제외·무테스트)가 manifest 엔트리를
+// SearchableMeta 로 옮기면서 unitKind 를 싣는 것이 전역검색 스니펫 단위 라벨의 유일한 출처다.
+// 매핑을 순수 함수로 빼서 여기서 고정한다 — 인라인 객체 리터럴에서 한 필드가 빠지면 무증상이다.
+describe('toSearchableMeta (QA35 W14)', () => {
+  const entry: SessionManifestEntry = {
+    docHash: 'b'.repeat(64), fileName: 'deck.pptx', filePath: '/x/deck.pptx', pageCount: 12,
+    embedModel: null, embedDim: null, chunkCount: 0, unitKind: 'slide',
+    byteSize: 10, createdAt: '2026-01-01T00:00:00.000Z', lastAccessed: '2026-01-01T00:00:00.000Z',
+  };
+
+  it('unitKind 를 포함한 검색 메타 필드를 옮긴다', () => {
+    expect(toSearchableMeta(entry)).toEqual({
+      docHash: entry.docHash, fileName: 'deck.pptx', filePath: '/x/deck.pptx', pageCount: 12, unitKind: 'slide',
+    });
+  });
+
+  it('매핑 결과로 검색하면 결과에 unitKind 가 실린다', () => {
+    const r = searchPersistedSession(toSearchableMeta(entry), { pageTexts: ['슬라이드 본문 키워드'] }, '키워드')!;
+    expect(r.unitKind).toBe('slide');
+  });
+
+  it('unitKind 부재(PDF)는 부재로 남는다', () => {
+    expect(toSearchableMeta({ ...entry, unitKind: undefined }).unitKind).toBeUndefined();
   });
 });

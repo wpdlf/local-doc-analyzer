@@ -63,7 +63,7 @@ import {
   reconcileSessions,
 } from './session-store';
 // 전체 문서 키워드 검색(순수). session:search 핸들러가 각 세션 본문을 읽어 위임한다.
-import { searchPersistedSession, rankSearchResults, MIN_QUERY_LENGTH } from './session-search';
+import { searchPersistedSession, rankSearchResults, toSearchableMeta, MIN_QUERY_LENGTH } from './session-search';
 // QA29(C-4): 전체 검색의 세션 팬아웃 캡 + 세션 사이 이벤트 루프 양보.
 import { mapWithConcurrency, SESSION_FANOUT_LIMIT } from './async-pool';
 import type { SessionSaveMeta, GlobalSearchResult, SemanticSearchResponse } from '../shared/session-types';
@@ -1079,7 +1079,8 @@ export function registerIpcHandlers(): void {
           const loaded = await readSessionMeta(sessionsDir, e.docHash);
           if (!loaded) return null;
           return searchPersistedSession(
-            { docHash: e.docHash, fileName: e.fileName, filePath: e.filePath, pageCount: e.pageCount, unitKind: e.unitKind },
+            // QA35(W14): 매핑은 session-search.ts 의 테스트된 헬퍼로 — 이 파일은 커버리지 밖이다.
+            toSearchableMeta(e),
             loaded.session,
             query,
           );
