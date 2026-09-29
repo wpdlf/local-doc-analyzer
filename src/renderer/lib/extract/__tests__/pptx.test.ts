@@ -4,6 +4,7 @@ import { zipSync, strToU8 } from 'fflate';
 import { openZip } from '../zip';
 import { createPptxExtractor, readSlideRelIds, readPresentationIndex } from '../pptx';
 import { createImageFitter, type ImageCodec } from '../image-fit';
+import { toPdfDocument } from '../normalize';
 import type { ZipIndex } from '../types';
 
 const NS = 'xmlns:p="urn:p" xmlns:a="urn:a" xmlns:r="urn:r" xmlns:mc="urn:mc"';
@@ -424,6 +425,17 @@ describe('pptx — 섹션 → sections (QA35)', () => {
     const pres = sectionPres(section('도입', [257, 256]) + section('빈 섹션', []) + section('본론', [258, 259]));
     const doc = await run(deckWithPres(pres, rels, fourSlides));
     expect(doc.sections).toEqual([{ title: '도입', unitIndex: 0 }, { title: '본론', unitIndex: 2 }]);
+  });
+
+  // 두 에이전트가 각자 끝을 만든 배선이다(pptx 가 sections 를 내고 normalize 가 우선 쓴다) —
+  // 한쪽만 테스트되면 이름이 어긋나도 둘 다 초록이다. 슬라이드마다 제목이 있어도 섹션이 이긴다.
+  it('추출 → toPdfDocument 를 거치면 챕터가 섹션을 따른다 (슬라이드 제목보다 우선)', async () => {
+    const titled = { 'a.xml': slide(sp('T1', 'title')), 'b.xml': slide(sp('T2', 'title')), 'c.xml': slide(sp('T3', 'title')), 'd.xml': slide(sp('T4', 'title')) };
+    const pres = sectionPres(section('도입', [256, 257]) + section('본론', [258, 259]));
+    const doc = await run(deckWithPres(pres, rels, titled));
+    expect(doc.headings.length, '픽스처가 제목을 내지 않으면 우선순위를 재지 못한다').toBe(4);
+    const pdf = toPdfDocument(doc, { fileName: 'x.pptx', filePath: 'C:/x.pptx' });
+    expect(pdf.chapters.map((c) => [c.title, c.startPage, c.endPage])).toEqual([['도입', 1, 2], ['본론', 3, 4]]);
   });
 
   it('섹션이 하나뿐이면 sections 를 내지 않는다', async () => {

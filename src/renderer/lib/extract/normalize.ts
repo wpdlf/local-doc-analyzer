@@ -137,7 +137,7 @@ export function toPdfDocument(
           text: pageTexts.slice(startPage - 1, endPage).join('\n\n'),
         };
       })
-    : detectChapters(pageTexts);
+    : detectChapters(pageTexts, ex.unitKind);
 
   return {
     id: crypto.randomUUID(),

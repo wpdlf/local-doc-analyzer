@@ -302,3 +302,14 @@ describe('toPdfDocument — 제목 챕터는 단위를 분할한다 (QA35)', () 
     }
   });
 });
+
+describe('toPdfDocument — 폴백 챕터 제목의 단위 (QA35)', () => {
+  // 제목·섹션이 없는 덱은 detectChapters 의 10단위 묶음으로 떨어진다. unitKind 를 넘기지 않으면
+  // 기본값 'page' 가 되어 슬라이드 덱의 챕터가 "페이지 1~10" 으로 저장된다(세션에 영구히).
+  it('슬라이드 덱의 폴백 챕터는 슬라이드 범위로 이름 붙는다', () => {
+    const units = Array.from({ length: 12 }, (_, i) => `본문 ${i}`);
+    const cs = toPdfDocument({ ...base, units, unitKind: 'slide' }, meta).chapters;
+    expect(cs.map((c) => [c.startPage, c.endPage])).toEqual([[1, 10], [11, 12]]);
+    expect(cs[0]!.title).toMatch(/슬라이드|Slides/);
+  });
+});
