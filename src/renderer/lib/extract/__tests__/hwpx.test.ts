@@ -262,4 +262,37 @@ describe('hwpx 그림', () => {
     const doc = await xi.extract(hwpx([sec(p(run(t('a') + pic('image1'))))], { manifestItems: items, extra: { 'BinData/image1.bmp': bmp(200, 100) } }), { extractImages: false });
     expect(doc.images).toEqual([]);
   });
+
+  // fix-round1(리뷰 지적): 글상자(drawText) 안 그림이 containerText 에서 조용히 버려졌다 —
+  // 실물 표의 28% 가 글상자 안이었다. 아래 3건이 재현·가드한다.
+  it('글상자 안에 그림이 직접 있으면 그 상자 블록의 단위에 붙는다', async () => {
+    const box = run(`<hp:rect><hp:drawText><hp:subList>${p(run(t('상자 텍스트') + pic('image1')))}</hp:subList></hp:drawText></hp:rect>`);
+    const doc = await xi.extract(hwpx(
+      [sec(p(run(t('첫 쪽'))) + p(run(t('둘째 쪽') + box), { pageBreak: '1' }))],
+      { manifestItems: items, extra: { 'BinData/image1.bmp': bmp(200, 100) } },
+    ), { extractImages: true });
+    expect(doc.images).toHaveLength(1);
+    expect(doc.images[0]).toMatchObject({ unitIndex: 1, mimeType: 'image/jpeg', width: 200, height: 100 });
+  });
+
+  it('글상자 안 표 안의 그림도 잃지 않는다', async () => {
+    const cellPic = `<hp:tbl rowCnt="1" colCnt="1"><hp:tr><hp:tc><hp:subList>${p(run(pic('image1')))}</hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/></hp:tc></hp:tr></hp:tbl>`;
+    const box = run(`<hp:rect><hp:drawText><hp:subList>${p(run(cellPic))}</hp:subList></hp:drawText></hp:rect>`);
+    const doc = await xi.extract(hwpx(
+      [sec(p(run(t('호스트')) + box))],
+      { manifestItems: items, extra: { 'BinData/image1.bmp': bmp(200, 100) } },
+    ), { extractImages: true });
+    expect(doc.images).toHaveLength(1);
+    expect(doc.images[0]).toMatchObject({ mimeType: 'image/jpeg', width: 200, height: 100 });
+  });
+
+  it('텍스트 없이 그림만 있는 글상자도 그림을 잃지 않는다 — 호스트 문단의 마지막 블록에 붙인다', async () => {
+    const box = run(`<hp:rect><hp:drawText><hp:subList>${p(run(pic('image1')))}</hp:subList></hp:drawText></hp:rect>`);
+    const doc = await xi.extract(hwpx(
+      [sec(p(run(t('첫 쪽'))) + p(run(t('둘째 쪽') + box), { pageBreak: '1' }))],
+      { manifestItems: items, extra: { 'BinData/image1.bmp': bmp(200, 100) } },
+    ), { extractImages: true });
+    expect(doc.images).toHaveLength(1);
+    expect(doc.images[0]).toMatchObject({ unitIndex: 1, mimeType: 'image/jpeg', width: 200, height: 100 });
+  });
 });

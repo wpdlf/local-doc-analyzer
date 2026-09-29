@@ -98,16 +98,38 @@ function plainText(el: Element): string {
   return s;
 }
 
-/** 셀·글상자의 subList → 한 덩어리 텍스트(문단은 줄바꿈). */
-function containerText(subList: Element, depth: number, tableText: (tbl: Element, depth: number) => string): string {
-  if (depth > MAX_NEST_DEPTH) return plainText(subList);
+/** plainText 와 같은 폴백이지만 그림도 잃지 않는다(글상자 안, 깊이 상한을 넘은 자리). */
+function plainTextWithPics(el: Element): { text: string; pics: string[] } {
+  let s = '';
+  const pics: string[] = [];
+  for (const e of walk(el, (x) => SKIPPED.has(localName(x)))) {
+    const name = localName(e);
+    if (name === 't') s += tText(e);
+    else if (name === 'img') { const ref = attr(e, 'binaryItemIDRef'); if (ref) pics.push(ref); }
+  }
+  return { text: s, pics };
+}
+
+/**
+ * 셀·글상자의 subList → 한 덩어리 텍스트(문단은 줄바꿈) + 그 안(중첩 글상자·표 포함)의 그림
+ * binaryItemIDRef 전부. fix-round1(리뷰 지적): 글상자 안 그림(직접 또는 글상자 안 표 안)이
+ * r.pics 에 담기고도 여기서 버려져 조용히 사라졌다 — 실물 표의 28% 가 글상자 안이었다.
+ */
+function containerText(subList: Element, depth: number, tableText: (tbl: Element, depth: number) => string): { text: string; pics: string[] } {
+  if (depth > MAX_NEST_DEPTH) return plainTextWithPics(subList);
   const lines: string[] = [];
+  const pics: string[] = [];
   for (const para of childrenNamed(subList, 'p')) {
     const r = readParagraph(para, depth, tableText);
     lines.push(...r.parts);
-    for (const box of r.boxes) lines.push(containerText(box, depth + 1, tableText));
+    pics.push(...r.pics.map((pc) => pc.ref));
+    for (const box of r.boxes) {
+      const nested = containerText(box, depth + 1, tableText);
+      lines.push(nested.text);
+      pics.push(...nested.pics);
+    }
   }
-  return lines.join('\n');
+  return { text: lines.join('\n'), pics };
 }
 
 function intAttr(el: Element | undefined, name: string, fallback: number): number {
@@ -130,7 +152,10 @@ function tableGrid(tbl: Element, depth: number): string[][] {
       const colSpan = Math.max(1, intAttr(span, 'colSpan', 1));
       const sl = childrenNamed(tc, 'subList')[0];
       // 셀 안의 표는 GFM 셀에 담을 수 없어 평탄화한다.
-      const text = sl ? containerText(sl, depth, flattenTableText) : '';
+      // 이 그림들은 이미 readParagraph 의 tbl 분기(표 전체를 훑는 raw walk)가 imageAt 에
+      // 실었다 — 여기서 pics 를 또 쓰면 같은 참조가 두 번 들어가 unitIndex 선점 순서(첫 항목이
+      // 이긴다)가 흔들린다. 그래서 text 만 쓴다.
+      const text = sl ? containerText(sl, depth, flattenTableText).text : '';
       cells.push({ row, col, rowSpan: Math.max(1, intAttr(span, 'rowSpan', 1)), colSpan, text });
       nextCol = col + colSpan;
       maxCol = Math.max(maxCol, nextCol);
@@ -229,8 +254,17 @@ export function createHwpxExtractor(deps: HwpxExtractorDeps = {}): Extractor {
           }
           // 글상자는 떠 있는 개체 — 쪽나눔·제목을 만들지 않는다.
           for (const box of r.boxes) {
-            const text = containerText(box, 1, tableText);
-            if (text.trim()) blocks.push({ text, breakBefore: false });
+            const boxResult = containerText(box, 1, tableText);
+            let boxBlockIndex: number;
+            if (boxResult.text.trim()) {
+              boxBlockIndex = blocks.length;
+              blocks.push({ text: boxResult.text, breakBefore: false });
+            } else {
+              // 텍스트 없는 상자(그림만 있는 상자)는 블록을 만들지 않는다 — 그림을 잃지
+              // 않으려면 지금까지의 마지막 블록(없으면 0)에 붙인다.
+              boxBlockIndex = Math.max(0, blocks.length - 1);
+            }
+            for (const ref of boxResult.pics) imageAt.push({ ref, blockIndex: boxBlockIndex });
           }
         }
       }
