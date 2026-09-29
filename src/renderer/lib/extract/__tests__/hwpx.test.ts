@@ -32,17 +32,50 @@ export function hwpx(sections: string[], opts: { header?: string; extra?: Record
 }
 
 export const sec = (paras: string) => `<hs:sec ${NS}>${paras}</hs:sec>`;
-// fix-round1(task7): happy-dom 은 같은 이름의 속성이 중복되면 **먼저 나오는 쪽**을 살리고 나중
-// 것을 조용히 버린다(probe 로 실측: `x="0" y="0" x="1"` → attrCount 2, x=0 만 남는다 — parsererror
-// 없이 조용히). 계획 원안은 attrs 를 하드코딩된 기본값 뒤에 붙여 `pageBreak(0..1)`/
-// `paraPrIDRef(5)` 오버라이드가 전부 무효화됐다(관련 테스트 2건이 그 자리에서 실패). attrs 를
-// 기본값 **앞**에 두어 오버라이드가 이기게 한다.
-export const p = (inner: string, attrs = '') => `<hp:p ${attrs} paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0">${inner}</hp:p>`;
+
+const P_DEFAULTS = { paraPrIDRef: '0', styleIDRef: '0', pageBreak: '0', columnBreak: '0' } as const;
+
+/**
+ * 최상위 문단 조립기. 기본 속성에 `override` 를 **병합**한다 — 같은 이름은 override 값이
+ * 이기고, 결과 태그에 그 이름은 정확히 한 번만 나온다.
+ *
+ * fix-round2(리뷰 지적): 이전 판은 override 를 문자열로 받아 기본값과 나란히 이어붙였는데,
+ * 그러면 `paraPrIDRef="5"` 를 넘겨도 결과 태그에 `paraPrIDRef` 가 **두 번**(override 값 +
+ * 기본값) 남는다. 이는 XML well-formedness 위반(중복 속성)이라 표준을 따르는 파서(Chromium
+ * DOMParser 등)라면 parsererror → DOC_CORRUPT 가 나야 하는 입력이다. 이전 수정은 순서를
+ * 뒤집어 "먼저 나오는 쪽이 이긴다"는 happy-dom 20.10.6 의 관용(중복을 parsererror 없이 받고
+ * 첫 값만 남김)에 기대는 우회였다 — happy-dom 이 나중 값을 채택하도록 바뀌면 오버라이드가
+ * 거꾸로 뒤집혀 "글상자 안 문단은 제목이 되지 않는다" 같은 테스트가 **우연히** 통과하는
+ * 거짓 양성이 된다. 애초에 중복 자체를 만들지 않는 쪽(객체 병합)으로 고친다.
+ */
+export const p = (inner: string, override: Record<string, string> = {}): string => {
+  const attrs = { ...P_DEFAULTS, ...override };
+  const attrStr = Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ');
+  return `<hp:p ${attrStr}>${inner}</hp:p>`;
+};
 export const run = (inner: string) => `<hp:run charPrIDRef="0">${inner}</hp:run>`;
 export const t = (text: string) => `<hp:t>${text}</hp:t>`;
 
 const x = createHwpxExtractor();
 const extract = (zip: ZipIndex) => x.extract(zip, { extractImages: false });
+
+// fix-round2 회귀 가드: p() 가 다시 문자열 접합(중복 속성)으로 퇴행하면 여기서 잡는다 —
+// 프로덕션 파서(happy-dom)의 중복-허용 관용에 기대지 않고, 조립기가 만드는 문자열 자체를 본다.
+describe('p() 조립기 — 속성은 병합되고 중복되지 않는다', () => {
+  it('override 가 있어도 각 속성명이 정확히 한 번만 나온다', () => {
+    const xml = p('', { pageBreak: '1', paraPrIDRef: '5' });
+    expect((xml.match(/pageBreak="/g) ?? []).length).toBe(1);
+    expect((xml.match(/paraPrIDRef="/g) ?? []).length).toBe(1);
+    expect(xml).toContain('pageBreak="1"');
+    expect(xml).toContain('paraPrIDRef="5"');
+  });
+
+  it('override 가 없으면 기본값 그대로, 역시 중복이 없다', () => {
+    const xml = p('');
+    expect((xml.match(/pageBreak="/g) ?? []).length).toBe(1);
+    expect(xml).toContain('pageBreak="0"');
+  });
+});
 
 describe('hwpx — 판별·섹션', () => {
   it('mimetype 으로 판별한다', () => {
@@ -70,7 +103,7 @@ describe('hwpx — 판별·섹션', () => {
 describe('hwpx — 문단 텍스트', () => {
   it('hp:p/@pageBreak="1" 만 쪽나눔 — 표의 pageBreak="CELL" 은 아니다', async () => {
     const tbl = `<hp:tbl rowCnt="1" colCnt="1" pageBreak="CELL"><hp:tr><hp:tc><hp:subList>${p(run(t('셀')))}</hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/></hp:tc></hp:tr></hp:tbl>`;
-    const doc = await extract(hwpx([sec(p(run(t('앞'))) + p(run(tbl)) + p(run(t('뒤')), 'pageBreak="1"'))]));
+    const doc = await extract(hwpx([sec(p(run(t('앞'))) + p(run(tbl)) + p(run(t('뒤')), { pageBreak: '1' }))]));
     expect(doc.units).toHaveLength(2);
     expect(doc.units[1]).toBe('뒤');
   });
@@ -117,12 +150,12 @@ describe('hwpx — 제목·실패 계약', () => {
   const header = `<hh:head ${NS}><hh:paraPr id="5"><hh:heading type="OUTLINE" level="0"/></hh:paraPr></hh:head>`;
 
   it('paraPrIDRef 가 개요 paraPr 를 가리키면 제목', async () => {
-    const doc = await extract(hwpx([sec(p(run(t('1. 개요')), 'paraPrIDRef="5"') + p(run(t('본문'))))], { header }));
+    const doc = await extract(hwpx([sec(p(run(t('1. 개요')), { paraPrIDRef: '5' }) + p(run(t('본문'))))], { header }));
     expect(doc.headings).toEqual([{ level: 1, title: '1. 개요', unitIndex: 0 }]);
   });
 
   it('글상자 안 문단은 제목이 되지 않는다', async () => {
-    const box = run(`<hp:rect><hp:drawText><hp:subList>${p(run(t('상자')), 'paraPrIDRef="5"')}</hp:subList></hp:drawText></hp:rect>`);
+    const box = run(`<hp:rect><hp:drawText><hp:subList>${p(run(t('상자')), { paraPrIDRef: '5' })}</hp:subList></hp:drawText></hp:rect>`);
     const doc = await extract(hwpx([sec(p(run(t('호스트')) + box))], { header }));
     expect(doc.headings).toEqual([]);
   });
