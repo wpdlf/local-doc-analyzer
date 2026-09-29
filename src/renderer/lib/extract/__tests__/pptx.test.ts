@@ -207,6 +207,18 @@ describe('pptx — 그림', () => {
   });
 });
 
+describe('pptx — 그래픽 기본값 배선', () => {
+  it('추출기가 병합 표를 pptxGraphics 로 텍스트화한다(기본값 배선)', async () => {
+    const frame = `<p:graphicFrame><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl>`
+      + `<a:tblGrid><a:gridCol/><a:gridCol/></a:tblGrid>`
+      + `<a:tr><a:tc rowSpan="2"><a:txBody><a:p><a:r><a:t>분류</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>x</a:t></a:r></a:p></a:txBody></a:tc></a:tr>`
+      + `<a:tr><a:tc vMerge="1"/><a:tc><a:txBody><a:p><a:r><a:t>y</a:t></a:r></a:p></a:txBody></a:tc></a:tr>`
+      + `</a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
+    const doc = await run(deck({ 's.xml': slide(frame) }, ['s.xml']));
+    expect(doc.units[0]).toBe('| 분류 | x |\n| --- | --- |\n| 분류 | y |');
+  });
+});
+
 describe('pptx — 실패 계약', () => {
   it('모든 슬라이드가 비면 DOC_NO_TEXT', async () => {
     await expect(run(deck({ 's.xml': slide('') }, ['s.xml']))).rejects.toMatchObject({ code: 'DOC_NO_TEXT' });

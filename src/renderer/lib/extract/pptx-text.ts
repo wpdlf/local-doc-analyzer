@@ -1,5 +1,4 @@
 import { walk, localName, attr, childrenNamed } from './xml';
-import { toGfmTable } from './table';
 import type { ZipIndex } from './types';
 
 /**
@@ -41,17 +40,3 @@ export interface PptxGraphicsText {
   chart(frame: Element, slidePart: string, zip: ZipIndex): string;
   smartArt(frame: Element, slidePart: string, zip: ZipIndex): string;
 }
-
-/** Task 4 기본값: 표는 행마다 셀(병합 미고려), 차트·SmartArt 는 빈 문자열. Task 5 가 교체한다. */
-export const basicGraphics: PptxGraphicsText = {
-  table(tbl) {
-    const rows = childrenNamed(tbl, 'tr').map((tr) =>
-      childrenNamed(tr, 'tc').map((tc) => {
-        const body = childrenNamed(tc, 'txBody')[0];
-        return body ? textBodyText(body) : '';
-      }));
-    return toGfmTable(rows);
-  },
-  chart: () => '',
-  smartArt: () => '',
-};

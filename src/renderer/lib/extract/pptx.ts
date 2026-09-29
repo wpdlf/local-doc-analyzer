@@ -1,6 +1,7 @@
 import { parseXml, walk, localName, attr, childrenNamed, prefixedAttr } from './xml';
 import { readRels } from './ooxml';
-import { textBodyText, skipNonText, basicGraphics, type PptxGraphicsText } from './pptx-text';
+import { textBodyText, skipNonText, type PptxGraphicsText } from './pptx-text';
+import { pptxGraphics } from './pptx-graphics';
 import { MAX_EXAMINED_IMAGES, MAX_PAGE_COUNT, MAX_TOTAL_IMAGES } from '../pdf-parser';
 import type { Extractor, ExtractedDoc, ExtractedHeading, ExtractedImage, ExtractOptions, ZipIndex } from './types';
 import { PPTX_FORMAT_ID } from '../../../shared/document-formats';
@@ -173,7 +174,7 @@ export interface PptxExtractorDeps {
 
 export function createPptxExtractor(deps: PptxExtractorDeps = {}): Extractor {
   const fit = deps.fitImage ?? fitImage;
-  const graphics = deps.graphics ?? basicGraphics;
+  const graphics = deps.graphics ?? pptxGraphics;
   return {
     id: PPTX_FORMAT_ID,
 
