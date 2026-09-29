@@ -157,6 +157,22 @@ export const safeComponents: Components = {
   blockquote: ({ children }) => <blockquote>{renderWithCitations(children)}</blockquote>,
 };
 
+/**
+ * 렌더 용도. 'summary' = LLM 출력(요약·Q&A) — 인용 버튼·수식 렌더. 'source' = 원문 패널
+ * (DocTextViewer) — QA35: 원문은 신뢰할 수 없는 문서 텍스트라 거기 적힌 `[p.2]` 가 앱의 인용 버튼이
+ * 되거나 `\(..\)` 가 KaTeX 로 바뀌면 안 된다(문서가 UI 를 만들고, 원문 글자가 사라진다).
+ */
+export type MarkdownVariant = 'summary' | 'source';
+
+/**
+ * 원문 패널용 컴포넌트 — 링크·이미지 안전 처리만 공유하고 **인용 변환은 하지 않는다**.
+ * a/img 를 safeComponents 에서 그대로 가져와 보안 규칙이 한 곳에 머물게 한다.
+ */
+export const sourceComponents: Components = {
+  a: safeComponents.a,
+  img: safeComponents.img,
+};
+
 // react-markdown(≈50KB gzip)·remark-gfm 은 cold-start 부담을 줄이기 위해 지연 청크로 분리한다.
 // `markdown-renderer` 만이 이들을 정적 import 하고, 본 컴포넌트가 React.lazy 로 그 모듈을 끌어온다.
 const importMarkdownRenderer = () => import('./markdown-renderer');
@@ -181,13 +197,13 @@ export function prefetchMarkdownRenderer(): void {
  * - 청크 로드 전 짧은 순간 및 파싱 실패 시 모두 `content` 원본을 plain text 로 표시(레이아웃 유지).
  * - `content` 가 ErrorBoundary 의 reset 신호도 겸함([[MarkdownErrorBoundary]] R34 P1 참조).
  */
-export function SafeMarkdown({ content }: { content: string }) {
+export function SafeMarkdown({ content, variant = 'summary' }: { content: string; variant?: MarkdownVariant }) {
   return (
     <MarkdownErrorBoundary fallbackText={content}>
       {/* 청크 로드 전 짧은 순간의 fallback — 상위 prose 타이포그래피가 <pre> 를 코드블록(다크·모노스페이스)
           으로 스타일링하므로, 원본을 plain text 로 보여주려는 의도대로 <div> 로 렌더한다(레이아웃 유지). */}
       <Suspense fallback={<div className="whitespace-pre-wrap text-sm">{content}</div>}>
-        <MarkdownRenderer>{content}</MarkdownRenderer>
+        <MarkdownRenderer variant={variant}>{content}</MarkdownRenderer>
       </Suspense>
     </MarkdownErrorBoundary>
   );
