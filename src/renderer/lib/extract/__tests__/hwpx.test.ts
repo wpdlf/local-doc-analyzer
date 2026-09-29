@@ -286,6 +286,18 @@ describe('hwpx 그림', () => {
     expect(doc.images[0]).toMatchObject({ mimeType: 'image/jpeg', width: 200, height: 100 });
   });
 
+  // F6f: 본문 최상위에 그림만 있는 문단(텍스트 조각 0개)은 블록을 만들지 않는다 — 그림은 직전
+  // 블록의 단위에 붙어야 한다(0번 블록으로 떨어지면 둘째 쪽 그림이 첫 쪽 것이 된다).
+  it('그림만 있는 최상위 문단의 그림은 직전 블록의 단위에 붙는다', async () => {
+    const doc = await xi.extract(hwpx(
+      [sec(p(run(t('첫 쪽'))) + p(run(t('둘째 쪽')), { pageBreak: '1' }) + p(run(pic('image1'))))],
+      { manifestItems: items, extra: { 'BinData/image1.bmp': bmp(200, 100) } },
+    ), { extractImages: true });
+    expect(doc.units).toHaveLength(2);
+    expect(doc.images).toHaveLength(1);
+    expect(doc.images[0]).toMatchObject({ unitIndex: 1, width: 200, height: 100 });
+  });
+
   it('텍스트 없이 그림만 있는 글상자도 그림을 잃지 않는다 — 호스트 문단의 마지막 블록에 붙인다', async () => {
     const box = run(`<hp:rect><hp:drawText><hp:subList>${p(run(pic('image1')))}</hp:subList></hp:drawText></hp:rect>`);
     const doc = await xi.extract(hwpx(
