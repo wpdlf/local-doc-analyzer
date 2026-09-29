@@ -51,6 +51,7 @@ vi.stubGlobal('crypto', { randomUUID: () => 'doc-uuid' });
 
 import { openDocumentData, cancelDocumentParse, EXTRACTOR_ERROR_MESSAGE_KEYS } from '../document-open';
 import { MAX_PAGE_COUNT } from '../pdf-parser';
+import { MAX_ZIP_ENTRIES } from '../extract/zip';
 import { useAppStore } from '../store';
 import { DEFAULT_SETTINGS } from '../../types';
 import { MAX_PDF_SIZE_BYTES } from '../../../shared/constants';
@@ -505,7 +506,8 @@ describe('openDocumentData — 포맷 dispatch (Task10 리뷰 라운드1)', () =
   it('엔트리 수 상한을 넘는 zip 은 DOC_TOO_LARGE 다 — openZip 매핑이 document-open 을 거쳐도 살아있다', async () => {
     const { zipSync, strToU8 } = await import('fflate');
     const files: Record<string, Uint8Array> = {};
-    for (let i = 0; i <= 2000; i++) files[`f${i}.txt`] = strToU8('x');
+    // 상한을 상수에서 도출한다 — 리터럴(2000)로 두면 상한을 올리는 순간(R15) 조용히 상한 안쪽이 된다.
+    for (let i = 0; i <= MAX_ZIP_ENTRIES; i++) files[`f${i}.txt`] = strToU8('x');
     const out = zipSync(files);
     const buf = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
     await openDocumentData(buf, 'huge.docx', '/d/huge.docx');
