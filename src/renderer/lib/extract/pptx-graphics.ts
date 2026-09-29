@@ -75,8 +75,12 @@ function bodyText(el: Element | undefined): string {
 function chart(frame: Element, slidePart: string, zip: ZipIndex): string {
   const root = relatedPart(frame, 'chart', 'id', slidePart, zip);
   if (!root) return '';
-  const titleEl = [...walk(root)].find((e) => localName(e) === 'title');
-  const rich = titleEl ? [...walk(titleEl)].find((e) => localName(e) === 'rich') : undefined;
+  // F6b: 차트 수준 제목(`c:chart > c:title`)만 본다 — 서브트리의 첫 `title` 은 차트 제목이 없을 때
+  // 축 제목(`c:valAx/c:title`)이라 그것이 차트 제목 자리에 나왔다.
+  const chartEl = childrenNamed(root, 'chart')[0];
+  const titleEl = chartEl ? childrenNamed(chartEl, 'title')[0] : undefined;
+  const tx = titleEl ? childrenNamed(titleEl, 'tx')[0] : undefined;
+  const rich = tx ? childrenNamed(tx, 'rich')[0] : undefined;
   const title = bodyText(rich);
   const series = [...walk(root)].filter((e) => localName(e) === 'ser').slice(0, MAX_CHART_SERIES);
   let categories: string[] = [];

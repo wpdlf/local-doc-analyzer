@@ -61,6 +61,17 @@ describe('pptx 차트 (합성 — 실물 코퍼스에 없었다)', () => {
     expect(result.startsWith('매출\n2025\n\n|')).toBe(true);
   });
 
+  // F6b: 제목은 차트 수준(`c:chart > c:title`)만 본다. 예전엔 서브트리의 첫 `title` 을 잡아,
+  // 차트 제목이 없으면 축 제목("백만 원")이 차트 제목처럼 맨 앞에 나왔다.
+  it('축 제목만 있는 차트는 제목 줄을 내지 않는다', () => {
+    const xml = `<c:chartSpace ${NS}><c:chart><c:autoTitleDeleted val="1"/><c:plotArea><c:barChart>${oneSeries}</c:barChart>`
+      + `<c:valAx><c:title><c:tx><c:rich><a:p><a:r><a:t>백만 원</a:t></a:r></a:p></c:rich></c:tx></c:title></c:valAx>`
+      + `</c:plotArea></c:chart></c:chartSpace>`;
+    const result = pptxGraphics.chart(frame, 'ppt/slides/slide1.xml', zipWith(xml));
+    expect(result).not.toContain('백만 원');
+    expect(result.startsWith('|')).toBe(true);
+  });
+
   it('차트 파트가 없으면 빈 문자열(문서 열기를 실패시키지 않는다)', () => {
     expect(pptxGraphics.chart(frame, 'ppt/slides/slide1.xml', zipOf({}))).toBe('');
   });
