@@ -7,7 +7,7 @@
 // 등 CJK PDF 글리프가 정상적으로 표시된다. pdfjs 메이저 업그레이드 (4 → 5) 시 cmaps
 // 경로가 바뀔 수 있으므로 변경 시 본 스크립트 확인 필요.
 
-import { cpSync, existsSync, readFileSync, statSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { collectEagerFiles, checkEagerScope } from './eager-graph.mjs';
 import { relative, resolve } from 'node:path';
 
@@ -132,6 +132,26 @@ if (failures.length > 0) {
   console.error('[postbuild] 원인은 대개 정적 import 혼입입니다 — math-plugins/markdown-renderer 를');
   console.error('[postbuild] 동적 import 경계(safe-markdown) 밖에서 import 하지 않았는지 확인하세요.');
   console.error('[postbuild] extract/zip·extract/registry 는 document-open 의 loadExtractChain 에서만 동적 import 합니다.');
+  process.exit(1);
+}
+
+// QA35(D4 후속): 내용 표식의 실패 모드도 '빨간불' 이 아니라 **조용한 무효화**다 — fflate 가 에러
+// 문구를 바꾸거나 추출기가 경로 리터럴을 상수 조합으로 바꾸면 표식은 어디에도 매칭되지 않고, 위
+// 루프는 영원히 위반 0 으로 끝난다. 그래서 각 표식이 **지연 청크 쪽에 실제로 존재함**을 매 빌드
+// 확인한다(eager 에 있으면 위에서 이미 실패했으므로 여기서는 eager 밖만 본다). katex 표식도 같은
+// 규칙이 깔끔히 성립해(math-plugins 등 지연 청크에 있다) 함께 검사한다.
+const assetsDir = resolve(outDir, 'assets');
+const lazyCode = readdirSync(assetsDir)
+  .filter((f) => /\.m?js$/.test(f))
+  .map((f) => resolve(assetsDir, f))
+  .filter((abs) => !eager.has(abs))
+  .map((abs) => readFileSync(abs, 'utf8'));
+const staleMarkers = EAGER_FORBIDDEN.filter(({ re }) => !lazyCode.some((code) => re.test(code)));
+if (staleMarkers.length > 0) {
+  console.error('[postbuild] eager 경계 표식이 낡았습니다(stale marker) — 지연 청크 어디에서도 찾지 못함:');
+  for (const { name, re } of staleMarkers) console.error(`  - ${name}: ${re}`);
+  console.error('[postbuild] 이 표식은 더 이상 아무것도 막지 못합니다. 해당 라이브러리/모듈의 지연 청크에 실제로');
+  console.error('[postbuild] 남아 있는 문자열로 EAGER_FORBIDDEN 을 갱신하세요.');
   process.exit(1);
 }
 const totalBytes = [...eager.values()].reduce((n, c) => n + Buffer.byteLength(c), 0);
