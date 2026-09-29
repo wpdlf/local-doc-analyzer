@@ -37,6 +37,7 @@ vi.stubGlobal('window', {});
 import { useAppStore } from '../store';
 import { openDocumentData, cancelDocumentParse, EXTRACTOR_ERROR_MESSAGE_KEYS, OPEN_ERROR_CODES } from '../document-open';
 import { t } from '../i18n';
+import { tooManyUnitsParams } from '../pdf-parser';
 import { resolveExtractor } from '../extract/registry';
 import { openZip } from '../extract/zip';
 
@@ -266,8 +267,13 @@ describe('document-open.ts — 추출기 에러의 화면 착지 (QA34)', () => 
       await openDocumentData(makeZipBytes(), 'a.docx', '/x/a.docx');
       const e = useAppStore.getState().error;
       expect(e?.code, code).toBe(code);
-      expect(e?.message, code).toBe(t(key!, params));
+      // QA35: 상한 초과는 경계가 추출기 원시 params({pages,max})를 단위 표시 파라미터로 바꾼다
+      // (docx 추출기 → page). 나머지 코드는 params 를 그대로 쓴다.
+      const expectedParams = code === 'PDF_TOO_MANY_PAGES' ? tooManyUnitsParams(params.pages, params.max, 'page') : params;
+      expect(e?.message, code).toBe(t(key!, expectedParams));
       expect(e?.message, code).not.toMatch(/dev english/);
+      // 미해석 placeholder 가 화면에 남지 않는다 — 파라미터 계약이 키와 어긋나면 여기서 드러난다.
+      expect(e?.message, code).not.toMatch(/\{[a-z]+\}/);
     }
   });
 

@@ -11,7 +11,8 @@ import { hasPdfMagic, hasZipMagic, hasCfbMagic, SUPPORTED_LABEL } from '../../sh
 // ⚠️ 이 셋을 다시 정적 import 로 되돌리지 말 것 — 타입은 `import type` 만 허용.
 import type { PdfDocument } from '../types';
 import type { Extractor } from './extract/types';
-import { parsePdf, isReReadablePath, MAX_TOTAL_IMAGES } from './pdf-parser';
+import { parsePdf, isReReadablePath, MAX_TOTAL_IMAGES, tooManyUnitsParams } from './pdf-parser';
+import type { UnitKind } from '../types';
 import type { TranslationKey } from './i18n';
 
 /**
@@ -68,6 +69,20 @@ export function isNotMediaPart(name: string): boolean {
   return !/^(?:[^/]+\/media|BinData)\//i.test(name);
 }
 
+/**
+ * 추출기 id → 그 추출기가 내는 단위(QA35). 상한 초과(PDF_TOO_MANY_PAGES)는 PPTX 처럼 **정규화
+ * 이전**에 던져질 수 있어 에러에 unitKind 가 없다 — 이 경계가 "어느 추출기가 던졌는가" 로 단위를
+ * 정해 안내 문구에 싣는다. Record 라 새 추출기 id 가 생기면 타입 검사가 여기서 멈춘다.
+ * 값은 각 추출기의 ExtractedDoc.unitKind 와 같아야 한다(document-open.test 의 PPTX 상한 테스트가
+ * 슬라이드 경로를 고정한다).
+ */
+const EXTRACTOR_UNIT_KIND: Record<Extractor['id'], UnitKind> = {
+  docx: 'page',
+  pptx: 'slide',
+  hwpx: 'page',
+  epub: 'chapter',
+};
+
 /** 추출기 체인 lazy 로드 — import 절 주석 참조. */
 async function loadExtractChain() {
   const [zip, registry, normalize, errors] = await Promise.all([
@@ -118,6 +133,7 @@ async function openZipDocument(
 ): Promise<PdfDocument> {
   // 청크 로드 실패는 "파일 손상"이 아니다 — 아래 매핑 try 밖에 둬서 종전 PDF_PARSE_FAIL 로 간다.
   const chain = await loadExtractChain();
+  let extractor: Extractor | null = null;
   try {
     await yieldForPaint();
     throwIfAborted(opts.signal);
@@ -125,7 +141,7 @@ async function openZipDocument(
     // 사진 많은 문서에서 해제 시간·메모리를 쓰던 것(QA34).
     const zip = chain.openZip(data, opts.extractImages ? undefined : { filter: isNotMediaPart });
     throwIfAborted(opts.signal);
-    const extractor: Extractor | null = chain.resolveExtractor(zip);
+    extractor = chain.resolveExtractor(zip);
     if (!extractor) {
       return chain.extractFail('DOC_UNSUPPORTED', 'no extractor matched', { list: SUPPORTED_LABEL });
     }
@@ -140,6 +156,10 @@ async function openZipDocument(
     if (typeof e?.code === 'string' && e.code in EXTRACTOR_ERROR_MESSAGE_KEYS) {
       // 표에 있는 코드는 번역 대상 — params 가 빠진 채 던져졌어도 번역 경로를 타게 한다.
       if (!e.params) e.params = {};
+      // QA35: 상한 초과 안내는 문서 단위로 — 추출기 원시 params({pages,max})를 표시 파라미터로 바꾼다.
+      if (e.code === 'PDF_TOO_MANY_PAGES') {
+        e.params = tooManyUnitsParams(e.params.pages, e.params.max, extractor ? EXTRACTOR_UNIT_KIND[extractor.id] : 'page');
+      }
       throw err;
     }
     const detail = typeof e?.message === 'string' ? e.message : String(err);

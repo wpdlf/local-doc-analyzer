@@ -1,7 +1,8 @@
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
-import type { PdfDocument, Chapter, PageImage } from '../types';
+import type { PdfDocument, Chapter, PageImage, UnitKind } from '../types';
+import { formatUnitCount, formatUnitName } from './citation';
 import { useAppStore } from './store';
-import { t, translateMainError } from './i18n';
+import { t, translateMainError, type TranslationKey } from './i18n';
 // Vite의 ?url 쿼리를 사용해 worker 파일을 정적 에셋으로 번들링.
 // bare specifier + import.meta.url 패턴은 Vite에서 dev/build 동작이 다를 수 있어
 // 패키지된 Electron(ASAR)에서 worker 로드 실패 위험이 있음. ?url은 명시적 에셋 처리.
@@ -61,6 +62,25 @@ export interface ParsePdfOptions {
 // 텍스트/이미지 추출 + 선택적 OCR 파이프라인이 페이지 수에 선형/병렬로 확장되므로
 // 수천 페이지 문서는 메모리/시간 모두 비현실적. 사용자에게 분할을 안내.
 export const MAX_PAGE_COUNT = 500;
+
+/**
+ * `uploader.tooManyPages` 의 보간 파라미터(QA35) — 문서 단위를 따른다.
+ *
+ * 두 갈래가 같은 키를 쓴다: PDF 경로(아래 parsePdf 가 직접 번역해 던진다)와 추출기 경로(코드 +
+ * {pages,max} 만 던지고 document-open 경계가 번역한다). 단위 조립을 한 곳에 둬야 한쪽만 "p" 로
+ * 남는 형제 누락이 없다. 숫자가 아닌 입력은 원문 그대로 둔다(빈 params 로 번역되는 경로 방어).
+ */
+export function tooManyUnitsParams(
+  pages: string | undefined,
+  max: string | undefined,
+  unitKind: UnitKind = 'page',
+): Record<string, string> {
+  const fmt = (v: string | undefined, style: 'long' | 'short') => {
+    const n = Number(v);
+    return v !== undefined && v !== '' && Number.isFinite(n) ? formatUnitCount(n, unitKind, style) : (v ?? '');
+  };
+  return { unit: formatUnitName(unitKind), pages: fmt(pages, 'short'), max: fmt(max, 'long') };
+}
 
 /** AbortSignal aborted 시 ABORTED 코드가 붙은 에러를 throw */
 function throwIfAborted(signal?: AbortSignal): void {
@@ -387,7 +407,7 @@ export async function parsePdf(
     // R43: 한국어 하드코딩 → i18n 키 사용 (영어 UI 사용자도 현재 언어로 에러를 보도록).
     // t() 는 store 의 uiLanguage 를 읽는 순수 함수라 hook 컨텍스트 불필요.
     throw Object.assign(
-      new Error(t('uploader.tooManyPages', { pages: String(pageCount), max: String(MAX_PAGE_COUNT) })),
+      new Error(t('uploader.tooManyPages', tooManyUnitsParams(String(pageCount), String(MAX_PAGE_COUNT)))),
       { code: 'PDF_TOO_MANY_PAGES' },
     );
   }
@@ -779,7 +799,18 @@ export function parseChapterHeading(firstLine: string): { key: string; num: numb
   return { key, num: null, unit: null };
 }
 
-export function detectChapters(pages: string[]): Chapter[] {
+/**
+ * 폴백 분할 제목의 단위별 키(QA35). 추출기 문서(normalize.ts)도 이 폴백을 타므로 슬라이드 덱에
+ * "1~10 페이지" 가 붙었다. 리터럴 맵이라 i18n 고아 키 가드가 참조를 확인하고, 새 단위가 생기면
+ * 타입 검사가 여기서 멈춘다. 제목은 요약 프롬프트에도 들어가지만 인용 라벨이 아니다('p.' 없음).
+ */
+const RANGE_CHAPTER_KEY: Record<UnitKind, TranslationKey> = {
+  page: 'pdf.pageRangeChapter',
+  slide: 'doc.slideRangeChapter',
+  chapter: 'doc.chapterRangeChapter',
+};
+
+export function detectChapters(pages: string[], unitKind: UnitKind = 'page'): Chapter[] {
   const chapters: Chapter[] = [];
   // 헤딩 패턴: "제1장", "Chapter 1", "1장" (명시적 챕터 마커만 매칭)
   // "1. " 패턴 제거 — 본문 번호 목록 오탐 방지
@@ -857,7 +888,7 @@ export function detectChapters(pages: string[]): Chapter[] {
       const end = Math.min(i + chunkSize, pages.length);
       chapters.push({
         index: Math.floor(i / chunkSize) + 1,
-        title: t('pdf.pageRangeChapter', { start: String(i + 1), end: String(end) }),
+        title: t(RANGE_CHAPTER_KEY[unitKind], { start: String(i + 1), end: String(end) }),
         startPage: i + 1,
         endPage: end,
         text: pages.slice(i, end).join('\n\n'),

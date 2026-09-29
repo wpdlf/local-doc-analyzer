@@ -567,6 +567,25 @@ describe('openDocumentData — 포맷 dispatch (Task10 리뷰 라운드1)', () =
     expect(s.error?.message).not.toMatch(/exceeds/);
     expect(s.error?.details).toBe(`unit count ${pageCount} exceeds ${MAX_PAGE_COUNT}`);
   });
+
+  // QA35: PPTX 는 normalize 이전(presentation.xml 의 sldIdLst 만 읽은 시점)에 상한을 던지므로
+  // 에러에는 unitKind 가 없다 — 이 경계가 **어느 추출기가 던졌는지**로 단위를 정해야 한다.
+  // 종전엔 슬라이드 덱에도 "페이지 수가 너무 많습니다 (501p)" 라고 말했다.
+  it('슬라이드 상한 초과 PPTX 는 슬라이드 단위로 안내한다', async () => {
+    const { zipSync, strToU8 } = await import('fflate');
+    const n = MAX_PAGE_COUNT + 1;
+    const ids = Array.from({ length: n }, (_, i) => i);
+    const pres = `<p:presentation xmlns:p="urn:p" xmlns:r="urn:r"><p:sldIdLst>${ids.map((i) => `<p:sldId id="${256 + i}" r:id="rId${i + 1}"/>`).join('')}</p:sldIdLst></p:presentation>`;
+    const rels = `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${ids.map((i) => `<Relationship Id="rId${i + 1}" Type="x/slide" Target="slides/s${i}.xml"/>`).join('')}</Relationships>`;
+    const out = zipSync({ 'ppt/presentation.xml': strToU8(pres), 'ppt/_rels/presentation.xml.rels': strToU8(rels) });
+    const buf = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+    await openDocumentData(buf, 'huge.pptx', '/d/huge.pptx');
+    const s = useAppStore.getState();
+    expect(s.error?.code).toBe('PDF_TOO_MANY_PAGES');
+    expect(s.error?.message).toBe(
+      `슬라이드 수가 너무 많습니다 (${n}슬라이드). 최대 슬라이드 ${MAX_PAGE_COUNT}장까지 지원합니다. 문서를 분할해주세요.`,
+    );
+  });
 });
 
 // Task10 리뷰 라운드1(Critical 2 + mutation 킬): 동시 두 건이 겹칠 때 이전(추월당한) 파싱이
