@@ -206,8 +206,9 @@ M400 S/W (기능 개발) 상품 페이지 데이터 CRUD 기능 개발 ... 12/04
 ### 3.5 P4 구현 중 실물에서 발견한 것 (HWPX·PPTX)
 
 **OPF href 는 표준 경로가 우선한다.** HWPX 는 EPUB 와 같은 OCF/OPF 컨테이너를 쓰지만(§3.1),
-`content.hpf`(OPF) 의 `href` 는 HWPX 관행상 **패키지 루트 기준**으로 적힌다(`Contents/…`가 아니라
-`Contents/section0.xml` 형태가 아니라 이미 루트 상대 경로). 처음엔 "루트에 그 경로가 있으면 루트
+`content.hpf`(OPF) 의 `href` 는 HWPX 관행상 **패키지 루트 기준**으로 적힌다(OPF 가
+`Contents/content.hpf` 에 있어도 href 는 OPF 상대인 `section0.xml` 이 아니라 루트 상대인
+`Contents/section0.xml`). 처음엔 "루트에 그 경로가 있으면 루트
 기준, 없으면 OPF 상대"로 짰으나, 표준(OPF, EPUB 가 따르는 규약)과 HWPX 관행이 충돌하는 자리를
 실물·테스트로 대조한 결과 **반대가 맞다** — OPF 상대 경로가 실제로 존재하면(`zip.has`) 그것을
 우선하고, 없을 때만 href 를 루트 기준 그대로 쓴다. 표준 경로가 존재하는 모호한 경우엔 표준이
@@ -545,7 +546,7 @@ P2 가 가장 위험하다 — 기존 PDF 경로를 건드리는 유일한 구�
 |---|---|---|
 | A1 | 제공받은 HWPX 샘플에 개인정보성 내용 — 공개 저장소에 커밋 불가 | 커밋용 최소 픽스처를 새로 작성 (§8.1) |
 | A2 | HWPX 이미지(`BinData/`) 구조 미확인 — 샘플에 그림이 없었다 | ✅ 처리 완료(P4, Task11) — 그림이 든 실물 HWPX 로 로컬 스모크 확인, BMP 포함 정상 추출 |
-| A3 | DOCX · PPTX · EPUB 세부 구조는 문서 지식 기반, 실물 미확인 | PPTX ✅ 처리 완료(P4, Task11 — 실물 25개). DOCX · EPUB 는 미해결로 남는다(EPUB 는 P4b 선행조건) |
+| A3 | DOCX · PPTX · EPUB 세부 구조는 문서 지식 기반, 실물 미확인 | DOCX ✅ 처리 완료(P1 · QA34 실물 검증). PPTX ✅ 처리 완료(P4, Task11 — 실물 25개). EPUB 는 미해결로 남는다(P4b 선행조건) |
 | A4 | `fflate` 버전 핀 · 번들 증가량 | 설치 후 실측, `audit-shipped` 분류 |
 | A5 | 텍스트 뷰어 렌더 성능 | 500 단위 문서로 실측 (§5.3) |
 
@@ -566,7 +567,7 @@ P2 가 가장 위험하다 — 기존 PDF 경로를 건드리는 유일한 구�
 | 릴리즈 워크플로 글로브 (`*Setup*`) | ✅ 소스 확인 |
 | 세션 스키마 불일치 처리 (read-old/write-new) | ✅ 소스 확인 |
 | `remark-gfm` 번들 포함 | ✅ `shippedDevDependencies` 확인 |
-| DOCX 세부 구조 | ❌ 문서 지식 기반, 실물 미확인 (A3) |
+| DOCX 세부 구조 | ✅ 실물 확인 (P1 · QA34 — 실물 DOCX 로 추출 검증) |
 | PPTX 세부 구조 | ✅ 실물 확인 (P4, Task11 — Downloads 실 파일 25개, 단위 수 대 `sldIdLst` 독립 대조 전부 일치, `‹#›` 누출 0) |
 | EPUB 세부 구조 | ❌ 미확인 (A3, P4b 선행조건 — 실물 샘플 확보) |
 | `fflate` API·크기 | ❌ 미확인 (A4) |
