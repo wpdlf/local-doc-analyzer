@@ -184,3 +184,34 @@ describe('hwpx — 제목·실패 계약', () => {
     expect((await extract(zip)).units).toEqual(['둘', '열']);
   });
 });
+
+describe('hwpx 표 (실물: 가려진 칸은 XML 에 없다)', () => {
+  const tc = (row: number, col: number, text: string, rowSpan = 1, colSpan = 1) =>
+    `<hp:tc><hp:subList>${p(run(t(text)))}</hp:subList><hp:cellAddr colAddr="${col}" rowAddr="${row}"/><hp:cellSpan colSpan="${colSpan}" rowSpan="${rowSpan}"/><hp:cellSz width="1" height="1"/></hp:tc>`;
+  const tbl = (rows: number, cols: number, trs: string[]) => `<hp:tbl rowCnt="${rows}" colCnt="${cols}" pageBreak="CELL">${trs.map((r) => `<hp:tr>${r}</hp:tr>`).join('')}</hp:tbl>`;
+
+  it('세로 병합으로 가려진 칸이 없어도 열이 밀리지 않는다 — 분류 텍스트는 아래 행에 복사', async () => {
+    const table = tbl(2, 3, [tc(0, 0, '분류', 2) + tc(0, 1, '항목') + tc(0, 2, '값'), tc(1, 1, '달성률') + tc(1, 2, '100%')]);
+    const doc = await extract(hwpx([sec(p(run(table)))]));
+    expect(doc.units[0]).toBe('| 분류 | 항목 | 값 |\n| --- | --- | --- |\n| 분류 | 달성률 | 100% |');
+  });
+
+  it('가로 병합은 첫 칸에만 텍스트', async () => {
+    const table = tbl(2, 2, [tc(0, 0, '머리', 1, 2), tc(1, 0, 'a') + tc(1, 1, 'b')]);
+    const doc = await extract(hwpx([sec(p(run(table)))]));
+    expect(doc.units[0]).toBe('| 머리 |  |\n| --- | --- |\n| a | b |');
+  });
+
+  it('셀 안의 표는 평탄화한다(행 "; ", 칸 " / ")', async () => {
+    const inner = tbl(2, 2, [tc(0, 0, 'i1') + tc(0, 1, 'i2'), tc(1, 0, 'i3') + tc(1, 1, 'i4')]);
+    const outer = tbl(1, 1, [`<hp:tc><hp:subList>${p(run(t('밖') + inner))}</hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/></hp:tc>`]);
+    const doc = await extract(hwpx([sec(p(run(outer)))]));
+    expect(doc.units[0]).toContain('밖');
+    expect(doc.units[0]).toContain('i1 / i2; i3 / i4');
+  });
+
+  it('rowCnt/colCnt 가 병리 값이어도 256 으로 자른다', async () => {
+    const doc = await extract(hwpx([sec(p(run(tbl(1, 1e9, [tc(0, 0, 'a')]))))]));
+    expect(doc.units[0]!.split('\n')[0]!.split('|').length - 2).toBe(256);
+  });
+});

@@ -1,6 +1,6 @@
 import { parseXml, walk, localName, attr, childrenNamed } from './xml';
 import { paginate, type Block } from './paginate';
-import { toGfmTable } from './table';
+import { toGfmTable, placeGridCells, type GridCell } from './table';
 import { readOcfPackage, hasEncryptionData, type OcfPackage } from './ocf';
 import { readOutlineLevels } from './hwpx-header';
 import { MAX_PAGE_COUNT } from '../pdf-parser';
@@ -80,7 +80,7 @@ function readParagraph(p: Element, depth: number, tableText: (tbl: Element, dept
   return out;
 }
 
-/** 셀·글상자의 subList → 한 덩어리 텍스트(문단은 줄바꿈). Task 8 이 표 배치를 교체한다. */
+/** 셀·글상자의 subList → 한 덩어리 텍스트(문단은 줄바꿈). */
 function containerText(subList: Element, depth: number, tableText: (tbl: Element, depth: number) => string): string {
   if (depth > MAX_NEST_DEPTH) {
     let s = '';
@@ -96,14 +96,48 @@ function containerText(subList: Element, depth: number, tableText: (tbl: Element
   return lines.join('\n');
 }
 
-/** Task 7 임시: 셀 텍스트를 나온 순서대로 행에 담는다(병합 좌표 무시). Task 8 이 placeGridCells 로 교체한다. */
-function naiveTableText(tbl: Element, depth: number): string {
-  const rows = childrenNamed(tbl, 'tr').map((tr) =>
-    childrenNamed(tr, 'tc').map((tc) => {
+function intAttr(el: Element | undefined, name: string, fallback: number): number {
+  const n = el ? Number.parseInt(attr(el, name) ?? '', 10) : NaN;
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/** 표 → 직사각형 행렬. 셀은 cellAddr 좌표로 놓는다(가려진 칸이 XML 에 없다 — 실물 28개 표 전부). */
+function tableGrid(tbl: Element, depth: number): string[][] {
+  const trs = childrenNamed(tbl, 'tr');
+  const cells: GridCell[] = [];
+  let maxCol = 0;
+  for (const [ri, tr] of trs.entries()) {
+    let nextCol = 0;
+    for (const tc of childrenNamed(tr, 'tc')) {
+      const addr = childrenNamed(tc, 'cellAddr')[0];
+      const span = childrenNamed(tc, 'cellSpan')[0];
+      const row = intAttr(addr, 'rowAddr', ri);
+      const col = intAttr(addr, 'colAddr', nextCol);
+      const colSpan = Math.max(1, intAttr(span, 'colSpan', 1));
       const sl = childrenNamed(tc, 'subList')[0];
-      return sl ? containerText(sl, depth, naiveTableText) : '';
-    }));
-  return toGfmTable(rows);
+      // 셀 안의 표는 GFM 셀에 담을 수 없어 평탄화한다.
+      const text = sl ? containerText(sl, depth, flattenTableText) : '';
+      cells.push({ row, col, rowSpan: Math.max(1, intAttr(span, 'rowSpan', 1)), colSpan, text });
+      nextCol = col + colSpan;
+      maxCol = Math.max(maxCol, nextCol);
+    }
+  }
+  return placeGridCells(cells, intAttr(tbl, 'rowCnt', trs.length), intAttr(tbl, 'colCnt', maxCol));
+}
+
+function flattenTableText(tbl: Element, depth: number): string {
+  if (depth > MAX_NEST_DEPTH) return '';
+  return tableGrid(tbl, depth)
+    .map((row) => row.map((c) => c.replace(/\s+/g, ' ').trim()))
+    .filter((row) => row.some((c) => c !== ''))
+    .map((row) => row.join(' / '))
+    .join('; ');
+}
+
+/** 최상위(본문·글상자)의 표 → GFM 표. */
+function gridTableText(tbl: Element, depth: number): string {
+  if (depth > MAX_NEST_DEPTH) return flattenTableText(tbl, depth);
+  return toGfmTable(tableGrid(tbl, depth));
 }
 
 function bodySections(zip: ZipIndex, pkg: OcfPackage | null): string[] {
@@ -117,12 +151,12 @@ function bodySections(zip: ZipIndex, pkg: OcfPackage | null): string[] {
 
 export interface HwpxExtractorDeps {
   fitImage?: ImageFitter;
-  /** Task 8: 표 텍스트화 교체 지점 */
+  /** 표 텍스트화 교체 지점(테스트용) — 기본값은 gridTableText */
   tableText?: (tbl: Element, depth: number) => string;
 }
 
 export function createHwpxExtractor(deps: HwpxExtractorDeps = {}): Extractor {
-  const tableText = deps.tableText ?? naiveTableText;
+  const tableText = deps.tableText ?? gridTableText;
   void (deps.fitImage ?? fitImage); // Task 9 에서 사용
   return {
     id: HWPX_FORMAT_ID,
