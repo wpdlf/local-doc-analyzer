@@ -263,4 +263,22 @@ describe('readSlideRelIds — happy-dom 의 속성 드롭 회피(R4)', () => {
     const xml = '<p:sldIdLst><p:sldId id="256" r:id="rId&amp;1"/></p:sldIdLst>';
     expect(readSlideRelIds(`<p:presentation>${xml}</p:presentation>`)).toEqual(['rId&1']);
   });
+
+  // fix-round1(리뷰 Important): 홑따옴표 속성도 유효한 XML 이다 — DOM 경로였다면 인용부호를
+  // 가리지 않았을 것이다.
+  it('홑따옴표 속성도 읽는다', () => {
+    const xml = "<p:sldIdLst><p:sldId id='256' r:id='rId2'/></p:sldIdLst>";
+    expect(readSlideRelIds(`<p:presentation>${xml}</p:presentation>`)).toEqual(['rId2']);
+  });
+
+  // fix-round1(리뷰 Important): 자기 닫힘 <p:extLst/> 는 스키마상 p:sldMasterId 안에도 허용되고,
+  // 진짜 sldIdLst **앞**에 올 수 있다. 짝 태그 제거만 쓰면 비탐욕 매칭이 이 자기 닫힘 태그의
+  // 시작부터 그 뒤(p14 섹션 확장)의 진짜 </…extLst> 까지를 통째로 삼켜 그 사이의 진짜
+  // sldIdLst 가 사라진다(슬라이드 0장).
+  it('sldIdLst 앞의 자기 닫힘 <p:extLst/>(sldMasterId 안)가 진짜 sldIdLst 를 삼키지 않는다', () => {
+    const xml = '<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rIdM"><p:extLst/></p:sldMasterId></p:sldMasterIdLst>'
+      + '<p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst>'
+      + '<p:extLst><p:ext><p14:sectionLst><p14:section><p14:sldIdLst><p14:sldId id="999" r:id="rId99"/></p14:sldIdLst></p14:section></p14:sectionLst></p:ext></p:extLst>';
+    expect(readSlideRelIds(`<p:presentation>${xml}</p:presentation>`)).toEqual(['rId1']);
+  });
 });

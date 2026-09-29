@@ -52,16 +52,27 @@ function decodeXmlEntities(s: string): string {
  *
  * p14 확장(`extLst/…/p14:sectionLst` 안의 두 번째 `sldIdLst`)은 순서 정보가 아니므로, 먼저
  * `extLst` 서브트리를 통째로 지운 뒤 첫 `sldIdLst` 만 본다.
+ *
+ * fix-round1(리뷰 Important): 짝 태그 제거(`<extLst>…</extLst>`)만으로는 **자기 닫힘**
+ * `<p:extLst/>`(스키마상 `p:sldMasterId` 안에도 허용되고, 실제 sldIdLst **앞**에 올 수 있다)를
+ * 못 다룬다 — 비탐욕 `[\s\S]*?` 가 자기 닫힘 태그의 `<…extLst` 시작부터 매칭을 시작해, 그
+ * 뒤에 오는 **진짜** `</…extLst>`(예: p14 섹션 확장의 닫는 태그)까지를 통째로 삼켜 그 사이의
+ * 진짜 `sldIdLst` 가 사라진다(슬라이드 0장 → DOC_NO_TEXT). 자기 닫힘 형태를 **먼저** 제거해야
+ * 짝 태그 제거가 엉뚱한 시작점을 잡지 않는다.
  */
 export function readSlideRelIds(presentationXml: string): string[] {
-  const withoutExt = presentationXml.replace(/<(?:[\w.-]+:)?extLst\b[\s\S]*?<\/(?:[\w.-]+:)?extLst>/g, '');
+  const withoutSelfClosingExt = presentationXml.replace(/<(?:[\w.-]+:)?extLst\b[^>]*\/>/g, '');
+  const withoutExt = withoutSelfClosingExt.replace(/<(?:[\w.-]+:)?extLst\b[\s\S]*?<\/(?:[\w.-]+:)?extLst>/g, '');
   const listMatch = /<(?:[\w.-]+:)?sldIdLst\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?sldIdLst>/.exec(withoutExt);
   if (!listMatch) return [];
   const ids: string[] = [];
   const sldIdTagRe = /<(?:[\w.-]+:)?sldId\b([^>]*)>/g;
   for (const tagMatch of listMatch[1]!.matchAll(sldIdTagRe)) {
-    const idMatch = /\b[\w.-]+:id\s*=\s*"([^"]*)"/.exec(tagMatch[1] ?? '');
-    if (idMatch) ids.push(decodeXmlEntities(idMatch[1]!));
+    // fix-round1: 홑따옴표 속성(`r:id='rId2'`)도 받는다 — XML 은 둘 다 유효하고, DOM 경로였다면
+    // 애초에 인용부호를 가리지 않았다.
+    const idMatch = /\b[\w.-]+:id\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(tagMatch[1] ?? '');
+    const raw = idMatch?.[1] ?? idMatch?.[2];
+    if (raw !== undefined) ids.push(decodeXmlEntities(raw));
   }
   return ids;
 }
