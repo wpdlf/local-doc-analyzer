@@ -214,4 +214,18 @@ describe('hwpx 표 (실물: 가려진 칸은 XML 에 없다)', () => {
     const doc = await extract(hwpx([sec(p(run(tbl(1, 1e9, [tc(0, 0, 'a')]))))]));
     expect(doc.units[0]!.split('\n')[0]!.split('|').length - 2).toBe(256);
   });
+
+  // fix-round1(리뷰 지적): MAX_NEST_DEPTH(16) 를 넘는 중첩은 구조를 포기하더라도 텍스트는
+  // 잃지 않아야 한다(docx.ts containerText 의 plainText 폴백과 같은 규칙). 이전 코드는 ''
+  // 를 돌려줘 마커가 통째로 사라졌다.
+  it('MAX_NEST_DEPTH 를 넘는 중첩도 마커 텍스트를 잃지 않는다 — 평문 폴백', async () => {
+    const marker = '깊은마커';
+    let cellContent = p(run(t(marker)));
+    for (let i = 0; i < 18; i++) {
+      const nested = tbl(1, 1, [`<hp:tc><hp:subList>${cellContent}</hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/></hp:tc>`]);
+      cellContent = p(run(nested));
+    }
+    const doc = await extract(hwpx([sec(cellContent)]));
+    expect(doc.units.join('\n')).toContain(marker);
+  });
 });

@@ -80,13 +80,16 @@ function readParagraph(p: Element, depth: number, tableText: (tbl: Element, dept
   return out;
 }
 
+/** 깊이 상한을 넘은 서브트리 — 구조 없이 hp:t 텍스트만 모은다(잃지 않는다, docx.ts plainText 와 같은 규칙). */
+function plainText(el: Element): string {
+  let s = '';
+  for (const e of walk(el, (x) => SKIPPED.has(localName(x)))) if (localName(e) === 't') s += tText(e);
+  return s;
+}
+
 /** 셀·글상자의 subList → 한 덩어리 텍스트(문단은 줄바꿈). */
 function containerText(subList: Element, depth: number, tableText: (tbl: Element, depth: number) => string): string {
-  if (depth > MAX_NEST_DEPTH) {
-    let s = '';
-    for (const e of walk(subList, (x) => SKIPPED.has(localName(x)))) if (localName(e) === 't') s += tText(e);
-    return s;
-  }
+  if (depth > MAX_NEST_DEPTH) return plainText(subList);
   const lines: string[] = [];
   for (const para of childrenNamed(subList, 'p')) {
     const r = readParagraph(para, depth, tableText);
@@ -126,7 +129,7 @@ function tableGrid(tbl: Element, depth: number): string[][] {
 }
 
 function flattenTableText(tbl: Element, depth: number): string {
-  if (depth > MAX_NEST_DEPTH) return '';
+  if (depth > MAX_NEST_DEPTH) return plainText(tbl);
   return tableGrid(tbl, depth)
     .map((row) => row.map((c) => c.replace(/\s+/g, ' ').trim()))
     .filter((row) => row.some((c) => c !== ''))
