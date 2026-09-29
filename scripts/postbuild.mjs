@@ -7,7 +7,7 @@
 // 등 CJK PDF 글리프가 정상적으로 표시된다. pdfjs 메이저 업그레이드 (4 → 5) 시 cmaps
 // 경로가 바뀔 수 있으므로 변경 시 본 스크립트 확인 필요.
 
-import { cpSync, existsSync, readFileSync, statSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { collectEagerFiles, checkEagerScope } from './eager-graph.mjs';
 import { relative, resolve } from 'node:path';
 
@@ -70,6 +70,14 @@ const EAGER_FORBIDDEN = [
   // ⚠️ 청크 **이름**에 여기 패턴이 들어가면 오탐이 난다 — entry 가 동적 import 대상의 파일명을
   // 문자열로 담기 때문이다. manualChunks 에 'katex' 같은 이름을 쓰지 말 것(현재는 math-plugins).
   { name: 'katex', re: /katex/i },
+  // QA35(D4): 다중 포맷 추출기 체인(document-open 의 loadExtractChain 이 동적 import). 아래
+  // EAGER_FORBIDDEN_CHUNKS 의 파일명 판정만으로는 **못 잡는다** — pdfjs 와 달리 manualChunks 로
+  // 고정된 청크가 아니라서, 누가 정적 import 로 되돌리면 rollup 이 zip-*.js/registry-*.js 를 따로
+  // 만들지 않고 entry 에 **인라인**한다(실측: 파일명 가드는 초록, eager 462→469KB). 그래서 내용
+  // 표식으로도 본다. 둘 다 문자열 리터럴이라 minify 에도 남고, entry 는 이 청크들을 파일명으로만
+  // 참조하므로 오탐 여지가 없다(실측: 정상 빌드의 index/react-vendor 에 0회).
+  { name: 'fflate (extract/zip)', re: /invalid zip data/ },
+  { name: 'extractors (extract/registry)', re: /word\/document\.xml/ },
 ];
 
 // QA27(D-Low): 의도적으로 지연 경계 밖에 둔 무거운 청크는 katex 만이 아니다 — pdfjs(~1MB)도
@@ -80,7 +88,16 @@ const EAGER_FORBIDDEN = [
 // 콜백 안에서** 참조하므로 문자열이 entry 코드에 그대로 남는다(실측 확인). 지켜야 할 불변식은
 // "그 청크가 eager 그래프에 **들어왔는가**" 이고, collectEagerFiles 는 정적 import 만 따라가므로
 // 그 청크가 목록에 나타나는 것 자체가 곧 위반이다. 파일명으로 판정한다.
-const EAGER_FORBIDDEN_CHUNKS = [/(^|[\\/])pdfjs-[^\\/]*\.js$/];
+//
+// QA35(D4): 다중 포맷(v1.8.0~) 이 지연 청크 둘을 더 만들었다 — zip(fflate 압축 해제)과
+// registry(DOCX/PPTX/HWPX 추출기). 둘 다 **오피스 문서를 열 때만** 필요한데 이 목록이 pdfjs
+// 만 알고 있어, document-open 쪽에서 정적 import 가 한 줄 섞이면 PDF 만 쓰는 사용자의 cold
+// start 에 조용히 얹혀도 게이트는 초록이었다. 파일명 판정은 청크 그룹핑(manualChunks 등)으로
+// 이 청크가 eager 에 엮이는 경우를 잡고, 정적 import 인라인은 위 EAGER_FORBIDDEN 의 내용 표식이 잡는다.
+const EAGER_FORBIDDEN_CHUNKS = [
+  /(^|[\\/])pdfjs-[^\\/]*\.js$/,
+  /(^|[\\/])(zip|registry)-[^\\/]*\.js$/,
+];
 
 // 그래프 수집 규칙(어디까지가 eager 인가)은 eager-graph.mjs 가 소유한다 — QA27(D-Important)
 // 에서 순수 분리해 단위 테스트 대상이 됐다. 여기서는 금지 패턴 판정과 종료 처리만 한다.
@@ -114,6 +131,27 @@ if (failures.length > 0) {
   console.error('[postbuild] 지연 전용 라이브러리가 eager 그래프로 이동했습니다.');
   console.error('[postbuild] 원인은 대개 정적 import 혼입입니다 — math-plugins/markdown-renderer 를');
   console.error('[postbuild] 동적 import 경계(safe-markdown) 밖에서 import 하지 않았는지 확인하세요.');
+  console.error('[postbuild] extract/zip·extract/registry 는 document-open 의 loadExtractChain 에서만 동적 import 합니다.');
+  process.exit(1);
+}
+
+// QA35(D4 후속): 내용 표식의 실패 모드도 '빨간불' 이 아니라 **조용한 무효화**다 — fflate 가 에러
+// 문구를 바꾸거나 추출기가 경로 리터럴을 상수 조합으로 바꾸면 표식은 어디에도 매칭되지 않고, 위
+// 루프는 영원히 위반 0 으로 끝난다. 그래서 각 표식이 **지연 청크 쪽에 실제로 존재함**을 매 빌드
+// 확인한다(eager 에 있으면 위에서 이미 실패했으므로 여기서는 eager 밖만 본다). katex 표식도 같은
+// 규칙이 깔끔히 성립해(math-plugins 등 지연 청크에 있다) 함께 검사한다.
+const assetsDir = resolve(outDir, 'assets');
+const lazyCode = readdirSync(assetsDir)
+  .filter((f) => /\.m?js$/.test(f))
+  .map((f) => resolve(assetsDir, f))
+  .filter((abs) => !eager.has(abs))
+  .map((abs) => readFileSync(abs, 'utf8'));
+const staleMarkers = EAGER_FORBIDDEN.filter(({ re }) => !lazyCode.some((code) => re.test(code)));
+if (staleMarkers.length > 0) {
+  console.error('[postbuild] eager 경계 표식이 낡았습니다(stale marker) — 지연 청크 어디에서도 찾지 못함:');
+  for (const { name, re } of staleMarkers) console.error(`  - ${name}: ${re}`);
+  console.error('[postbuild] 이 표식은 더 이상 아무것도 막지 못합니다. 해당 라이브러리/모듈의 지연 청크에 실제로');
+  console.error('[postbuild] 남아 있는 문자열로 EAGER_FORBIDDEN 을 갱신하세요.');
   process.exit(1);
 }
 const totalBytes = [...eager.values()].reduce((n, c) => n + Buffer.byteLength(c), 0);
