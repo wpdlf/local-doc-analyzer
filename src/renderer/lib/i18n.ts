@@ -239,6 +239,8 @@ export const _translations = {
   'uploader.ocrDesc': { ko: 'Vision 모델로 텍스트를 추출하고 있습니다', en: 'Extracting text with Vision model' },
   'uploader.reading': { ko: '문서를 읽고 있습니다...', en: 'Reading document...' },
   'uploader.wait': { ko: '잠시만 기다려주세요', en: 'Please wait' },
+  // QA35: 비-PDF 추출 진행(document-open 의 onProgress). OCR 문구와 섞지 않는 포맷 중립 라벨.
+  'uploader.extractProgress': { ko: '내용 추출 중', en: 'Extracting content' },
   'uploader.dragDrop': { ko: '문서를 여기에 드래그하거나', en: 'Drag document here or' },
   'uploader.clickSelect': { ko: '클릭하여 선택', en: 'click to select' },
   'uploader.selectFile': { ko: '파일 선택', en: 'Select file' },

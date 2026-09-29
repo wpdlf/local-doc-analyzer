@@ -12,10 +12,12 @@ const M = vi.hoisted(() => ({
   openPdf: vi.fn(),
   openDocumentData: vi.fn(() => Promise.resolve()),
   cancelDocumentParse: vi.fn(),
+  parseProgress: null as { current: number; total: number } | null,
 }));
 vi.mock('../../lib/document-open', () => ({
   openDocumentData: M.openDocumentData,
   cancelDocumentParse: M.cancelDocumentParse,
+  useParseProgress: () => M.parseProgress,
 }));
 
 vi.stubGlobal('window', Object.assign(window, {
@@ -25,6 +27,7 @@ vi.stubGlobal('window', Object.assign(window, {
 import { PdfUploader } from '../PdfUploader';
 import { useAppStore } from '../../lib/store';
 import { DEFAULT_SETTINGS } from '../../types';
+import { t } from '../../lib/i18n';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -107,6 +110,24 @@ describe('PdfUploader', () => {
     render(<PdfUploader />);
     expect(screen.getByText(/스캔 PDF 텍스트 인식/)).toBeTruthy();
     expect(screen.getByText('3 / 10')).toBeTruthy();
+  });
+
+  // QA35: 큰 PPTX/HWPX 는 추출에 수 초가 걸리는데 스피너뿐이었다 — 추출기가 이미 onProgress 를
+  // 부르는데 document-open 이 넘기지 않았다. 추출 진행은 OCR 과 다른 중립 문구로 보인다.
+  it('파싱 중 + 추출 진행 → 중립 라벨 + "n / total" (OCR 문구 아님)', () => {
+    useAppStore.setState({ isParsing: true, ocrProgress: null });
+    M.parseProgress = { current: 4, total: 12 };
+    render(<PdfUploader />);
+    expect(screen.getByText(t('uploader.extractProgress'))).toBeTruthy();
+    expect(screen.getByText('4 / 12')).toBeTruthy();
+    expect(screen.queryByText(/스캔 PDF 텍스트 인식/)).toBeNull();
+    M.parseProgress = null;
+  });
+
+  it('추출 진행이 없으면 종전 대기 문구만', () => {
+    useAppStore.setState({ isParsing: true, ocrProgress: null });
+    render(<PdfUploader />);
+    expect(screen.queryByText(t('uploader.extractProgress'))).toBeNull();
   });
 
   it('파싱 중에는 드롭존 클릭이 파일 선택을 열지 않는다', () => {
