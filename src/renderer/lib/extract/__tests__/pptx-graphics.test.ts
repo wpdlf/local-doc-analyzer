@@ -45,6 +45,22 @@ describe('pptx 차트 (합성 — 실물 코퍼스에 없었다)', () => {
     expect(pptxGraphics.chart(frame, 'ppt/slides/slide1.xml', zip)).toBe('분기 매출\n\n|  | Q1 | Q2 |\n| --- | --- | --- |\n| 2025 | 10 | 12 |');
   });
 
+  const zipWith = (xml: string) => zipOf({
+    'ppt/slides/_rels/slide1.xml.rels': `<Relationships ${REL}><Relationship Id="rIdC" Type="x/chart" Target="../charts/chart1.xml"/></Relationships>`,
+    'ppt/charts/chart1.xml': xml,
+  });
+  const oneSeries = `<c:ser><c:cat><c:strRef><c:strCache><c:pt idx="0"><c:v>Q1</c:v></c:pt></c:strCache></c:strRef></c:cat>`
+    + `<c:val><c:numRef><c:numCache><c:pt idx="0"><c:v>7</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser>`;
+
+  // F6a: 제목의 문단이 둘이면 예전엔 "매출2025" 로 붙었다.
+  it('여러 문단 제목은 문단을 붙이지 않는다', () => {
+    const xml = `<c:chartSpace ${NS}><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:p><a:r><a:t>매출</a:t></a:r></a:p><a:p><a:r><a:t>2025</a:t></a:r></a:p></c:rich></c:tx></c:title>`
+      + `<c:plotArea><c:barChart>${oneSeries}</c:barChart></c:plotArea></c:chart></c:chartSpace>`;
+    const result = pptxGraphics.chart(frame, 'ppt/slides/slide1.xml', zipWith(xml));
+    expect(result).not.toContain('매출2025');
+    expect(result.startsWith('매출\n2025\n\n|')).toBe(true);
+  });
+
   it('차트 파트가 없으면 빈 문자열(문서 열기를 실패시키지 않는다)', () => {
     expect(pptxGraphics.chart(frame, 'ppt/slides/slide1.xml', zipOf({}))).toBe('');
   });
@@ -83,5 +99,18 @@ describe('pptx SmartArt (합성)', () => {
 
   it('node 점의 텍스트만 목록으로 — 연결선·문서 루트·drawing 중복은 제외', () => {
     expect(pptxGraphics.smartArt(frame, 'ppt/slides/slide1.xml', zip)).toBe('- 기획\n- 개발');
+  });
+
+  // F6a: 점 하나에 문단이 둘이면 예전엔 a:t 를 구분자 없이 이어 "첫째둘째" 가 됐다. 목록 항목은
+  // 한 줄이어야 하므로 문단을 공백으로 잇는다.
+  it('여러 문단으로 된 점은 문단을 공백으로 이어 한 항목으로 — 붙지 않는다', () => {
+    const twoPara = `<dgm:dataModel ${NS}><dgm:ptLst>`
+      + `<dgm:pt modelId="1"><dgm:t><a:bodyPr/><a:p><a:r><a:t>첫째</a:t></a:r></a:p><a:p><a:r><a:t>둘째</a:t></a:r></a:p></dgm:t></dgm:pt>`
+      + `</dgm:ptLst></dgm:dataModel>`;
+    const z = zipOf({
+      'ppt/slides/_rels/slide1.xml.rels': `<Relationships ${REL}><Relationship Id="rIdD" Type="x/diagramData" Target="../diagrams/data1.xml"/></Relationships>`,
+      'ppt/diagrams/data1.xml': twoPara,
+    });
+    expect(pptxGraphics.smartArt(frame, 'ppt/slides/slide1.xml', z)).toBe('- 첫째 둘째');
   });
 });

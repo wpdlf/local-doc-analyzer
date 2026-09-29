@@ -62,20 +62,22 @@ function cachePoints(container: Element | undefined, limit: number): string[] {
   return Array.from(out, (v) => v ?? '');
 }
 
-function textOf(el: Element | undefined): string {
-  if (!el) return '';
-  let s = '';
-  // el 자신은 세지 않는다 — dgm:t(SmartArt 점의 텍스트 컨테이너)는 로컬명이 우연히 't' 라
-  // el 자신과 그 안의 진짜 텍스트 런(a:t) 이 둘 다 매칭돼 텍스트가 두 번 더해진다.
-  for (const e of walk(el)) { if (e !== el && localName(e) === 't') s += e.textContent ?? ''; }
-  return s.trim();
+/**
+ * 텍스트 본문 컨테이너(`dgm:t` · `c:rich` — 둘 다 a:bodyPr + a:p 목록인 txBody 형태) → 문단마다
+ * 한 줄. F6a: 예전에는 서브트리의 `t` 를 구분자 없이 이어 두 문단이 "AB" 로 붙었다. 슬라이드
+ * 본문과 같은 textBodyText 를 써서 문단·줄바꿈·필드 규칙을 한 곳에 둔다.
+ */
+function bodyText(el: Element | undefined): string {
+  return el ? textBodyText(el).trim() : '';
 }
 
 /** 차트 → 제목 + 캐시 값 표. 원본 워크북(embeddings/)은 열지 않는다 — 캐시가 화면에 보이는 값이다. */
 function chart(frame: Element, slidePart: string, zip: ZipIndex): string {
   const root = relatedPart(frame, 'chart', 'id', slidePart, zip);
   if (!root) return '';
-  const title = textOf([...walk(root)].find((e) => localName(e) === 'title'));
+  const titleEl = [...walk(root)].find((e) => localName(e) === 'title');
+  const rich = titleEl ? [...walk(titleEl)].find((e) => localName(e) === 'rich') : undefined;
+  const title = bodyText(rich);
   const series = [...walk(root)].filter((e) => localName(e) === 'ser').slice(0, MAX_CHART_SERIES);
   let categories: string[] = [];
   const rows: string[][] = [];
@@ -98,7 +100,8 @@ function smartArt(frame: Element, slidePart: string, zip: ZipIndex): string {
     if (localName(pt) !== 'pt') continue;
     const type = attr(pt, 'type');
     if (type !== null && type !== 'node' && type !== 'asst') continue;
-    const text = textOf(childrenNamed(pt, 't')[0]);
+    // 목록 항목은 한 줄이어야 하므로 점 안의 문단은 공백으로 잇는다.
+    const text = bodyText(childrenNamed(pt, 't')[0]).split('\n').map((l) => l.trim()).filter(Boolean).join(' ');
     if (text) lines.push(`- ${text}`);
   }
   return lines.join('\n');
