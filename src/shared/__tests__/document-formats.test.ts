@@ -6,9 +6,9 @@ import {
 } from '../document-formats';
 
 describe('document-formats — 지원 포맷 단일 출처', () => {
-  it('P1 시점의 지원 목록은 pdf 와 docx 다', () => {
-    expect(SUPPORTED_FORMATS.map((f) => f.id)).toEqual(['pdf', 'docx']);
-    expect(SUPPORTED_EXTENSIONS).toEqual(['.pdf', '.docx']);
+  it('P4a 시점의 지원 목록은 pdf · docx · pptx 다', () => {
+    expect(SUPPORTED_FORMATS.map((f) => f.id)).toEqual(['pdf', 'docx', 'pptx']);
+    expect(SUPPORTED_EXTENSIONS).toEqual(['.pdf', '.docx', '.pptx']);
   });
 
   // Task3(P4 선행): 사용자 안내 문구("PDF · Word 파일만 지원됩니다")가 이 목록에서 도출돼야
@@ -33,7 +33,7 @@ describe('document-formats — 지원 포맷 단일 출처', () => {
   });
 
   it('다이얼로그 필터는 "모든 지원 문서" 를 먼저 둔다', () => {
-    expect(DIALOG_FILTERS[0]?.extensions).toEqual(['pdf', 'docx']);
+    expect(DIALOG_FILTERS[0]?.extensions).toEqual(['pdf', 'docx', 'pptx']);
     // 필터의 extensions 는 점 없는 형태여야 한다 (Electron 규약)
     for (const f of DIALOG_FILTERS) {
       for (const e of f.extensions) expect(e.startsWith('.')).toBe(false);
@@ -66,7 +66,7 @@ describe('document-formats — 지원 포맷 단일 출처', () => {
   // QA34(L11): 다이얼로그 필터 이름은 main 이 쓴다 — main 에는 i18n 이 없어 한국어 '문서' 가
   // 영어 UI 에도 그대로 떴다. 언어 중립 라벨(포맷 이름 나열)로 도출한다.
   it('"모든 지원 문서" 필터 이름은 언어 중립(포맷 라벨 나열)이다', () => {
-    expect(DIALOG_FILTERS[0]?.name).toBe('PDF, Word');
+    expect(DIALOG_FILTERS[0]?.name).toBe('PDF, Word, PowerPoint');
     expect(DIALOG_FILTERS[0]?.name).not.toMatch(/[가-힣]/);
   });
 

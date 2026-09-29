@@ -476,10 +476,12 @@ describe('openDocumentData — 포맷 dispatch (Task10 리뷰 라운드1)', () =
   });
 
   it('zip 이지만 아는 추출기가 없으면 DOC_UNSUPPORTED 다', async () => {
+    // P4a: ppt/presentation.xml 은 이제 pptxExtractor 가 sniff 하므로(Task4), "아는 추출기 없음"
+    // 재현에는 그 어떤 등록된 추출기도 안 보는 엔트리(xlsx 모양)를 쓴다.
     const { zipSync, strToU8 } = await import('fflate');
-    const out = zipSync({ 'ppt/presentation.xml': strToU8('<p:presentation/>') });
+    const out = zipSync({ 'xl/workbook.xml': strToU8('<workbook/>') });
     const buf = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
-    await openDocumentData(buf, 'deck.docx', '/d/deck.docx');
+    await openDocumentData(buf, 'sheet.docx', '/d/sheet.docx');
     const s = useAppStore.getState();
     expect(s.error?.code).toBe('DOC_UNSUPPORTED');
     expect(s.error?.message).toMatch(/PDF/); // SUPPORTED_LABEL 이 실려 있다

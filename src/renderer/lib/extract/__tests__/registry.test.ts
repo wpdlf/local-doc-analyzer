@@ -3,6 +3,9 @@ import { zipSync, strToU8 } from 'fflate';
 import { openZip } from '../zip';
 import { resolveExtractor, ZIP_EXTRACTORS } from '../registry';
 import { docxExtractor } from '../docx';
+import { pptxExtractor } from '../pptx';
+import { PPTX_FORMAT_ID } from '../../../../shared/document-formats';
+import type { ZipIndex } from '../types';
 
 // Task10 리뷰 라운드1(Critical 2 / mutation 킬): resolveExtractor 자체는 어떤 테스트도 실행하지
 // 않았다 — `.find(sniff)` 를 `ZIP_EXTRACTORS[0]` 로 바꾸는 뮤테이션이 살아남는다(현재 목록이
@@ -16,19 +19,28 @@ function zipOf(files: Record<string, string>): ArrayBuffer {
   return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
 }
 
+/** zipOf 는 ArrayBuffer 를 주므로 openZip 으로 감싸 ZipIndex 를 만든다 — 파일의 기존 패턴. */
+function zipIndexOf(files: Record<string, string>): ZipIndex {
+  return openZip(zipOf(files));
+}
+
 describe('resolveExtractor', () => {
   it('word/document.xml 이 있는 zip 은 docxExtractor 를 반환한다', () => {
     const zip = openZip(zipOf({ 'word/document.xml': '<w:document/>' }));
     expect(resolveExtractor(zip)).toBe(docxExtractor);
   });
 
+  it('ppt/presentation.xml 이 있으면 pptx 추출기를 고른다', () => {
+    expect(resolveExtractor(zipIndexOf({ 'ppt/presentation.xml': '<p:presentation/>' }))?.id).toBe(PPTX_FORMAT_ID);
+  });
+
   it('아는 추출기가 sniff 하지 못하는 zip 은 null 을 반환한다 — 목록의 첫 원소를 무조건 주지 않는다', () => {
     // `ZIP_EXTRACTORS[0]` 뮤테이션이면 여기서도 docxExtractor 를 반환해 이 단언이 실패한다.
-    const zip = openZip(zipOf({ 'ppt/presentation.xml': '<p:presentation/>' }));
+    const zip = openZip(zipOf({ 'other/entry.xml': '<x/>' }));
     expect(resolveExtractor(zip)).toBeNull();
   });
 
-  it('ZIP_EXTRACTORS 에는 docxExtractor 하나가 등록돼 있다', () => {
-    expect(ZIP_EXTRACTORS).toEqual([docxExtractor]);
+  it('ZIP_EXTRACTORS 에는 docxExtractor · pptxExtractor 가 등록돼 있다', () => {
+    expect(ZIP_EXTRACTORS).toEqual([docxExtractor, pptxExtractor]);
   });
 });

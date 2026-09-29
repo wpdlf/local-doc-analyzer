@@ -21,6 +21,7 @@ export interface DocumentFormat {
 export const SUPPORTED_FORMATS: readonly DocumentFormat[] = [
   { id: 'pdf', ext: '.pdf', label: 'PDF', container: 'pdf' },
   { id: 'docx', ext: '.docx', label: 'Word', container: 'zip' },
+  { id: 'pptx', ext: '.pptx', label: 'PowerPoint', container: 'zip' },
 ] as const;
 
 export const SUPPORTED_EXTENSIONS: readonly string[] = SUPPORTED_FORMATS.map((f) => f.ext);
@@ -37,6 +38,9 @@ export const SUPPORTED_LABEL = SUPPORTED_FORMATS.map((f) => f.label).join(' · '
  * 남지 않는다(소스 스캔 가드 대상 — Task9).
  */
 export const DOCX_FORMAT_ID = 'docx' as const satisfies DocumentFormat['id'];
+
+/** pptx 추출기(`extract/pptx.ts`)의 판별 값. 위 DOCX_FORMAT_ID 주석 참조 — 리터럴은 이 한 곳뿐. */
+export const PPTX_FORMAT_ID = 'pptx' as const satisfies DocumentFormat['id'];
 
 /**
  * pdf 를 제외한 나머지 포맷 id. pdf 는 pdf-parser.ts 전용 파이프라인이 처리하고, zip 기반
