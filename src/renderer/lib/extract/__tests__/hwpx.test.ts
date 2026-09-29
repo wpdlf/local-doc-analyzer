@@ -220,9 +220,27 @@ describe('hwpx 표 (실물: 가려진 칸은 XML 에 없다)', () => {
     expect(text.split('\n').filter((l) => l.startsWith('| 행')).length).toBe(300);
   });
 
-  it('rowCnt/colCnt 가 병리 값이어도 256 으로 자른다', async () => {
-    const doc = await extract(hwpx([sec(p(run(tbl(1, 1e9, [tc(0, 0, 'a')]))))]));
-    expect(doc.units[0]!.split('\n')[0]!.split('|').length - 2).toBe(256);
+  // R18: 선언값(rowCnt/colCnt)은 셀이 실제로 차지하는 범위를 넘지 못한다 — 빈 쓰레기 행·열을 만들지 않는다.
+  it('rowCnt/colCnt 가 병리 값이어도 셀이 차지하는 크기로 만든다', async () => {
+    const doc = await extract(hwpx([sec(p(run(tbl(100000, 1e9, [tc(0, 0, 'a') + tc(0, 1, 'b'), tc(1, 0, 'c') + tc(1, 1, 'd')]))))]));
+    expect(doc.units[0]).toBe('| a | b |\n| --- | --- |\n| c | d |');
+  });
+
+  it('병리적 rowSpan 은 선언값 안에서만 믿는다 — 빈 행을 만들지 않는다', async () => {
+    const doc = await extract(hwpx([sec(p(run(tbl(2, 1, [tc(0, 0, 'a', 1e6), '']))))]));
+    expect(doc.units[0]).toBe('| a |\n| --- |\n| a |');
+  });
+
+  it('셀 좌표가 병리 값이면 열은 256 으로 자르고 넘친 셀은 평문 행으로 남긴다', async () => {
+    const doc = await extract(hwpx([sec(p(run(tbl(1, 1e9, [tc(0, 0, 'a') + tc(0, 5000, '먼 칸')]))))]));
+    const lines = doc.units[0]!.split('\n');
+    expect(lines[0]!.split('|').length - 2).toBe(256);
+    expect(lines[2]!.startsWith('| 먼 칸 |')).toBe(true);
+  });
+
+  it('선언값보다 셀이 많으면(손상) 셀을 버리지 않는다', async () => {
+    const doc = await extract(hwpx([sec(p(run(tbl(1, 1, [tc(0, 0, 'a'), tc(1, 0, 'b')]))))]));
+    expect(doc.units[0]).toBe('| a |\n| --- |\n| b |');
   });
 
   // fix-round1(리뷰 지적): MAX_NEST_DEPTH(16) 를 넘는 중첩은 구조를 포기하더라도 텍스트는

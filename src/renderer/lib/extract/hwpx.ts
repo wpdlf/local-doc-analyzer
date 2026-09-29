@@ -158,7 +158,27 @@ function tableGrid(tbl: Element, depth: number): string[][] {
       maxCol = Math.max(maxCol, nextCol);
     }
   }
-  return placeGridCells(cells, intAttr(tbl, 'rowCnt', trs.length), intAttr(tbl, 'colCnt', maxCol));
+  return placeGridCells(cells, gridExtent(cells, 'row', intAttr(tbl, 'rowCnt', trs.length)), gridExtent(cells, 'col', intAttr(tbl, 'colCnt', maxCol)));
+}
+
+/**
+ * 격자 한 축의 크기 — 선언값(rowCnt/colCnt)이 아니라 셀이 실제로 차지하는 범위로 정한다(R18).
+ * 선언값만 믿으면 rowCnt="100000" 에 실제 2행인 표가 빈 행 수천 개(칸 상한까지)의 쓰레기 표가 된다.
+ * 셀 **원점**은 선언값을 넘어도 항상 포함한다 — 선언값이 모자란 손상 파일에서 셀을 버리지 않게
+ * (크기는 placeGridCells 의 상한이 묶고, 넘친 셀은 평문 행으로 남는다). 스팬 끝은 선언값 안에서만
+ * 믿는다 — 병리적 rowSpan 하나가 빈 행을 만들지 않게.
+ */
+function gridExtent(cells: GridCell[], axis: 'row' | 'col', declared: number): number {
+  let origins = 0;
+  let spans = 0;
+  for (const c of cells) {
+    const o = Math.floor(axis === 'row' ? c.row : c.col);
+    if (!(o >= 0)) continue;
+    const span = Math.max(1, Math.floor(axis === 'row' ? c.rowSpan : c.colSpan) || 1);
+    origins = Math.max(origins, o + 1);
+    spans = Math.max(spans, o + span);
+  }
+  return Math.max(origins, Math.min(spans, Math.max(0, declared)));
 }
 
 function flattenTableText(tbl: Element, depth: number): string {
