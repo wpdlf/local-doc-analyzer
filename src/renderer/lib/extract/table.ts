@@ -17,8 +17,17 @@ function cell(text: string): string {
     .trim();
 }
 
-/** 격자 한 축의 칸 상한 — 파일이 주는 정수(rowCnt/colCnt/span)가 배열 길이가 되므로 병리 값을 자른다. */
+/**
+ * 열 수 상한 — 파일이 주는 정수(colCnt/span)가 배열 길이가 되므로 병리 값을 자른다. 실물 업무 서식의
+ * 최대 폭(수십 칸)보다 넉넉하다. 이름과 달리 **행에는 걸지 않는다**(아래 MAX_GRID_CELLS 참조).
+ */
 export const MAX_GRID_CELLS_PER_AXIS = 256;
+
+/**
+ * 격자 칸 총수 상한(행×열). QA35: 예전에는 열 상한(256)을 행에도 걸어 257행째부터 조용히 잘렸다 —
+ * 긴 명단·실적표는 수백 행이 흔하다. 행 수 자체는 제한하지 않고 작업량(배열 크기)만 이 값으로 묶는다.
+ */
+export const MAX_GRID_CELLS = 200_000;
 
 export interface GridCell {
   row: number;
@@ -38,15 +47,26 @@ export interface GridCell {
  * 규칙은 DOCX(docx.ts tableRows)와 같다: 가로 병합은 첫 칸에만 텍스트, 세로 병합은 아래 칸에 복사
  * (분류 열이 행마다 남아야 "어느 값이 무엇의 값인지" 가 GFM 표에서 유지된다). 겹치면 먼저 놓인
  * 칸이 이긴다 — 손상 파일에서 뒤 셀이 앞 셀을 덮어 내용이 사라지지 않게.
+ *
+ * 상한(열 MAX_GRID_CELLS_PER_AXIS · 총 칸 MAX_GRID_CELLS)에 걸려 격자에 못 놓은 셀은 버리지 않고,
+ * 격자 뒤에 원래 행별로 " / " 로 이은 평문 행(첫 칸)으로 붙인다 — 열 대응은 잃어도 내용은 남는다.
+ * 선언된 행·열 수 밖의 좌표(손상)는 상한과 무관하므로 예전처럼 버린다.
  */
 export function placeGridCells(cells: GridCell[], rowCount: number, colCount: number): string[][] {
-  const rows = Math.max(0, Math.min(Math.floor(rowCount) || 0, MAX_GRID_CELLS_PER_AXIS));
-  const cols = Math.max(0, Math.min(Math.floor(colCount) || 0, MAX_GRID_CELLS_PER_AXIS));
+  const declaredRows = Math.max(0, Math.floor(rowCount) || 0);
+  const declaredCols = Math.max(0, Math.floor(colCount) || 0);
+  const cols = Math.min(declaredCols, MAX_GRID_CELLS_PER_AXIS);
+  const rows = cols > 0 ? Math.min(declaredRows, Math.floor(MAX_GRID_CELLS / cols)) : Math.min(declaredRows, MAX_GRID_CELLS);
   const grid: (string | null)[][] = Array.from({ length: rows }, () => Array<string | null>(cols).fill(null));
+  const overflow: { row: number; col: number; text: string }[] = [];
   for (const cell of cells) {
     const r0 = Math.floor(cell.row);
     const c0 = Math.floor(cell.col);
-    if (!(r0 >= 0 && r0 < rows && c0 >= 0 && c0 < cols)) continue;
+    if (!(r0 >= 0 && r0 < declaredRows && c0 >= 0 && c0 < declaredCols)) continue;
+    if (r0 >= rows || c0 >= cols) {
+      if (cell.text.trim()) overflow.push({ row: r0, col: c0, text: cell.text });
+      continue;
+    }
     if (grid[r0]![c0] !== null) continue;
     const r1 = Math.min(rows, r0 + Math.max(1, Math.floor(cell.rowSpan) || 1));
     const c1 = Math.min(cols, c0 + Math.max(1, Math.floor(cell.colSpan) || 1));
@@ -57,7 +77,21 @@ export function placeGridCells(cells: GridCell[], rowCount: number, colCount: nu
       }
     }
   }
-  return grid.map((row) => row.map((v) => v ?? ''));
+  const out = grid.map((row) => row.map((v) => v ?? ''));
+  if (overflow.length > 0) {
+    overflow.sort((a, b) => a.row - b.row || a.col - b.col);
+    const width = Math.max(1, cols);
+    let i = 0;
+    while (i < overflow.length) {
+      const row = overflow[i]!.row;
+      const texts: string[] = [];
+      for (; i < overflow.length && overflow[i]!.row === row; i++) texts.push(overflow[i]!.text.replace(/\s+/g, ' ').trim());
+      const line = Array<string>(width).fill('');
+      line[0] = texts.join(' / ');
+      out.push(line);
+    }
+  }
+  return out;
 }
 
 export function toGfmTable(rows: string[][]): string {

@@ -211,6 +211,15 @@ describe('hwpx 표 (실물: 가려진 칸은 XML 에 없다)', () => {
     expect(doc.units[0]).toContain('i1 / i2; i3 / i4');
   });
 
+  // QA35(Important): 열 상한(256)이 행에도 걸려 257행째부터 조용히 잘렸다.
+  it('256 행을 넘는 표도 모든 행이 본문에 남는다', async () => {
+    const trs = Array.from({ length: 300 }, (_, r) => tc(r, 0, `행${r}`) + tc(r, 1, `값${r}`));
+    const doc = await extract(hwpx([sec(p(run(tbl(300, 2, trs))))]));
+    const text = doc.units.join('\n');
+    expect(text).toContain('| 행299 | 값299 |');
+    expect(text.split('\n').filter((l) => l.startsWith('| 행')).length).toBe(300);
+  });
+
   it('rowCnt/colCnt 가 병리 값이어도 256 으로 자른다', async () => {
     const doc = await extract(hwpx([sec(p(run(tbl(1, 1e9, [tc(0, 0, 'a')]))))]));
     expect(doc.units[0]!.split('\n')[0]!.split('|').length - 2).toBe(256);
