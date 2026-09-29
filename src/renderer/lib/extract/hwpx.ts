@@ -3,8 +3,8 @@ import { paginate, type Block } from './paginate';
 import { toGfmTable, placeGridCells, type GridCell } from './table';
 import { readOcfPackage, hasEncryptionData, type OcfPackage } from './ocf';
 import { readOutlineLevels } from './hwpx-header';
-import { MAX_PAGE_COUNT } from '../pdf-parser';
-import type { Extractor, ExtractedDoc, ExtractedHeading, ExtractOptions, ZipIndex } from './types';
+import { MAX_EXAMINED_IMAGES, MAX_PAGE_COUNT, MAX_TOTAL_IMAGES } from '../pdf-parser';
+import type { Extractor, ExtractedDoc, ExtractedHeading, ExtractedImage, ExtractOptions, ZipIndex } from './types';
 import { HWPX_FORMAT_ID } from '../../../shared/document-formats';
 import { extractFail } from './errors';
 import { fitImage, type ImageFitter } from './image-fit';
@@ -63,7 +63,18 @@ function readParagraph(p: Element, depth: number, tableText: (tbl: Element, dept
     const name = localName(el);
     if (SKIPPED.has(name)) return true;
     // 표·글상자·그림은 여기서 따로 처리하고 서브트리는 건너뛴다(셀 문단을 본문 문단으로 다시 읽지 않게).
-    if (name === 'tbl') { flush(); const tb = tableText(el, depth + 1); if (tb) out.parts.push(tb); return true; }
+    if (name === 'tbl') {
+      flush();
+      // 셀 안 그림 — 셀 경계는 단위 경계가 아니므로 표 블록에 붙인다(실물 그림 4개가 전부 셀 안이었다).
+      for (const e of walk(el, (x) => SKIPPED.has(localName(x)))) {
+        if (localName(e) !== 'img') continue;
+        const ref = attr(e, 'binaryItemIDRef');
+        if (ref) out.pics.push({ ref, part: out.parts.length });
+      }
+      const tb = tableText(el, depth + 1);
+      if (tb) out.parts.push(tb);
+      return true;
+    }
     if (name === 'drawText') { for (const sl of childrenNamed(el, 'subList')) out.boxes.push(sl); return true; }
     if (name === 'pic') {
       const img = [...walk(el)].find((e) => localName(e) === 'img');
@@ -160,7 +171,7 @@ export interface HwpxExtractorDeps {
 
 export function createHwpxExtractor(deps: HwpxExtractorDeps = {}): Extractor {
   const tableText = deps.tableText ?? gridTableText;
-  void (deps.fitImage ?? fitImage); // Task 9 에서 사용
+  const fit = deps.fitImage ?? fitImage;
   return {
     id: HWPX_FORMAT_ID,
 
@@ -180,6 +191,7 @@ export function createHwpxExtractor(deps: HwpxExtractorDeps = {}): Extractor {
 
       const blocks: Block[] = [];
       const headingAt: { level: number; title: string; blockIndex: number }[] = [];
+      const imageAt: { ref: string; blockIndex: number }[] = [];
       let processed = 0;
 
       for (const [si, path] of sections.entries()) {
@@ -205,9 +217,15 @@ export function createHwpxExtractor(deps: HwpxExtractorDeps = {}): Extractor {
             // 빈 문단도 쪽나눔은 전한다(paginate 가 빈 breakBefore 블록을 flush 로 처리한다).
             if (breakBefore) blocks.push({ text: '', breakBefore: true });
           }
+          const firstBlock = blocks.length;
           for (const [i, text] of r.parts.entries()) {
             if (i === 0 && level !== undefined && text.trim()) headingAt.push({ level, title: text.trim().split('\n')[0]!, blockIndex: blocks.length });
             blocks.push({ text, breakBefore: i === 0 && breakBefore });
+          }
+          // 그림이 속한 조각의 블록. 조각이 없는 문단(그림만 있는 문단)은 직전 블록(없으면 0)에 붙인다.
+          for (const pic of r.pics) {
+            const blockIndex = r.parts.length === 0 ? Math.max(0, blocks.length - 1) : firstBlock + Math.min(pic.part, r.parts.length - 1);
+            imageAt.push({ ref: pic.ref, blockIndex });
           }
           // 글상자는 떠 있는 개체 — 쪽나눔·제목을 만들지 않는다.
           for (const box of r.boxes) {
@@ -225,7 +243,27 @@ export function createHwpxExtractor(deps: HwpxExtractorDeps = {}): Extractor {
           { pages: String(units.length), max: String(MAX_PAGE_COUNT) });
       }
       const headings: ExtractedHeading[] = headingAt.map((h) => ({ level: h.level, title: h.title, unitIndex: unitOfBlock[h.blockIndex] ?? 0 }));
-      return { units, images: [], headings, unitKind: 'page' };
+
+      const images: ExtractedImage[] = [];
+      let imageBudgetExceeded = false;
+      if (opts.extractImages !== false && imageAt.length > 0 && pkg) {
+        const seen = new Set<string>();
+        let examined = 0;
+        for (const { ref, blockIndex } of imageAt) {
+          throwIfAborted(opts.signal);
+          if (examined >= MAX_EXAMINED_IMAGES) break;
+          examined += 1;
+          const path = pkg.items.get(ref)?.path;
+          if (!path || seen.has(path)) continue;
+          const bytes = zip.bytes(path);
+          if (!bytes) continue;
+          seen.add(path);
+          if (images.length >= MAX_TOTAL_IMAGES) { imageBudgetExceeded = true; continue; }
+          const fitted = await fit(bytes);
+          if (fitted) images.push({ unitIndex: unitOfBlock[blockIndex] ?? 0, ...fitted });
+        }
+      }
+      return { units, images, headings, unitKind: 'page', ...(imageBudgetExceeded ? { imageBudgetExceeded: true } : {}) };
     },
   };
 }

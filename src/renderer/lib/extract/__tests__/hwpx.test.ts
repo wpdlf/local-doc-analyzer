@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { zipSync, strToU8 } from 'fflate';
 import { openZip } from '../zip';
 import { createHwpxExtractor } from '../hwpx';
+import { createImageFitter } from '../image-fit';
 import type { ZipIndex } from '../types';
 
 const NS = 'xmlns:hs="urn:hs" xmlns:hp="urn:hp" xmlns:hc="urn:hc" xmlns:hh="urn:hh"';
@@ -227,5 +228,38 @@ describe('hwpx 표 (실물: 가려진 칸은 XML 에 없다)', () => {
     }
     const doc = await extract(hwpx([sec(cellContent)]));
     expect(doc.units.join('\n')).toContain(marker);
+  });
+});
+
+describe('hwpx 그림', () => {
+  function bmp(w: number, h: number): Uint8Array {
+    const b = new Uint8Array(54); b[0] = 0x42; b[1] = 0x4d;
+    const v = new DataView(b.buffer); v.setUint32(14, 40, true); v.setInt32(18, w, true); v.setInt32(22, h, true);
+    return b;
+  }
+  const codec = { async reencode() { return { bytes: new Uint8Array([1, 2]), mimeType: 'image/jpeg' as const }; } };
+  const xi = createHwpxExtractor({ fitImage: createImageFitter(codec) });
+  const pic = (ref: string) => `<hp:pic><hp:shapeComment>그림입니다.</hp:shapeComment><hc:img binaryItemIDRef="${ref}"/></hp:pic>`;
+  const items = '<opf:item id="image1" href="BinData/image1.bmp" media-type="image/bmp"/><opf:item id="image2" href="BinData/image2.png" media-type="image/png"/>';
+
+  it('섹션의 hp:pic 을 그 문단의 단위에 매핑한다 — 셀 안 그림 포함, BMP 는 재인코딩', async () => {
+    const cellPic = `<hp:tbl rowCnt="1" colCnt="1"><hp:tr><hp:tc><hp:subList>${p(run(pic('image1')))}</hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/></hp:tc></hp:tr></hp:tbl>`;
+    const doc = await xi.extract(hwpx(
+      [sec(p(run(t('첫 쪽'))) + p(run(t('둘째 쪽') + cellPic), { pageBreak: '1' }))],
+      { manifestItems: items, extra: { 'BinData/image1.bmp': bmp(200, 100) } },
+    ), { extractImages: true });
+    expect(doc.images).toHaveLength(1);
+    expect(doc.images[0]).toMatchObject({ unitIndex: 1, mimeType: 'image/jpeg', width: 200, height: 100 });
+  });
+
+  it('header.xml 의 글머리표 그림은 본문 그림이 아니다', async () => {
+    const header = `<hh:head ${NS}><hh:bullet useImage="1">${'<hc:img binaryItemIDRef="image2"/>'}</hh:bullet></hh:head>`;
+    const doc = await xi.extract(hwpx([sec(p(run(t('본문'))))], { header, manifestItems: items, extra: { 'BinData/image2.png': bmp(200, 100) } }), { extractImages: true });
+    expect(doc.images).toEqual([]);
+  });
+
+  it('extractImages=false 면 그림을 모으지 않는다', async () => {
+    const doc = await xi.extract(hwpx([sec(p(run(t('a') + pic('image1'))))], { manifestItems: items, extra: { 'BinData/image1.bmp': bmp(200, 100) } }), { extractImages: false });
+    expect(doc.images).toEqual([]);
   });
 });

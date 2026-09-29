@@ -61,11 +61,11 @@ export const OPEN_ERROR_CODES: ReadonlySet<string> = new Set<string>([
 ]);
 
 /**
- * OOXML 은 그림을 `<파트>/media/` 에 둔다(word/media · ppt/media). 본문 XML·rels 는 절대 여기
- * 들어오지 않으므로 이 경로만 거르면 이미지 분석 OFF 에서 텍스트 추출은 그대로다.
+ * 그림 파트 — 이미지 분석 OFF 면 풀지 않는다. OOXML 은 `<파트>/media/`(word/media · ppt/media),
+ * HWPX 는 `BinData/` 에 둔다. 본문 XML·rels 는 절대 여기 들어오지 않는다.
  */
 export function isNotMediaPart(name: string): boolean {
-  return !/^[^/]+\/media\//i.test(name);
+  return !/^(?:[^/]+\/media|BinData)\//i.test(name);
 }
 
 /** 추출기 체인 lazy 로드 — import 절 주석 참조. */
