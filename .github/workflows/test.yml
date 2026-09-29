@@ -43,9 +43,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             node-version: '22'
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             node-version: '24'
           - os: windows-2025
             node-version: '22'
@@ -258,7 +258,7 @@ jobs:
     # QA24(D-M4): 야간 스케줄은 shuffle·package-smoke 전용이다. 이 잡까지 매일 도는 것은
     # push/PR 에서 이미 검증한 것의 중복 실행일 뿐이라 러너 시간만 쓴다.
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -298,7 +298,7 @@ jobs:
     # QA24(D-M4): 야간 스케줄은 shuffle·package-smoke 전용이다. 이 잡까지 매일 도는 것은
     # push/PR 에서 이미 검증한 것의 중복 실행일 뿐이라 러너 시간만 쓴다.
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -344,7 +344,7 @@ jobs:
   # 실패 시 junit 아티팩트로 어느 테스트가 어떤 순서에서 깨졌는지 재현 가능하게 남긴다.
   shuffle:
     if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     continue-on-error: true
     steps:
