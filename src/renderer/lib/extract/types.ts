@@ -55,10 +55,10 @@ export interface ExtractOptions {
 export interface Extractor {
   /**
    * pdf 는 별도 파이프라인(pdf-parser.ts)이 전담하므로 여기 나타나지 않는다 —
-   * document-formats.ts 의 NonPdfFormatId 를 derive 한다. 나머지(hwpx/epub)는 아직
-   * 그 파일에 등록되지 않은 P4 예정 포맷이라 여기서만 안다.
+   * document-formats.ts 의 NonPdfFormatId 를 derive 한다(hwpx 도 이제 그쪽에 등록돼 있다).
+   * epub 만 아직 그 파일에 등록되지 않은 P4 예정 포맷이라 여기서만 안다.
    */
-  id: NonPdfFormatId | 'hwpx' | 'epub';
+  id: NonPdfFormatId | 'epub';
   /** zip 내부 엔트리로 판별한다. 확장자를 믿지 않는다. */
   sniff(zip: ZipIndex): boolean;
   extract(zip: ZipIndex, opts: ExtractOptions): Promise<ExtractedDoc>;

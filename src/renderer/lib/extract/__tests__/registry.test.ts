@@ -4,7 +4,8 @@ import { openZip } from '../zip';
 import { resolveExtractor, ZIP_EXTRACTORS } from '../registry';
 import { docxExtractor } from '../docx';
 import { pptxExtractor } from '../pptx';
-import { PPTX_FORMAT_ID } from '../../../../shared/document-formats';
+import { hwpxExtractor } from '../hwpx';
+import { PPTX_FORMAT_ID, HWPX_FORMAT_ID } from '../../../../shared/document-formats';
 import type { ZipIndex } from '../types';
 
 // Task10 리뷰 라운드1(Critical 2 / mutation 킬): resolveExtractor 자체는 어떤 테스트도 실행하지
@@ -34,13 +35,17 @@ describe('resolveExtractor', () => {
     expect(resolveExtractor(zipIndexOf({ 'ppt/presentation.xml': '<p:presentation/>' }))?.id).toBe(PPTX_FORMAT_ID);
   });
 
+  it('mimetype 이 application/hwp+zip 이면 hwpx 추출기를 고른다', () => {
+    expect(resolveExtractor(zipIndexOf({ mimetype: 'application/hwp+zip' }))?.id).toBe(HWPX_FORMAT_ID);
+  });
+
   it('아는 추출기가 sniff 하지 못하는 zip 은 null 을 반환한다 — 목록의 첫 원소를 무조건 주지 않는다', () => {
     // `ZIP_EXTRACTORS[0]` 뮤테이션이면 여기서도 docxExtractor 를 반환해 이 단언이 실패한다.
     const zip = openZip(zipOf({ 'other/entry.xml': '<x/>' }));
     expect(resolveExtractor(zip)).toBeNull();
   });
 
-  it('ZIP_EXTRACTORS 에는 docxExtractor · pptxExtractor 가 등록돼 있다', () => {
-    expect(ZIP_EXTRACTORS).toEqual([docxExtractor, pptxExtractor]);
+  it('ZIP_EXTRACTORS 에는 docxExtractor · pptxExtractor · hwpxExtractor 가 등록돼 있다', () => {
+    expect(ZIP_EXTRACTORS).toEqual([docxExtractor, pptxExtractor, hwpxExtractor]);
   });
 });
