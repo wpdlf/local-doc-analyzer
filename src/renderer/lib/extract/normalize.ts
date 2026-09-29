@@ -44,21 +44,27 @@ export function toPdfDocument(
   const chapters: Chapter[] =
     ex.headings.length > 0
       ? ex.headings.map((h, i) => {
-          // startPage 는 1-based inclusive, endPage 는 slice 용 exclusive 경계다
-          // (types/index.ts 의 Chapter 주석). 마지막 챕터는 pageTexts.length + 1 이다.
+          // startPage·endPage 모두 1-based **inclusive** 다 — detectChapters 가 그렇게 만들고,
+          // 소비자(use-summarize labelChaptersWithPages · page-range)가 전부
+          // slice(startPage-1, endPage) 로 읽는다(types/index.ts 의 "exclusive 경계"는 0-based
+          // 슬라이스 끝이라는 뜻이라 1-based 로는 마지막 페이지다).
+          // R14: 예전에는 endPage = 다음 제목 단위 + 1 이라 다음 챕터 첫 단위와 겹쳤고(PPTX 는
+          // 슬라이드마다 제목이 있어 모든 슬라이드가 두 챕터에 들어가 이중 요약됐다), 첫 제목 앞
+          // 단위(머리말)를 어느 챕터에도 넣지 않았다. 머리말은 detectChapters 처럼 첫 챕터에 접는다.
           // unitIndex 도 이미지와 같은 이유로 clamp 한다(범위 밖 unitIndex 는 헤딩에도 생길 수 있다).
-          const unitIndex = clampUnitIndex(h.unitIndex, pageTexts.length);
-          const startPage = unitIndex + 1;
+          const startPage = i === 0 ? 1 : clampUnitIndex(h.unitIndex, pageTexts.length) + 1;
           const next = ex.headings[i + 1];
+          // 같은 단위에 제목이 둘이면 다음 제목 단위가 이 챕터 시작과 같다 — endPage < startPage
+          // 인 빈 챕터를 만들지 않도록 시작 단위를 하한으로 둔다.
           const endPage = next
-            ? clampUnitIndex(next.unitIndex, pageTexts.length) + 1
-            : pageTexts.length + 1;
+            ? Math.max(startPage, clampUnitIndex(next.unitIndex, pageTexts.length))
+            : pageTexts.length;
           return {
             index: i,
             title: h.title,
             startPage,
             endPage,
-            text: pageTexts.slice(startPage - 1, endPage - 1).join('\n\n'),
+            text: pageTexts.slice(startPage - 1, endPage).join('\n\n'),
           };
         })
       : detectChapters(pageTexts);
