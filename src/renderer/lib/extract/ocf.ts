@@ -35,7 +35,15 @@ export interface OcfPackage {
  * 받아들인다 — 둘 중 하나만 가정하면 한 포맷에서 모든 파트가 "없음" 이 된다(조용히 빈 문서).
  */
 function resolveHref(zip: ZipIndex, opfPath: string, href: string): string {
-  const decoded = decodeURIComponent(href);
+  // QA35(O03): 잘못된 퍼센트 인코딩(`%E0%A4%A`)에서 decodeURIComponent 가 URIError 를 던져
+  // 항목 하나 때문에 패키지 전체가 실패했다(HWPX 는 그림이 0개가 되고, EPUB 는 문서가 안 열린다).
+  // 항목 단위로 가두고, 디코드할 수 없으면 href 를 그대로 쓴다.
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(href);
+  } catch {
+    decoded = href;
+  }
   const viaOpf = resolveRelTarget(opfPath, decoded);
   if (zip.has(viaOpf)) return viaOpf;
   return decoded;
@@ -48,6 +56,15 @@ export function readOcfPackage(zip: ZipIndex, packageMediaType: string): OcfPack
     (e) => localName(e) === 'rootfile' && attr(e, 'media-type') === packageMediaType,
   );
   const opfPath = (rootfile && attr(rootfile, 'full-path')) || extractFail('DOC_CORRUPT', 'package rootfile missing');
+  return readOpf(zip, opfPath);
+}
+
+/**
+ * OPF(패키지 문서) 하나 → manifest + spine. container.xml 없이 OPF 경로를 이미 아는 호출자
+ * (HWPX 의 관례 경로 `Contents/content.hpf` 폴백)도 같은 해석을 쓰도록 분리한다 — 사본을 두면
+ * href 해석 규칙이 두 벌로 갈린다.
+ */
+export function readOpf(zip: ZipIndex, opfPath: string): OcfPackage {
   const opfXml = zip.text(opfPath) ?? extractFail('DOC_CORRUPT', 'package document missing');
   const root = parseXml(opfXml).documentElement;
 

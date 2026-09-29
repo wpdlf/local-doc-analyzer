@@ -129,7 +129,14 @@ function toBase64(bytes: Uint8Array): string {
 
 export function createImageFitter(codec: ImageCodec): ImageFitter {
   return async (bytes) => {
-    const probe = probeImage(bytes);
+    // QA35(B05): probeImage 는 길이를 검사하지만, 신뢰할 수 없는 바이트에서 예상 못 한 예외가
+    // 나더라도 그림 하나 때문에 문서 열기 전체가 실패하지 않게 여기서도 가둔다(디코드 실패와 같은 규칙).
+    let probe: ImageProbe | null;
+    try {
+      probe = probeImage(bytes);
+    } catch {
+      probe = null;
+    }
     if (!probe) return null;
     const { width, height, mimeType } = probe;
     // 아이콘·구분선·글머리표 그림 — Vision 이 읽을 내용이 없고 예산만 먹는다.
