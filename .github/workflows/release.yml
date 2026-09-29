@@ -296,6 +296,16 @@ jobs:
           PACKAGED_SMOKE_REQUIRED: '1'
         run: npx playwright test e2e/packaged-smoke.spec.ts
 
+      # QA35(D1): userData 이전 E2E 는 ubuntu 러너에 safeStorage 가 없어 **모든 CI 에서 skip** 되고
+      # 있었다. 그 스펙이 지키는 것은 v1.8.1 High 수정(Local State 를 Chromium 초기화 **전에**
+      # 복사) — 순서가 틀리면 파일은 복사되는데 API 키만 조용히 복호화 실패한다. DPAPI 가 있는
+      # Windows 에서 소스 트리 out/(위 npm run build 산출물)로 실행하고, MIGRATION_E2E_REQUIRED=1
+      # 로 skip 을 실패로 승격한다(위 PACKAGED_SMOKE_REQUIRED 와 같은 이유).
+      - name: userData migration E2E gate (safeStorage)
+        env:
+          MIGRATION_E2E_REQUIRED: '1'
+        run: npx playwright test e2e/userdata-migration.spec.ts
+
       - name: Upload packaged smoke artifacts on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

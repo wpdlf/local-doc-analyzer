@@ -425,6 +425,13 @@ jobs:
           PACKAGED_SMOKE_REQUIRED: '1'
         run: npx playwright test e2e/packaged-smoke.spec.ts
 
+      # QA35(D1): release.yml build-windows 와 동일한 게이트 — ubuntu e2e 잡에서는 safeStorage 가
+      # 없어 skip 되므로, 태그 전에 이 스펙이 실제로 도는 곳은 여기뿐이다.
+      - name: userData migration E2E gate (safeStorage)
+        env:
+          MIGRATION_E2E_REQUIRED: '1'
+        run: npx playwright test e2e/userdata-migration.spec.ts
+
       - name: Verify auto-update metadata exists
         shell: bash
         run: |
