@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../lib/store';
 import { useT, translateMainError } from '../lib/i18n';
-import { openDocumentData, cancelDocumentParse } from '../lib/document-open';
+import { openDocumentData, cancelDocumentParse, useParseProgress } from '../lib/document-open';
 
 export function PdfUploader() {
   const setError = useAppStore((s) => s.setError);
   const isParsing = useAppStore((s) => s.isParsing);
   const ocrProgress = useAppStore((s) => s.ocrProgress);
+  const parseProgress = useParseProgress();
   const t = useT();
   const [isDragging, setIsDragging] = useState(false);
   const dialogOpenRef = useRef(false);
@@ -116,6 +117,21 @@ export function PdfUploader() {
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 {t('uploader.wait')}
               </p>
+              {/* QA35: 비-PDF 추출 진행 — OCR 과 다른 중립 문구(스캔 PDF 인식이 아니다). */}
+              {parseProgress && parseProgress.total > 0 && (
+                <div className="w-full max-w-xs">
+                  <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1">
+                    <span>{t('uploader.extractProgress')}</span>
+                    <span>{parseProgress.current} / {parseProgress.total}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                    <div
+                      className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${Math.min(100, (parseProgress.current / parseProgress.total) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </>
           )}
           <button

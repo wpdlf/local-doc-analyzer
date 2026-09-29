@@ -78,6 +78,7 @@ vi.stubGlobal('crypto', { randomUUID: () => `uuid-${Math.random()}` });
 import { useSummarize, SUMMARY_IDLE_TIMEOUT_MS } from '../use-summarize';
 import { useAppStore } from '../store';
 import { t } from '../i18n';
+import { parseCitations, formatUnitRange } from '../citation';
 import { DEFAULT_SETTINGS } from '../../types';
 import type { PdfDocument, PageImage } from '../../types';
 
@@ -634,6 +635,30 @@ describe('useSummarize — 페이지 범위 요약 배선 (QA25)', () => {
     const content = useAppStore.getState().summary?.content ?? '';
     expect(content, '범위 표식 없이 정식 요약으로 커밋됐다').toContain('2-4');
     expect(content).toContain('페이지만 대상으로');
+  });
+
+  // QA35: 표식은 **저장본에 박힌다** — 슬라이드 덱에 "2-4 페이지만" 이 남으면 재오픈한 사용자와
+  // 그 요약을 집어 가는 교차 요약 모두가 번호 체계를 잘못 읽는다. 또 표식이 인용 토큰으로
+  // 파싱되면 저장본에 존재하지 않는 페이지로 가는 버튼이 생긴다 — 둘 다 여기서 고정한다.
+  it('슬라이드 문서의 범위 표식은 슬라이드 단위로 쓰이고 인용으로 파싱되지 않는다', async () => {
+    useAppStore.setState({
+      document: { ...docFivePages(), fileName: 'deck.pptx', unitKind: 'slide' },
+      summaryPageRange: { start: 2, end: 4 },
+    });
+    await runSummarize();
+    const content = useAppStore.getState().summary?.content ?? '';
+    const marker = t('summary.pageRangeMarker', { range: '슬라이드 2-4' });
+    expect(content).toContain(marker);
+    expect(content).not.toContain('페이지만 대상으로');
+    expect(parseCitations(marker).some((s) => s.type === 'citation'), '범위 표식이 인용 토큰으로 파싱된다').toBe(false);
+  });
+
+  it('영어 UI 에서도 범위 표식이 인용으로 파싱되지 않는다', () => {
+    useAppStore.setState((s) => ({ settings: { ...s.settings, uiLanguage: 'en' } }));
+    for (const kind of ['page', 'slide', 'chapter'] as const) {
+      const marker = t('summary.pageRangeMarker', { range: formatUnitRange(2, 4, kind) });
+      expect(parseCitations(marker).some((s) => s.type === 'citation'), `${kind}: ${marker}`).toBe(false);
+    }
   });
 
   it('전체 범위면 문서를 그대로 쓴다 (마스킹이 과잉 적용되지 않는다)', async () => {

@@ -4,7 +4,7 @@ import { openDocumentData } from './document-open';
 import { persistCurrentSession, restoreSessionForDocument } from './use-session';
 import { confirmDiscardIfNotPersisted } from './discard-policy';
 import { t } from './i18n';
-import type { OpenTab, PdfDocument, PersistedSession } from '../types';
+import type { Chapter, OpenTab, PdfDocument, PersistedSession, UnitKind } from '../types';
 
 /**
  * 다중 문서 탭 오케스트레이션 (multi-doc Phase 1).
@@ -103,6 +103,36 @@ async function openTabTarget(tab: OpenTab): Promise<boolean> {
 }
 
 /**
+ * 세션 복원 챕터 정리(QA35) — **비-PDF(unitKind 있음)만**.
+ *
+ * v1.8.0 DOCX 추출기는 제목 챕터의 endPage 를 다음 챕터의 startPage 와 겹치게 저장했다. 이후
+ * 정규화가 고쳐졌지만 세션 우선 복원은 재파싱하지 않으므로 옛 경계가 그대로 살아, 챕터 요약이
+ * 같은 단위를 두 번 요약하고 인용이 두 챕터에 중복된다. 여기서 inclusive 경계 규약(detectChapters
+ * ·page-range 와 동일)으로 맞춘다: 다음 챕터 시작 전에서 끊고(자기 시작 이상 유지), 마지막은
+ * 문서 끝(pageCount)까지. 경계가 바뀌면 본문도 새 경계의 pageTexts 로 다시 잇는다.
+ *
+ * PDF 챕터는 detectChapters 가 만든 값이라 이 결함이 없고, 앞 챕터에 머리말을 접는 등 자체 규칙이
+ * 있으므로 건드리지 않는다.
+ */
+export function sanitizeRestoredChapters(
+  chapters: Chapter[],
+  pageTexts: string[],
+  unitKind: UnitKind | undefined,
+): Chapter[] {
+  if (unitKind === undefined || chapters.length === 0) return chapters;
+  const pageCount = pageTexts.length;
+  return chapters.map((ch, i) => {
+    const next = chapters[i + 1];
+    let endPage = ch.endPage;
+    if (next && endPage >= next.startPage) endPage = next.startPage - 1;
+    if (!next && pageCount > 0) endPage = pageCount;
+    endPage = Math.max(ch.startPage, endPage);
+    if (endPage === ch.endPage) return ch;
+    return { ...ch, endPage, text: pageTexts.slice(ch.startPage - 1, endPage).join('\n\n') };
+  });
+}
+
+/**
  * 영속 세션에서 탭을 복원 — 재파싱 없이 즉시 전환. 뷰어용 원본 바이트는 비상주(pdfBytes=null)
  * 로 두고 인용 클릭 시 PdfViewerPanel 이 lazy 로드한다. 세션 부재/손상 시 false.
  */
@@ -141,7 +171,9 @@ async function restoreTabFromSession(tab: OpenTab): Promise<boolean> {
     pageCount: session.pageCount,
     extractedText: session.extractedText,
     pageTexts: session.pageTexts,
-    chapters: Array.isArray(session.chapters) ? session.chapters : [],
+    chapters: sanitizeRestoredChapters(
+      Array.isArray(session.chapters) ? session.chapters : [], session.pageTexts, session.unitKind,
+    ),
     images: [], // 이미지는 미영속화 — 재요약 시에만 필요, 전환 즉시성 우선
     createdAt: new Date(),
     isOcr: session.isOcr,

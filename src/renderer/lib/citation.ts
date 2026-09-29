@@ -323,6 +323,38 @@ export function formatUnitSpoken(page: number, unitKind: UnitKind = 'page'): str
 }
 
 /**
+ * 단위의 **이름**(QA35) — "페이지"/"슬라이드"/"장". 문장 안에서 수식어와 함께 쓰는 자리("시작 {unit}")용.
+ * 키를 리터럴 맵으로 두는 이유: 동적 조합(`unit.name.${k}`)이면 i18n 고아 키 가드가 DYNAMIC_PREFIXES
+ * 허용 목록으로만 볼 수 있다 — 리터럴이면 가드가 그대로 참조를 확인한다. Record<UnitKind, …> 라
+ * 새 단위가 생기면 타입 검사가 여기서 멈춘다.
+ */
+const UNIT_NAME_KEY: Record<UnitKind, TranslationKey> = {
+  page: 'unit.name.page',
+  slide: 'unit.name.slide',
+  chapter: 'unit.name.chapter',
+};
+export function formatUnitName(unitKind: UnitKind = 'page'): string {
+  return t(UNIT_NAME_KEY[unitKind]);
+}
+
+/**
+ * 단위 **구간** 표기(QA35) — "2-4 페이지" / "슬라이드 2-4" / "2-4장" (en: "pages 2-4"…).
+ *
+ * ⚠️ 범위 요약 표식(summary.pageRangeMarker)이 이 값을 **요약 본문에 저장**하고, 그 본문은
+ * 이후 교차 요약의 입력이 된다. 그래서 두 가지를 지킨다: ① 'p.' 를 쓰지 않는다 — CITATION_REGEX
+ * 가 `[… p.N]` 로 읽어 저장본에 가짜 인용 버튼이 생긴다. ② 표시 라벨(formatUnitLabel)을 쓰지
+ * 않는다 — 그쪽은 화면 전용이다. 구분자는 종전 표식과 같은 '-'.
+ */
+const UNIT_RANGE_KEY: Record<UnitKind, TranslationKey> = {
+  page: 'unit.range.page',
+  slide: 'unit.range.slide',
+  chapter: 'unit.range.chapter',
+};
+export function formatUnitRange(start: number, end: number, unitKind: UnitKind = 'page'): string {
+  return t(UNIT_RANGE_KEY[unitKind], { start: String(start), end: String(end) });
+}
+
+/**
  * 인용 페이지가 현재 문서의 유효 범위(1 ~ maxPage) 안에 있는지 검증.
  * 유효하면 page, 아니면 null (UI 에서 disabled 처리)
  */

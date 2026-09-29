@@ -174,4 +174,21 @@ describe('SummaryTypeSelector', () => {
     await user.click(screen.getByRole('radio', { name: '전체' }));
     expect(useAppStore.getState().summaryPageRange).toBeNull();
   });
+
+  // QA35: 범위 UI 의 네 문구(레이블·시작/끝 aria·총계)가 "페이지" 고정이었다 — 슬라이드 덱에서
+  // "시작 페이지 / 총 12쪽" 은 번호 체계를 잘못 가리킨다. PDF 문구는 위 테스트들이 그대로 지킨다.
+  it('슬라이드 문서는 범위 UI 가 슬라이드 단위로 말한다', () => {
+    useAppStore.setState({ document: { ...docStub(12), fileName: 'd.pptx', unitKind: 'slide' }, summaryPageRange: { start: 1, end: 12 } });
+    render(<SummaryTypeSelector />);
+    expect(screen.getByText('슬라이드 범위')).toBeTruthy();
+    expect(screen.getByLabelText('시작 슬라이드')).toBeTruthy();
+    expect(screen.getByLabelText('끝 슬라이드')).toBeTruthy();
+    expect(screen.getByText('/ 총 슬라이드 12장')).toBeTruthy();
+  });
+
+  it('PDF 의 총계 표기는 formatUnitCount 로 "/ 총 10페이지"', () => {
+    useAppStore.setState({ document: docStub(10), summaryPageRange: { start: 1, end: 10 } });
+    render(<SummaryTypeSelector />);
+    expect(screen.getByText('/ 총 10페이지')).toBeTruthy();
+  });
 });

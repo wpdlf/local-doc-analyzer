@@ -1115,6 +1115,9 @@ export async function reconcileSessions(
         embedModel: hasBlob && typeof s.embedModel === 'string' ? s.embedModel.slice(0, 128) : null,
         embedDim: hasBlob && typeof s.embedDim === 'number' && Number.isFinite(s.embedDim) ? s.embedDim : null,
         chunkCount: hasBlob ? chunkCount : 0,
+        // QA35(B-F2): writeSession 과 같은 규칙 — 빠뜨리면 manifest 손상 뒤 부팅 한 번으로
+        // PPTX/HWPX 세션의 전역검색 단위 라벨이 "페이지" 로 되돌아간다(형제 누락).
+        unitKind: safeUnitKind(s.unitKind),
         byteSize,
         createdAt: mtimeIso,
         lastAccessed: mtimeIso, // mtime 기준 — 오래된 고아는 이후 LRU 에서 자연히 먼저 밀린다

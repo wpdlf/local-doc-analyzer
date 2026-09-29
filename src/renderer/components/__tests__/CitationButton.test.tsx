@@ -290,6 +290,36 @@ describe('CitationButton — 교차 문서 인용 (multi-doc Phase 2)', () => {
     expect(screen.getByText('[Deck.pptx 슬라이드 3]')).toBeTruthy();
   });
 
+  // QA35(W09/W10): 위 테스트는 **보이는 라벨**만 본다. 접근성 이름·툴팁은 별도 식으로 조립되므로
+  // 거기서만 활성 문서 단위로 되돌려도(스크린리더가 "Deck.pptx 3 페이지" 로 읽는다) 그린이었다.
+  it('교차 문서 인용의 접근성 이름·툴팁도 대상 탭의 단위로 말한다', () => {
+    useAppStore.setState((s) => ({
+      settings: { ...s.settings, uiLanguage: 'ko' },
+      openTabs: [
+        { filePath: '/d/Alpha.pdf', fileName: 'Alpha.pdf', pageCount: 5, docHash: 'a'.repeat(64) },
+        { filePath: '/d/Deck.pptx', fileName: 'Deck.pptx', pageCount: 9, docHash: 'd'.repeat(64), unitKind: 'slide' },
+      ],
+    }));
+    render(<CitationButton page={3} docName="Deck.pptx" />);
+    const btn = screen.getByRole('button', { name: 'Deck.pptx 슬라이드 3 원문 열기' });
+    expect(btn.getAttribute('title')).toBe('클릭하여 Deck.pptx 슬라이드 3 열기');
+  });
+
+  // QA35: 범위 밖 인용의 안내(citation.invalid)도 단위를 따른다 — 슬라이드 덱에서 "유효하지 않은
+  // 페이지" 라고 말하면 사용자는 어떤 번호 체계가 틀렸는지 알 수 없다.
+  it('슬라이드 대상 범위 초과 인용의 안내는 슬라이드로 말한다', () => {
+    useAppStore.setState((s) => ({
+      settings: { ...s.settings, uiLanguage: 'ko' },
+      openTabs: [
+        { filePath: '/d/Alpha.pdf', fileName: 'Alpha.pdf', pageCount: 5, docHash: 'a'.repeat(64) },
+        { filePath: '/d/Deck.pptx', fileName: 'Deck.pptx', pageCount: 9, docHash: 'd'.repeat(64), unitKind: 'slide' },
+      ],
+    }));
+    render(<CitationButton page={99} docName="Deck.pptx" />);
+    const el = screen.getByText('[Deck.pptx 슬라이드 99]');
+    expect(el.getAttribute('title')).toBe('유효하지 않은 위치 (슬라이드 99)');
+  });
+
   // QA21(D-MED): 라벨은 sanitizeDocLabelName 을 거친 값인데 해석은 원본 fileName 과 정확 일치를
   // 요구해, 파일명에 파서 예약문자가 있으면 **열려 있는 문서로의 인용이 전부 사망**했다.
   it('파일명에 예약문자([ ])가 있어도 sanitize 된 라벨로 탭을 찾는다', async () => {

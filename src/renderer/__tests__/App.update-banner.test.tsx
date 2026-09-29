@@ -144,6 +144,21 @@ describe('App — 배너가 있어도 문서 뷰가 화면 밖으로 밀리지 �
   });
 });
 
+// QA35(W04): 요약 대기 화면의 파일 정보 헤더는 unitKind 배선이 무보호였다 — App.tsx 는 커버리지
+// 제외라 `formatUnitCount(n)`(단위 인자 누락)로 되돌려도 아무 신호가 없다. 목 구성이 같은 이
+// 파일에서 App 을 실제로 렌더해 슬라이드 덱의 개수 표기를 본다.
+describe('App — 파일 정보 헤더의 단위 (QA35 W04)', () => {
+  it('슬라이드 문서는 "(12슬라이드)" 로 표시된다', async () => {
+    useAppStore.setState({
+      document: { id: 'doc-s', fileName: 'deck.pptx', filePath: '/d/deck.pptx', pageCount: 12, unitKind: 'slide', extractedText: '본문', pageTexts: ['본문'] } as never,
+      summaryStream: '',
+      isGenerating: false,
+    });
+    await mountApp();
+    expect(screen.getByText(/📎 deck\.pptx \(12슬라이드\)/)).toBeTruthy();
+  });
+});
+
 describe('App — 자동 업데이트 배너 배선 (QA25)', () => {
   it('main 의 상태 구독이 실제로 배너를 띄운다', async () => {
     await mountApp();

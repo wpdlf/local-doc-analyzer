@@ -68,7 +68,8 @@ export function CitationButton({ page, docName }: CitationButtonProps) {
       ? t('citation.ambiguousDoc', { name: docName ?? '' })
       : isCrossDoc && !targetTab
         ? t('citation.docClosed', { name: docName ?? '' })
-        : t('citation.invalid', { page });
+        // QA35: 단위를 따른다 — 슬라이드 덱에서 "유효하지 않은 페이지" 는 번호 체계를 잘못 가리킨다.
+        : t('citation.invalid', { unit: formatUnitSpoken(page, unitKind) });
     return (
       <span
         className="inline-block px-1 mx-0.5 text-xs text-gray-400 dark:text-gray-500 border border-dashed border-gray-300 dark:border-gray-600 rounded cursor-not-allowed"

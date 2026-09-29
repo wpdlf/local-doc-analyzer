@@ -310,6 +310,60 @@ describe('switchToTab', () => {
     expect(doc.hadImages, 'hadImages 가 없으면 텍스트-only PDF 와 구분되지 않아 무음 no-op 이 된다').toBe(true);
   });
 
+  // QA35: v1.8.0 의 DOCX 추출기는 제목 챕터의 endPage 를 **다음 챕터 시작과 겹치게** 저장했다
+  // (이후 normalize.ts 에서 고쳐졌지만 세션 우선 복원은 재파싱하지 않으므로 옛 경계가 그대로 산다).
+  // 겹치면 챕터 요약이 같은 단위를 두 번 요약하고 인용이 두 챕터에 중복된다. 비-PDF(unitKind 있음)
+  // 복원 시 경계를 정리한다 — PDF 챕터는 detectChapters 가 만든 값이라 건드리지 않는다.
+  it('비-PDF 세션 복원은 겹치는 옛 챕터 경계를 정리한다 (v1.8.0 DOCX 세션)', async () => {
+    seedTabs(['/docs/a.pdf'], '/docs/a.pdf');
+    useAppStore.setState((s) => ({
+      openTabs: [...s.openTabs, { filePath: '/docs/r.docx', fileName: 'r.docx', pageCount: 6, docHash: 'c'.repeat(64), unitKind: 'page' }],
+    }));
+    const pageTexts = ['u1', 'u2', 'u3', 'u4', 'u5', 'u6'];
+    M.sessionLoad.mockResolvedValue({
+      session: {
+        schemaVersion: 1, docHash: 'c'.repeat(64), fileName: 'r.docx', filePath: '/docs/r.docx',
+        pageCount: 6, extractedText: pageTexts.join('\n\n'), pageTexts, unitKind: 'page',
+        chapters: [
+          { index: 1, title: 'A', startPage: 1, endPage: 3, text: 'old' },
+          { index: 2, title: 'B', startPage: 3, endPage: 5, text: 'old' },
+          { index: 3, title: 'C', startPage: 5, endPage: 5, text: 'old' },
+        ],
+        summaries: {}, qaMessages: [], embedModel: null, embedDim: null, chunkMeta: [],
+      },
+      blob: null,
+    });
+
+    await switchToTab('/docs/r.docx');
+
+    const chapters = useAppStore.getState().document!.chapters;
+    expect(chapters.map((c) => [c.startPage, c.endPage])).toEqual([[1, 2], [3, 4], [5, 6]]);
+    expect(chapters[1]!.text, '경계를 고치면 본문도 새 경계를 따라야 한다').toBe('u3\n\nu4');
+  });
+
+  it('PDF 세션(unitKind 없음)의 챕터는 복원 시 그대로 둔다', async () => {
+    seedTabs(['/docs/a.pdf'], '/docs/a.pdf');
+    useAppStore.setState((s) => ({
+      openTabs: [...s.openTabs, { filePath: '/docs/p.pdf', fileName: 'p.pdf', pageCount: 4, docHash: 'b'.repeat(64) }],
+    }));
+    const chapters = [
+      { index: 1, title: 'A', startPage: 1, endPage: 3, text: 'a' },
+      { index: 2, title: 'B', startPage: 3, endPage: 3, text: 'b' },
+    ];
+    M.sessionLoad.mockResolvedValue({
+      session: {
+        schemaVersion: 1, docHash: 'b'.repeat(64), fileName: 'p.pdf', filePath: '/docs/p.pdf',
+        pageCount: 4, extractedText: 'x', pageTexts: ['1', '2', '3', '4'],
+        chapters, summaries: {}, qaMessages: [], embedModel: null, embedDim: null, chunkMeta: [],
+      },
+      blob: null,
+    });
+
+    await switchToTab('/docs/p.pdf');
+
+    expect(useAppStore.getState().document!.chapters).toEqual(chapters);
+  });
+
   // QA23(D-MED): 영속화 OFF + 다중 탭이면 전환이 현재 문서의 요약·Q&A 를 **경고 없이** 파기했다
   // (저장할 곳이 없어 persistCurrentSession 은 no-op, 대상은 재파싱 경로로 가며 store 초기화).
   // "디스크에 안 쓴다"는 설정이 "탭을 바꾸면 작업이 사라진다"를 뜻하지는 않는다.

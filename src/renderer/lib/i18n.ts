@@ -41,7 +41,8 @@ export const _translations = {
   'unit.spoken.chapter': { ko: '{n}장', en: 'chapter {n}' },
   'citation.aria': { ko: '{unit} 원문 열기', en: 'Open source {unit}' },
   'citation.tooltip': { ko: '클릭하여 {unit} 원문 확인', en: 'Click to view source on {unit}' },
-  'citation.invalid': { ko: '유효하지 않은 페이지 ({page})', en: 'Invalid page ({page})' },
+  // QA35: {unit} = unit.spoken.* — 슬라이드 덱에서 "유효하지 않은 페이지" 로 말하지 않는다.
+  'citation.invalid': { ko: '유효하지 않은 위치 ({unit})', en: 'Invalid location ({unit})' },
   // 컬렉션 Q&A 교차 문서 인용 (multi-doc Phase 2)
   'citation.crossTooltip': { ko: '클릭하여 {name} {unit} 열기', en: 'Click to open {name} on {unit}' },
   'citation.crossAria': { ko: '{name} {unit} 원문 열기', en: 'Open {name} {unit}' },
@@ -62,6 +63,14 @@ export const _translations = {
   'unit.countShort.page': { ko: '{n}p', en: '{n}p' },
   'unit.countShort.slide': { ko: '{n}슬라이드', en: '{n} slides' },
   'unit.countShort.chapter': { ko: '{n}장', en: '{n} ch.' },
+  // QA35: 단위 **이름**(formatUnitName) — "시작 {unit}" 처럼 수식어와 함께 문장에 끼운다.
+  'unit.name.page': { ko: '페이지', en: 'page' },
+  'unit.name.slide': { ko: '슬라이드', en: 'slide' },
+  'unit.name.chapter': { ko: '장', en: 'chapter' },
+  // QA35: 단위 구간(formatUnitRange) — 범위 요약 표식이 요약 본문에 저장한다. 'p.' 금지(인용 오인).
+  'unit.range.page': { ko: '{start}-{end} 페이지', en: 'pages {start}-{end}' },
+  'unit.range.slide': { ko: '슬라이드 {start}-{end}', en: 'slides {start}-{end}' },
+  'unit.range.chapter': { ko: '{start}-{end}장', en: 'chapters {start}-{end}' },
   'pdfviewer.title': { ko: '원문 보기', en: 'Source Viewer' },
   'pdfviewer.close': { ko: '뷰어 닫기', en: 'Close viewer' },
   'pdfviewer.loading': { ko: 'PDF 로드 중...', en: 'Loading PDF...' },
@@ -105,7 +114,9 @@ export const _translations = {
   // 산출물에는 표식이 없어 저장본이 "이 문서의 요약" 으로 보였다. 같은 자리·형식(본문 말미
   // 대괄호 한 줄)을 쓰는 이유도 같다 — 세션에서 다시 연 요약에는 UI 상태가 남지 않는다.
   'summary.inputTruncatedMarker': { ko: '[알림 — 문서가 길어 앞부분만 읽고 작성한 요약입니다. 뒷부분 내용은 포함되지 않았습니다]', en: '[Note — this summary was written from the beginning of the document only; later content is not included]' },
-  'summary.pageRangeMarker': { ko: '[알림 — 이 요약은 {range} 페이지만 대상으로 합니다]', en: '[Note — this summary covers only pages {range}]' },
+  // QA35: {range} = formatUnitRange(문서 단위). 요약 본문에 저장되고 교차 요약 입력이 되므로
+  // 'p.' 를 쓰지 않는다(CITATION_REGEX 오인) — use-summarize-hook 테스트가 파싱 무해를 고정한다.
+  'summary.pageRangeMarker': { ko: '[알림 — 이 요약은 {range}만 대상으로 합니다]', en: '[Note — this summary covers only {range}]' },
   'summary.partialSaved': { ko: '중단된 요약을 생성된 부분까지 저장했습니다.', en: 'Saved the interrupted summary up to the portion that was generated.' },
   // Vision 실패 시 전체 요약을 막지 않고 텍스트 전용으로 강등할 때의 비차단 안내.
   'ai.imageAnalysisSkipped': { ko: '이미지 분석을 건너뛰고 텍스트만 요약했습니다 (Vision 모델 없음/실패 — llava 등 설치 시 이미지 포함).', en: 'Skipped image analysis and summarized text only (no/failed Vision model — install e.g. llava to include images).' },
@@ -189,6 +200,9 @@ export const _translations = {
   // QA22(B-LOW): 챕터 감지 실패 시 페이지 분할 제목. 한국어 하드코딩이라 영어 UI 에서도
   // 요약 헤딩(`## 1~10 페이지`)과 진행률에 그대로 노출됐다.
   'pdf.pageRangeChapter': { ko: '{start}~{end} 페이지', en: 'Pages {start}–{end}' },
+  // QA35: detectChapters 폴백 분할 제목의 단위별 형제(RANGE_CHAPTER_KEY, pdf-parser.ts).
+  'doc.slideRangeChapter': { ko: '슬라이드 {start}~{end}', en: 'Slides {start}–{end}' },
+  'doc.chapterRangeChapter': { ko: '{start}~{end}장', en: 'Chapters {start}–{end}' },
   // QA22(B-MED): 텍스트를 추출하지 못한 페이지 고지. OCR 진입 판정이 **문서 전체 합계**라,
   // 표지 한 장만 텍스트 레이어를 가진 스캔본은 임계를 통과해 OCR 이 아예 돌지 않고 나머지
   // 페이지가 빈 채로 요약·인용·RAG 에 들어간다 — 에러도 배지도 없이. 자동 OCR 승격은
@@ -209,7 +223,9 @@ export const _translations = {
     ko: '이미지가 많아 앞부분 {max}장만 분석 대상으로 담았습니다. 문서 뒷부분의 그림·차트는 분석에 포함되지 않을 수 있습니다.',
     en: 'This document has many images; only the first {max} were captured for analysis. Figures later in the document may not be included.',
   },
-  'uploader.tooManyPages': { ko: '페이지 수가 너무 많습니다 ({pages}p). 최대 {max}페이지까지 지원합니다. 문서를 분할해주세요.', en: 'Too many pages ({pages}p). Maximum {max} pages supported. Please split the document.' },
+  // QA35: 문서 단위를 따른다 — 파라미터는 tooManyUnitsParams(pdf-parser.ts) 가 만든다
+  // ({unit}=unit.name, {pages}=개수 short, {max}=개수 long). PDF 문구는 종전과 글자 단위로 같다.
+  'uploader.tooManyPages': { ko: '{unit} 수가 너무 많습니다 ({pages}). 최대 {max}까지 지원합니다. 문서를 분할해주세요.', en: 'Too many {unit}s ({pages}). Maximum {max} supported. Please split the document.' },
   // QA7(D-MED): 파싱 에러 3종 i18n 이행 — tooManyPages 와 동일 패턴(영어 UI 한국어 노출 해소)
   'uploader.emptyPdf': { ko: 'PDF에 페이지가 없습니다.', en: 'The PDF has no pages.' },
   'uploader.noText': { ko: 'PDF에서 텍스트를 추출할 수 없습니다. 설정에서 "스캔 PDF OCR"을 활성화하면 이미지 기반 PDF를 분석할 수 있습니다.', en: 'No text could be extracted from the PDF. Enable "Scanned PDF OCR" in Settings to analyze image-based PDFs.' },
@@ -223,6 +239,8 @@ export const _translations = {
   'uploader.ocrDesc': { ko: 'Vision 모델로 텍스트를 추출하고 있습니다', en: 'Extracting text with Vision model' },
   'uploader.reading': { ko: '문서를 읽고 있습니다...', en: 'Reading document...' },
   'uploader.wait': { ko: '잠시만 기다려주세요', en: 'Please wait' },
+  // QA35: 비-PDF 추출 진행(document-open 의 onProgress). OCR 문구와 섞지 않는 포맷 중립 라벨.
+  'uploader.extractProgress': { ko: '내용 추출 중', en: 'Extracting content' },
   'uploader.dragDrop': { ko: '문서를 여기에 드래그하거나', en: 'Drag document here or' },
   'uploader.clickSelect': { ko: '클릭하여 선택', en: 'click to select' },
   'uploader.selectFile': { ko: '파일 선택', en: 'Select file' },
@@ -236,12 +254,16 @@ export const _translations = {
   'selector.summaryLang': { ko: '요약 언어', en: 'Output language' },
   // 출력언어 드롭다운의 'auto' 옵션. 나머지(한국어/English/日本語/中文)는 언어명 자체라 비번역.
   'selector.langAuto': { ko: '원문 유지', en: 'Keep original' },
+  // QA35: 범위 UI 는 문서 단위를 따른다. 레이블은 영어 대문자 규칙 때문에 단위별 키, 나머지는
+  // {unit}(unit.name.*) / {count}(formatUnitCount long) 보간.
   'selector.pageRange': { ko: '페이지 범위', en: 'Page range' },
+  'selector.slideRange': { ko: '슬라이드 범위', en: 'Slide range' },
+  'selector.chapterRange': { ko: '장 범위', en: 'Chapter range' },
   'selector.pageRangeAll': { ko: '전체', en: 'All' },
   'selector.pageRangeCustom': { ko: '범위 지정', en: 'Custom' },
-  'selector.pageRangeTotal': { ko: '/ 총 {count}쪽', en: '/ {count} pages' },
-  'selector.pageRangeAria': { ko: '시작 페이지', en: 'Start page' },
-  'selector.pageRangeAriaEnd': { ko: '끝 페이지', en: 'End page' },
+  'selector.pageRangeTotal': { ko: '/ 총 {count}', en: '/ {count}' },
+  'selector.pageRangeAria': { ko: '시작 {unit}', en: 'Start {unit}' },
+  'selector.pageRangeAriaEnd': { ko: '끝 {unit}', en: 'End {unit}' },
   'selector.modelWarning': {
     ko: '{model}은 한국어 특화 모델이라 다른 언어 출력이 제한적입니다. 설정에서 gemma3 또는 qwen3.5로 변경하면 더 나은 결과를 얻을 수 있습니다.',
     en: '{model} is a Korean-specialized model with limited multilingual output. Switch to gemma3 or qwen3.5 in settings for better results.',

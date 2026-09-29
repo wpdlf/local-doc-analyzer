@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { parseCitations, formatPromptPageLabel, formatUnitLabel, formatUnitCount, clampCitationPage, CITATION_REGEX, normalizeCitationPlacement, stripCitations, sanitizeDocLabelName, qualifyBareCitations, stripTrailingPartialCitation, stripBareCitations } from '../citation';
+import { parseCitations, formatPromptPageLabel, formatUnitLabel, formatUnitCount, clampCitationPage, CITATION_REGEX, normalizeCitationPlacement, stripCitations, sanitizeDocLabelName, qualifyBareCitations, stripTrailingPartialCitation, stripBareCitations, formatUnitName, formatUnitRange } from '../citation';
 import { useAppStore } from '../store';
 
 describe('parseCitations', () => {
@@ -575,5 +575,31 @@ describe('formatUnitCount', () => {
     useAppStore.setState((s) => ({ settings: { ...s.settings, uiLanguage: 'en' } }));
     expect(formatUnitCount(12, 'slide')).toBe('12 slides');
     expect(formatUnitCount(2, 'page', 'short')).toBe('2p');
+  });
+});
+
+// QA35: 단위 이름·구간 — 범위 UI 문구와 저장되는 범위 요약 표식이 쓴다.
+describe('formatUnitName / formatUnitRange', () => {
+  beforeEach(() => useAppStore.setState((s) => ({ settings: { ...s.settings, uiLanguage: 'ko' } })));
+
+  it('단위 종류별 이름', () => {
+    expect(formatUnitName('page')).toBe('페이지');
+    expect(formatUnitName('slide')).toBe('슬라이드');
+    expect(formatUnitName('chapter')).toBe('장');
+    expect(formatUnitName()).toBe('페이지');
+  });
+
+  it('단위 종류별 구간 — ko/en 모두 인용 토큰으로 파싱되지 않는다', () => {
+    expect(formatUnitRange(2, 4, 'page')).toBe('2-4 페이지');
+    expect(formatUnitRange(2, 4, 'slide')).toBe('슬라이드 2-4');
+    expect(formatUnitRange(2, 4, 'chapter')).toBe('2-4장');
+    for (const lang of ['ko', 'en'] as const) {
+      useAppStore.setState((s) => ({ settings: { ...s.settings, uiLanguage: lang } }));
+      for (const k of ['page', 'slide', 'chapter'] as const) {
+        const s = `[${formatUnitRange(2, 4, k)}]`;
+        expect(parseCitations(s).some((seg) => seg.type === 'citation'), `${lang}/${k}: ${s}`).toBe(false);
+      }
+    }
+    expect(formatUnitRange(2, 4, 'slide')).toBe('slides 2-4');
   });
 });

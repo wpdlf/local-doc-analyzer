@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useAppStore } from '../lib/store';
-import { formatUnitLabel } from '../lib/citation';
+import { formatUnitLabel, formatUnitSpoken } from '../lib/citation';
 // 원문은 신뢰할 수 없는 문서에서 온 텍스트다. 에러 경계와 안전 컴포넌트가 붙은 SafeMarkdown 을
 // 쓴다(markdown-renderer 의 기본 내보내기는 경계 없이 raw 렌더한다).
 import { SafeMarkdown } from '../lib/safe-markdown';
@@ -84,7 +84,8 @@ export function DocTextViewerPanel() {
             <section
               key={page}
               id={`unit-${page}`}
-              aria-label={formatUnitLabel(page, unitKind)}
+              // QA35: 접근성 이름은 말하기용 — 짧은 라벨 "p.3" 은 스크린리더가 "p 점 3" 으로 읽는다.
+              aria-label={formatUnitSpoken(page, unitKind)}
               className={`mb-6 scroll-mt-2 rounded-lg border p-3 transition-colors ${
                 isTarget
                   ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
@@ -98,7 +99,8 @@ export function DocTextViewerPanel() {
                   "달성률 | 100%" 가 "달성률100%" 로 붙어 보였다(QA34 실앱 스크린샷). 글꼴 크기는
                   prose 가 고정하지 않고 위 컨테이너의 배율 font-size 를 상속해야 한다. */}
               <div className="prose dark:prose-invert max-w-none [font-size:inherit]">
-                <SafeMarkdown content={text} />
+                {/* QA35: 'source' — 원문에 적힌 [p.N]·수식 구분자를 글자 그대로 둔다(GFM 표만). */}
+                <SafeMarkdown content={text} variant="source" />
               </div>
             </section>
           );
