@@ -1,11 +1,20 @@
 import { useEffect } from 'react';
 import { useAppStore } from '../lib/store';
-import { useT } from '../lib/i18n';
-import type { ActiveSummaryType } from '../types';
+import { useT, type TranslationKey } from '../lib/i18n';
+import { formatUnitCount, formatUnitName } from '../lib/citation';
+import type { ActiveSummaryType, UnitKind } from '../types';
 import { SUMMARY_LANGUAGES, isCustomSummaryType } from '../types';
 
 // 한국어 특화 모델 — 다른 언어 출력 시 품질이 낮을 수 있음
 const KOREAN_ONLY_MODELS = ['exaone'];
+
+// QA35: 범위 레이블은 영어 대문자 규칙 때문에 단위별 키로 둔다("Slide range"). 리터럴 맵이라
+// i18n 고아 키 가드가 참조를 그대로 확인하고, 새 단위가 생기면 타입 검사가 여기서 멈춘다.
+const RANGE_LABEL_KEY: Record<UnitKind, TranslationKey> = {
+  page: 'selector.pageRange',
+  slide: 'selector.slideRange',
+  chapter: 'selector.chapterRange',
+};
 
 export function SummaryTypeSelector() {
   const summaryType = useAppStore((s) => s.summaryType);
@@ -13,6 +22,7 @@ export function SummaryTypeSelector() {
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const pageCount = useAppStore((s) => s.document?.pageCount ?? 0);
+  const unitKind = useAppStore((s) => s.document?.unitKind) ?? 'page';
   const pageRange = useAppStore((s) => s.summaryPageRange);
   const setPageRange = useAppStore((s) => s.setSummaryPageRange);
   const t = useT();
@@ -76,7 +86,7 @@ export function SummaryTypeSelector() {
       </div>
       {pageCount > 1 && (
         <div className="flex items-center gap-4">
-          <span id="selector-page-range-label" className="shrink-0 whitespace-nowrap text-sm font-medium text-gray-600 dark:text-gray-300">{t('selector.pageRange')}</span>
+          <span id="selector-page-range-label" className="shrink-0 whitespace-nowrap text-sm font-medium text-gray-600 dark:text-gray-300">{t(RANGE_LABEL_KEY[unitKind])}</span>
           <div className="flex items-center gap-3 flex-wrap" role="radiogroup" aria-labelledby="selector-page-range-label">
             <label className="flex items-center gap-1.5 cursor-pointer">
               <input
@@ -105,7 +115,7 @@ export function SummaryTypeSelector() {
                   min={1}
                   max={pageCount}
                   value={pageRange.start}
-                  aria-label={t('selector.pageRangeAria')}
+                  aria-label={t('selector.pageRangeAria', { unit: formatUnitName(unitKind) })}
                   onChange={(e) => updateRange({ start: e.target.valueAsNumber })}
                   className="w-16 px-2 py-1 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 />
@@ -115,11 +125,11 @@ export function SummaryTypeSelector() {
                   min={1}
                   max={pageCount}
                   value={pageRange.end}
-                  aria-label={t('selector.pageRangeAriaEnd')}
+                  aria-label={t('selector.pageRangeAriaEnd', { unit: formatUnitName(unitKind) })}
                   onChange={(e) => updateRange({ end: e.target.valueAsNumber })}
                   className="w-16 px-2 py-1 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 />
-                <span className="text-xs text-gray-600 dark:text-gray-400">{t('selector.pageRangeTotal', { count: pageCount })}</span>
+                <span className="text-xs text-gray-600 dark:text-gray-400">{t('selector.pageRangeTotal', { count: formatUnitCount(pageCount, unitKind) })}</span>
               </span>
             )}
           </div>

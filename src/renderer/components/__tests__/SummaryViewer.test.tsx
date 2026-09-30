@@ -82,6 +82,15 @@ describe('SummaryViewer', () => {
     expect(screen.getByText(/lecture\.pdf \(5p\)/)).toBeTruthy();
   });
 
+  // QA35(W05): 헤더 개수의 unitKind 배선이 무보호였다 — 위 테스트는 PDF 라 `formatUnitCount(n)`
+  // 로 되돌려도(단위 인자 누락) 그대로 "(5p)" 다. 슬라이드 덱으로 갈라 본다.
+  it('슬라이드 문서의 헤더는 슬라이드 개수로 표시한다', () => {
+    setState({ stream: '결과', docName: 'deck.pptx', unitKind: 'slide' });
+    useAppStore.setState((s) => ({ document: { ...s.document!, pageCount: 12 } }));
+    render(<SummaryViewer />);
+    expect(screen.getByText('📎 deck.pptx (12슬라이드)')).toBeTruthy();
+  });
+
   it('생성 중 + 내용 없음 → 분석 스피너', () => {
     setState({ generating: true, stream: '' });
     render(<SummaryViewer />);

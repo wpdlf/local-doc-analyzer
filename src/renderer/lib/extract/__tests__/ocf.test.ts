@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { zipSync, strToU8 } from 'fflate';
 import { openZip } from '../zip';
-import { readOcfPackage, hasEncryptionData } from '../ocf';
+import { readOcfPackage, readOpf, hasEncryptionData } from '../ocf';
 import type { ZipIndex } from '../types';
 
 function zipOf(files: Record<string, string>): ZipIndex {
@@ -76,6 +76,40 @@ describe('readOcfPackage', () => {
     // 'image1' 의 href="BinData/image1.bmp" — OPF 기준(Contents/BinData/image1.bmp)도
     // 루트 기준(BinData/image1.bmp)도 zip 에 없다. href 를 그대로 받는다.
     expect(pkg.items.get('image1')?.path).toBe('BinData/image1.bmp');
+  });
+});
+
+describe('readOcfPackage — href 퍼센트 인코딩 (QA35 O03)', () => {
+  const pkgWith = (href: string, files: Record<string, string> = {}) => readOcfPackage(zipOf({
+    'META-INF/container.xml': container,
+    'Contents/content.hpf': opf('Contents/section0.xml').replace('href="BinData/image1.bmp"', `href="${href}"`),
+    ...files,
+  }), HWPX_PKG);
+
+  it('%20 은 디코드해 실제 엔트리 이름으로 푼다', () => {
+    const pkg = pkgWith('BinData/my%20image.bmp', { 'Contents/BinData/my image.bmp': 'x' });
+    expect(pkg.items.get('image1')?.path).toBe('Contents/BinData/my image.bmp');
+  });
+
+  it('잘못된 퍼센트 인코딩은 패키지를 실패시키지 않고 href 를 그대로 쓴다', () => {
+    const pkg = pkgWith('BinData/bad%E0%A4%A.bmp');
+    expect(pkg.items.get('image1')?.path).toBe('BinData/bad%E0%A4%A.bmp');
+    // 다른 항목은 영향이 없다.
+    expect(pkg.items.get('section0')?.path).toBe('Contents/section0.xml');
+  });
+});
+
+describe('readOpf — container.xml 없이 OPF 경로를 직접', () => {
+  it('readOcfPackage 와 같은 해석(manifest·spine)을 돌려준다', () => {
+    const zip = zipOf({ 'Contents/content.hpf': opf('Contents/section0.xml'), 'Contents/section0.xml': '<x/>' });
+    const pkg = readOpf(zip, 'Contents/content.hpf');
+    expect(pkg.opfPath).toBe('Contents/content.hpf');
+    expect(pkg.spine.map((i) => i.path)).toEqual(['Contents/header.xml', 'Contents/section0.xml']);
+    expect(pkg.items.get('image1')?.path).toBe('BinData/image1.bmp');
+  });
+
+  it('OPF 가 없으면 DOC_CORRUPT', () => {
+    expect(() => readOpf(zipOf({}), 'Contents/content.hpf')).toThrow(expect.objectContaining({ code: 'DOC_CORRUPT' }));
   });
 });
 

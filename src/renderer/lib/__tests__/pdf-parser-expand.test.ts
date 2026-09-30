@@ -14,6 +14,7 @@ vi.mock('pdfjs-dist', () => ({ GlobalWorkerOptions: {}, getDocument: vi.fn(), OP
 vi.mock('../use-session', () => ({ restoreSessionForDocument: vi.fn(), persistCurrentSession: vi.fn() }));
 
 import { expandToRgba, detectChapters, imageSignature } from '../pdf-parser';
+import { useAppStore } from '../store';
 
 describe('expandToRgba — 포맷 추정 + RGBA 확장', () => {
   it('RGBA(px*4): 그대로 복사', () => {
@@ -208,5 +209,31 @@ describe('imageSignature — 중복 이미지 판정 (QA22)', () => {
     const a = 'H'.repeat(64) + 'A'.repeat(500) + 'T'.repeat(64);
     const b = 'H'.repeat(64) + 'B'.repeat(400) + 'T'.repeat(64); // 길이가 달라 구분
     expect(imageSignature(img(a))).not.toBe(imageSignature(img(b)));
+  });
+});
+
+// QA35: 챕터 감지 실패 시의 분할 제목("1~10 페이지")이 단위를 몰랐다 — 휴리스틱 폴백은 추출기
+// 문서(normalize.ts)도 타므로 슬라이드 덱에 "페이지" 제목이 붙었다. unitKind 를 받되 기본은 page.
+describe('detectChapters — 폴백 분할 제목의 단위 (QA35)', () => {
+  const plain = (n: number) => Array.from({ length: n }, (_, i) => `본문 ${i + 1}`);
+  const lang = (l: 'ko' | 'en') => useAppStore.setState((s) => ({ settings: { ...s.settings, uiLanguage: l } }));
+
+  it('기본(PDF)은 종전 페이지 제목 그대로', () => {
+    lang('ko');
+    expect(detectChapters(plain(12)).map((c) => c.title)).toEqual(['1~10 페이지', '11~12 페이지']);
+  });
+
+  it("unitKind 'slide' 면 슬라이드 제목", () => {
+    lang('ko');
+    expect(detectChapters(plain(12), 'slide').map((c) => c.title)).toEqual(['슬라이드 1~10', '슬라이드 11~12']);
+  });
+
+  it("unitKind 'chapter' 면 장 제목, 영어도 단위를 따른다", () => {
+    lang('ko');
+    expect(detectChapters(plain(3), 'chapter')[0]!.title).toBe('1~3장');
+    lang('en');
+    expect(detectChapters(plain(3), 'slide')[0]!.title).toBe('Slides 1–3');
+    expect(detectChapters(plain(3))[0]!.title).toBe('Pages 1–3');
+    lang('ko');
   });
 });

@@ -1481,3 +1481,30 @@ describe('QA30(C-9): 세션 본문·Q&A 상한', () => {
     expect(V.files.get(`${DIR}/${h}/session.json`)).toBe(before);
   });
 });
+
+// QA35(B-F2): unitKind 는 manifest 엔트리를 거쳐 전역검색 결과의 단위 라벨이 된다(P4). writeSession
+// 은 싣는데 reconcile 의 고아 재등록이 빠뜨리면 manifest 손상 뒤 부팅 한 번으로 PPTX/HWPX 세션이
+// 전부 "페이지" 로 되돌아간다 — 형제 누락. 두 등록 경로를 같은 기대로 묶는다.
+describe('QA35(B-F2): unitKind 는 manifest 의 두 등록 경로 모두에서 보존된다', () => {
+  it('writeSession → listSessions 왕복이 unitKind 를 유지한다', async () => {
+    const h = hashOf(351);
+    await writeSession(DIR, { meta: { ...metaOf(h), unitKind: 'slide' }, session: { docHash: h }, blob: null, now: 1000 });
+    const e = (await listSessionsOk(DIR)).find((x) => x.docHash === h)!;
+    expect(e.unitKind).toBe('slide');
+  });
+
+  it('reconcile 고아 재등록이 session.json 의 unitKind 를 싣는다(손상 값은 부재로)', async () => {
+    const h1 = hashOf(352);
+    const h2 = hashOf(353);
+    const h3 = hashOf(354);
+    V.files.set(`${DIR}/${h1}/session.json`, JSON.stringify({ docHash: h1, fileName: 'a.pptx', filePath: '/a.pptx', pageCount: 12, unitKind: 'slide' }));
+    V.files.set(`${DIR}/${h2}/session.json`, JSON.stringify({ docHash: h2, fileName: 'b.hwpx', filePath: '/b.hwpx', pageCount: 4, unitKind: 'chapter' }));
+    V.files.set(`${DIR}/${h3}/session.json`, JSON.stringify({ docHash: h3, fileName: 'c.pdf', filePath: '/c.pdf', pageCount: 4, unitKind: 'bogus' }));
+    const r = await reconcileSessions(DIR, 5000);
+    expect(r.registered).toBe(3);
+    const list = await listSessionsOk(DIR);
+    expect(list.find((x) => x.docHash === h1)!.unitKind).toBe('slide');
+    expect(list.find((x) => x.docHash === h2)!.unitKind).toBe('chapter');
+    expect(list.find((x) => x.docHash === h3)!.unitKind).toBeUndefined();
+  });
+});

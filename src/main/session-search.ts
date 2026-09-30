@@ -1,4 +1,4 @@
-import type { GlobalSearchResult, SearchSnippet } from '../shared/session-types';
+import type { GlobalSearchResult, SearchSnippet, SessionManifestEntry } from '../shared/session-types';
 
 /**
  * 저장된 세션 전체를 가로지르는 키워드 검색 — 순수 함수(파일 I/O 없음, 단위 테스트 가능).
@@ -42,12 +42,28 @@ function countOccurrences(haystackLower: string, needleLower: string): number {
   return occ;
 }
 
-interface SearchableMeta {
+export interface SearchableMeta {
   docHash: string;
   fileName: string;
   filePath: string;
   pageCount: number;
   unitKind?: 'page' | 'slide' | 'chapter';
+}
+
+/**
+ * manifest 엔트리 → 검색 메타. QA35(W14): 종전엔 session:search 핸들러(index.ts)가 객체
+ * 리터럴로 인라인 매핑했는데 index.ts 는 커버리지 제외·무테스트라, 거기서 unitKind 한 필드가
+ * 빠지면 전역검색 스니펫이 PPTX/HWPX 에서도 "p.N" 으로 표시되는 것을 아무것도 못 잡았다.
+ * 매핑을 순수 함수로 빼 테스트로 고정한다.
+ */
+export function toSearchableMeta(e: Pick<SessionManifestEntry, 'docHash' | 'fileName' | 'filePath' | 'pageCount' | 'unitKind'>): SearchableMeta {
+  return {
+    docHash: e.docHash,
+    fileName: e.fileName,
+    filePath: e.filePath,
+    pageCount: e.pageCount,
+    ...(e.unitKind ? { unitKind: e.unitKind } : {}),
+  };
 }
 
 /**

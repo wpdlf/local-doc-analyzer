@@ -2,8 +2,9 @@
 import { describe, it, expect } from 'vitest';
 import { zipSync, strToU8 } from 'fflate';
 import { openZip } from '../zip';
-import { createPptxExtractor, readSlideRelIds } from '../pptx';
+import { createPptxExtractor, readSlideRelIds, readPresentationIndex } from '../pptx';
 import { createImageFitter, type ImageCodec } from '../image-fit';
+import { toPdfDocument } from '../normalize';
 import type { ZipIndex } from '../types';
 
 const NS = 'xmlns:p="urn:p" xmlns:a="urn:a" xmlns:r="urn:r" xmlns:mc="urn:mc"';
@@ -312,5 +313,236 @@ describe('readSlideRelIds — happy-dom 의 속성 드롭 회피(R4)', () => {
       + '<p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst>'
       + '<p:extLst><p:ext><p14:sectionLst><p14:section><p14:sldIdLst><p14:sldId id="999" r:id="rId99"/></p14:sldIdLst></p14:section></p14:sectionLst></p:ext></p:extLst>';
     expect(readSlideRelIds(`<p:presentation>${xml}</p:presentation>`)).toEqual(['rId1']);
+  });
+});
+
+// ── QA35 ─────────────────────────────────────────────────────────────────────────────────
+
+/** presentation.xml 을 직접 주는 덱 — 섹션·주석 같은 presentation 수준 구조를 시험할 때 쓴다. */
+function deckWithPres(pres: string, relIds: Record<string, string>, slides: Record<string, string>) {
+  const rels = `<Relationships ${REL}>${Object.entries(relIds).map(([rid, f]) => `<Relationship Id="${rid}" Type="x/slide" Target="slides/${f}"/>`).join('')}</Relationships>`;
+  const files: Record<string, string> = { 'ppt/presentation.xml': pres, 'ppt/_rels/presentation.xml.rels': rels };
+  for (const [f, xml] of Object.entries(slides)) files[`ppt/slides/${f}`] = xml;
+  return zipOf(files);
+}
+
+describe('pptx — 도형 채우기 그림 (QA35 Important)', () => {
+  function pngHeader(w: number, h: number): Uint8Array {
+    const b = new Uint8Array(33);
+    b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+    new DataView(b.buffer).setUint32(16, w);
+    new DataView(b.buffer).setUint32(20, h);
+    return b;
+  }
+  const passThrough: ImageCodec = { async reencode(bytes, mimeType) { return { bytes, mimeType: mimeType === 'image/jpeg' ? 'image/jpeg' : 'image/png' }; } };
+  const pptxImg = createPptxExtractor({ fitImage: createImageFitter(passThrough) });
+  // Canva 류: 사진이 p:pic 이 아니라 도형(p:sp)의 채우기(spPr > a:blipFill)로 들어 있다. 텍스트 없음.
+  const fillShape = (tag: 'sp' | 'cxnSp', rid: string) => `<p:${tag}><p:nvSpPr><p:cNvPr id="4" name="photo"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>`
+    + `<p:spPr><a:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></a:blipFill><a:prstGeom prst="rect"/></p:spPr></p:${tag}>`;
+  const rels = `<Relationships ${REL}><Relationship Id="rIdA" Type="x/image" Target="../media/a.png"/><Relationship Id="rIdB" Type="x/image" Target="../media/b.png"/></Relationships>`;
+
+  it('그림만 있는 덱의 도형 채우기 사진을 그림으로 모으고 DOC_NO_TEXT 로 거절하지 않는다', async () => {
+    const doc = await pptxImg.extract(deck(
+      { 's1.xml': slide(fillShape('sp', 'rIdA')), 's2.xml': slide(fillShape('cxnSp', 'rIdB')) },
+      ['s1.xml', 's2.xml'],
+      {
+        'ppt/slides/_rels/s1.xml.rels': rels, 'ppt/slides/_rels/s2.xml.rels': rels,
+        'ppt/media/a.png': pngHeader(200, 100), 'ppt/media/b.png': pngHeader(300, 100),
+      },
+    ), { extractImages: true });
+    expect(doc.images.map((i) => [i.unitIndex, i.width])).toEqual([[0, 200], [1, 300]]);
+  });
+});
+
+describe('readPresentationIndex — 주석·선형성·엔티티 (QA35)', () => {
+  const list = '<p:sldIdLst><p:sldId id="256" r:id="rId1"/><p:sldId id="257" r:id="rId2"/></p:sldIdLst>';
+
+  it('주석 안의 가짜 sldIdLst 를 진짜 목록으로 읽지 않는다', () => {
+    const xml = `<p:presentation><!-- <p:sldIdLst><p:sldId id="9" r:id="rId9"/></p:sldIdLst> -->${list}</p:presentation>`;
+    expect(readSlideRelIds(xml)).toEqual(['rId1', 'rId2']);
+  });
+
+  it('주석 안의 <p:extLst> 가 진짜 목록을 삼키지 않는다', () => {
+    const xml = `<p:presentation><!-- <p:extLst> -->${list}<p:extLst><p:ext uri="x"/></p:extLst></p:presentation>`;
+    expect(readSlideRelIds(xml)).toEqual(['rId1', 'rId2']);
+  });
+
+  // 루트 직계만 순서다 — 확장 안의 sldIdLst 가 진짜 목록보다 **앞**에 와도(첫 것을 잡는 방식이면
+  // 확장 쪽을 읽는다) 깊이로 거른다.
+  it('진짜 목록 앞에 있는 확장 안의 sldIdLst 를 읽지 않는다', () => {
+    const ext = '<p:extLst><p:ext uri="x"><p14:sectionLst><p14:section name="s"><p14:sldIdLst><p14:sldId id="256" r:id="rId9"/></p14:sldIdLst></p14:section></p14:sectionLst></p:ext></p:extLst>';
+    expect(readSlideRelIds(`<p:presentation><p:sldMasterIdLst><p:sldMasterId id="1" r:id="rM">${ext}</p:sldMasterId></p:sldMasterIdLst>${list}</p:presentation>`))
+      .toEqual(['rId1', 'rId2']);
+  });
+
+  it('CDATA 안의 가짜 목록도 읽지 않는다', () => {
+    const xml = `<p:presentation><p:custData><![CDATA[<p:sldIdLst><p:sldId id="9" r:id="rId9"/></p:sldIdLst>]]></p:custData>${list}</p:presentation>`;
+    expect(readSlideRelIds(xml)).toEqual(['rId1', 'rId2']);
+  });
+
+  it('닫는 > 없는 <p:extLst 가 1MB 반복된 주석도 선형으로 끝난다(< 500ms)', () => {
+    const junk = '<p:extLst '.repeat(Math.ceil(1_000_000 / 10));
+    const xml = `<p:presentation><!-- ${junk} -->${list}</p:presentation>`;
+    const t0 = performance.now();
+    const ids = readSlideRelIds(xml);
+    const elapsed = performance.now() - t0;
+    expect(ids).toEqual(['rId1', 'rId2']);
+    expect(elapsed).toBeLessThan(500);
+  });
+
+  it('숫자 문자 참조(&#NN; · &#xNN;)를 푼다 — 이중 디코드는 하지 않는다', () => {
+    const xml = '<p:presentation><p:sldIdLst><p:sldId id="256" r:id="rId&#49;"/><p:sldId id="257" r:id="rId&#x32;"/><p:sldId id="258" r:id="a&amp;lt;b"/></p:sldIdLst></p:presentation>';
+    expect(readSlideRelIds(xml)).toEqual(['rId1', 'rId2', 'a&lt;b']);
+  });
+
+  it('속성 값 안의 > 는 태그 끝이 아니다', () => {
+    const xml = '<p:presentation><p:sldIdLst><p:sldId name="a>b" id="256" r:id="rId1"/></p:sldIdLst></p:presentation>';
+    expect(readPresentationIndex(xml).slides).toEqual([{ relId: 'rId1', id: '256' }]);
+  });
+
+  it('sldId 의 숫자 id 와 p14 섹션(이름·소속 id)을 함께 읽는다', () => {
+    const xml = `<p:presentation>${list}<p:extLst><p:ext uri="{521415D9}"><p14:sectionLst>`
+      + `<p14:section name="도입 &amp; 배경" id="{A}"><p14:sldIdLst><p14:sldId id="256"/></p14:sldIdLst></p14:section>`
+      + `<p14:section name='본론' id="{B}"><p14:sldIdLst><p14:sldId id="257"/></p14:sldIdLst></p14:section>`
+      + `</p14:sectionLst></p:ext></p:extLst></p:presentation>`;
+    expect(readPresentationIndex(xml)).toEqual({
+      slides: [{ relId: 'rId1', id: '256' }, { relId: 'rId2', id: '257' }],
+      sections: [{ name: '도입 & 배경', slideIds: ['256'] }, { name: '본론', slideIds: ['257'] }],
+    });
+  });
+});
+
+describe('pptx — 섹션 → sections (QA35)', () => {
+  const sectionPres = (sections: string) => `<p:presentation ${NS} xmlns:p14="urn:p14"><p:sldIdLst>`
+    + `<p:sldId id="256" r:id="rA"/><p:sldId id="257" r:id="rB"/><p:sldId id="258" r:id="rC"/><p:sldId id="259" r:id="rD"/>`
+    + `</p:sldIdLst><p:extLst><p:ext uri="{521415D9-36F7-43E2-AB2F-B90AF26B5E84}"><p14:sectionLst>${sections}</p14:sectionLst></p:ext></p:extLst></p:presentation>`;
+  const section = (name: string, ids: number[]) =>
+    `<p14:section name="${name}" id="{x}"><p14:sldIdLst>${ids.map((id) => `<p14:sldId id="${id}"/>`).join('')}</p14:sldIdLst></p14:section>`;
+  const fourSlides = { 'a.xml': slide(sp('1')), 'b.xml': slide(sp('2')), 'c.xml': slide(sp('3')), 'd.xml': slide(sp('4')) };
+  const rels = { rA: 'a.xml', rB: 'b.xml', rC: 'c.xml', rD: 'd.xml' };
+
+  it('섹션마다 표시 순서상 첫 슬라이드의 단위 번호를 준다 — 빈 섹션은 건너뛴다', async () => {
+    const pres = sectionPres(section('도입', [257, 256]) + section('빈 섹션', []) + section('본론', [258, 259]));
+    const doc = await run(deckWithPres(pres, rels, fourSlides));
+    expect(doc.sections).toEqual([{ title: '도입', unitIndex: 0 }, { title: '본론', unitIndex: 2 }]);
+  });
+
+  // 두 에이전트가 각자 끝을 만든 배선이다(pptx 가 sections 를 내고 normalize 가 우선 쓴다) —
+  // 한쪽만 테스트되면 이름이 어긋나도 둘 다 초록이다. 슬라이드마다 제목이 있어도 섹션이 이긴다.
+  it('추출 → toPdfDocument 를 거치면 챕터가 섹션을 따른다 (슬라이드 제목보다 우선)', async () => {
+    const titled = { 'a.xml': slide(sp('T1', 'title')), 'b.xml': slide(sp('T2', 'title')), 'c.xml': slide(sp('T3', 'title')), 'd.xml': slide(sp('T4', 'title')) };
+    const pres = sectionPres(section('도입', [256, 257]) + section('본론', [258, 259]));
+    const doc = await run(deckWithPres(pres, rels, titled));
+    expect(doc.headings.length, '픽스처가 제목을 내지 않으면 우선순위를 재지 못한다').toBe(4);
+    const pdf = toPdfDocument(doc, { fileName: 'x.pptx', filePath: 'C:/x.pptx' });
+    expect(pdf.chapters.map((c) => [c.title, c.startPage, c.endPage])).toEqual([['도입', 1, 2], ['본론', 3, 4]]);
+  });
+
+  it('섹션이 하나뿐이면 sections 를 내지 않는다', async () => {
+    const doc = await run(deckWithPres(sectionPres(section('전부', [256, 257, 258, 259])), rels, fourSlides));
+    expect(doc.sections).toBeUndefined();
+  });
+
+  it('섹션 목록이 없는 덱은 sections 를 내지 않는다', async () => {
+    const doc = await run(deck({ 's.xml': slide(sp('a')) }, ['s.xml']));
+    expect(doc.sections).toBeUndefined();
+  });
+});
+
+describe('pptx — 그룹 중첩 상한 초과 (QA35 Low)', () => {
+  it('40단 중첩 그룹 안의 텍스트를 버리지 않는다(상한 뒤는 평문으로)', async () => {
+    let inner = sp('깊은 곳');
+    for (let i = 0; i < 40; i++) inner = `<p:grpSp><p:nvGrpSpPr/><p:grpSpPr/>${inner}</p:grpSp>`;
+    const doc = await run(deck({ 's.xml': slide(sp('겉') + inner) }, ['s.xml']));
+    expect(doc.units[0]).toBe('겉\n\n깊은 곳');
+  });
+});
+
+describe('pptx — 배선 (QA35 뮤테이션 감사가 찾은 빈 자리)', () => {
+  const graphicFrame = (uri: string, inner: string) =>
+    `<p:graphicFrame><p:nvGraphicFramePr/><a:graphic><a:graphicData uri="${uri}">${inner}</a:graphicData></a:graphic></p:graphicFrame>`;
+  const chartRels = `<Relationships ${REL}><Relationship Id="rIdC" Type="x/chart" Target="../charts/chart1.xml"/><Relationship Id="rIdD" Type="x/diagramData" Target="../diagrams/data1.xml"/></Relationships>`;
+  const C_NS = `${NS} xmlns:c="urn:c"`;
+  const ser = (name: string, cats: string[], vals: number[]) => `<c:ser><c:tx><c:strRef><c:strCache><c:pt idx="0"><c:v>${name}</c:v></c:pt></c:strCache></c:strRef></c:tx>`
+    + `<c:cat><c:strRef><c:strCache>${cats.map((c, i) => `<c:pt idx="${i}"><c:v>${c}</c:v></c:pt>`).join('')}</c:strCache></c:strRef></c:cat>`
+    + `<c:val><c:numRef><c:numCache>${vals.map((v, i) => `<c:pt idx="${i}"><c:v>${v}</c:v></c:pt>`).join('')}</c:numCache></c:numRef></c:val></c:ser>`;
+  const chartXml = (series: string, title = '') => `<c:chartSpace ${C_NS}><c:chart>`
+    + (title ? `<c:title><c:tx><c:rich><a:p><a:r><a:t>${title}</a:t></a:r></a:p></c:rich></c:tx></c:title>` : '')
+    + `<c:plotArea><c:barChart>${series}</c:barChart></c:plotArea></c:chart></c:chartSpace>`;
+  const chartFrame = graphicFrame('http://schemas.openxmlformats.org/drawingml/2006/chart', `<c:chart xmlns:c="urn:c" r:id="rIdC"/>`);
+  const chartDeck = (xml: string) => deck({ 's.xml': slide(chartFrame) }, ['s.xml'], {
+    'ppt/slides/_rels/s.xml.rels': chartRels, 'ppt/charts/chart1.xml': xml,
+  });
+
+  it('P30: uri 가 /chart 로 끝나는 graphicFrame 은 차트 제목 + 표로 단위에 들어간다', async () => {
+    const doc = await run(chartDeck(chartXml(ser('2025', ['Q1', 'Q2'], [10, 12]), '분기 매출')));
+    expect(doc.units[0]).toBe('분기 매출\n\n|  | Q1 | Q2 |\n| --- | --- | --- |\n| 2025 | 10 | 12 |');
+  });
+
+  const dgm = (pts: string) => `<dgm:dataModel ${NS} xmlns:dgm="urn:dgm"><dgm:ptLst>${pts}</dgm:ptLst></dgm:dataModel>`;
+  const dgmPt = (id: number, text: string, type?: string) =>
+    `<dgm:pt modelId="${id}"${type ? ` type="${type}"` : ''}><dgm:t><a:p><a:r><a:t>${text}</a:t></a:r></a:p></dgm:t></dgm:pt>`;
+  const smartArtDeck = (data: string) => deck({
+    's.xml': slide(graphicFrame('http://schemas.openxmlformats.org/drawingml/2006/diagram', `<dgm:relIds xmlns:dgm="urn:dgm" r:dm="rIdD" r:lo="x" r:qs="y" r:cs="z"/>`)),
+  }, ['s.xml'], { 'ppt/slides/_rels/s.xml.rels': chartRels, 'ppt/diagrams/data1.xml': data });
+
+  it('P31: uri 가 /diagram 으로 끝나는 graphicFrame 은 SmartArt 목록으로 들어간다', async () => {
+    const doc = await run(smartArtDeck(dgm(dgmPt(1, '기획') + dgmPt(2, '개발', 'node'))));
+    expect(doc.units[0]).toBe('- 기획\n- 개발');
+  });
+
+  it('G13: SmartArt 의 보조(asst) 점도 남긴다', async () => {
+    const doc = await run(smartArtDeck(dgm(dgmPt(1, '대표') + dgmPt(2, '비서실', 'asst') + dgmPt(3, '연결', 'sibTrans'))));
+    expect(doc.units[0]).toBe('- 대표\n- 비서실');
+  });
+
+  it('P12: ctrTitle(표지 제목) 자리표시자도 제목 — 맨 앞에 두고 첫 줄을 제목으로', async () => {
+    const doc = await run(deck({ 's.xml': slide(sp('부제') + sp('표지 제목\n둘째 줄', 'ctrTitle')) }, ['s.xml']));
+    expect(doc.units[0]).toBe('표지 제목\n둘째 줄\n\n부제');
+    expect(doc.headings).toEqual([{ level: 1, title: '표지 제목', unitIndex: 0 }]);
+  });
+
+  it('P20: 제목에 a:br 이 있으면 제목(heading)은 첫 줄만', async () => {
+    const title = `<p:sp><p:nvSpPr><p:cNvPr id="1" name="t"/><p:cNvSpPr/><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>`
+      + `<p:txBody><a:p><a:r><a:t>큰 제목</a:t></a:r><a:br/><a:r><a:t>작은 설명</a:t></a:r></a:p></p:txBody></p:sp>`;
+    const doc = await run(deck({ 's.xml': slide(title) }, ['s.xml']));
+    expect(doc.headings).toEqual([{ level: 1, title: '큰 제목', unitIndex: 0 }]);
+    expect(doc.units[0]).toBe('큰 제목\n작은 설명');
+  });
+
+  it('P07: AlternateContent 의 Choice 와 Fallback 텍스트가 다르면 Choice 만 들어간다', async () => {
+    const alt = `<mc:AlternateContent><mc:Choice Requires="p14">${sp('새 도형')}</mc:Choice><mc:Fallback>${sp('옛 그림 대체')}</mc:Fallback></mc:AlternateContent>`;
+    const doc = await run(deck({ 's.xml': slide(alt) }, ['s.xml']));
+    expect(doc.units[0]).toBe('새 도형');
+  });
+
+  it('T01: 문단 안의 런 수준 AlternateContent 는 텍스트를 한 번만 낸다', async () => {
+    const body = `<p:sp><p:nvSpPr><p:cNvPr id="1" name="s"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:txBody><a:p><a:r><a:t>앞 </a:t></a:r>`
+      + `<mc:AlternateContent><mc:Choice Requires="a14"><a:r><a:t>수식</a:t></a:r></mc:Choice><mc:Fallback><a:r><a:t>수식그림</a:t></a:r></mc:Fallback></mc:AlternateContent>`
+      + `<a:r><a:t> 뒤</a:t></a:r></a:p></p:txBody></p:sp>`;
+    const doc = await run(deck({ 's.xml': slide(body) }, ['s.xml']));
+    expect(doc.units[0]).toBe('앞 수식 뒤');
+  });
+
+  it('T02: 자리표시자가 아닌 텍스트 상자 안의 slidenum 필드도 버린다', async () => {
+    const box = `<p:sp><p:nvSpPr><p:cNvPr id="1" name="box"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:txBody>`
+      + `<a:p><a:r><a:t>쪽 </a:t></a:r><a:fld type="slidenum"><a:t>7</a:t></a:fld></a:p></p:txBody></p:sp>`;
+    const doc = await run(deck({ 's.xml': slide(box + sp('본문')) }, ['s.xml']));
+    expect(doc.units[0]).toBe('쪽\n\n본문');
+  });
+
+  it('G08: 계열이 25개면 표는 20행까지 — 잘린 개수를 밝힌다', async () => {
+    const series = Array.from({ length: 25 }, (_, i) => ser(`S${i}`, ['Q1'], [i])).join('');
+    const doc = await run(chartDeck(chartXml(series)));
+    const rows = doc.units[0]!.split('\n').filter((l) => /^\| S\d+ \|/.test(l));
+    expect(rows).toHaveLength(20);
+    expect(doc.units[0]).toContain('S19');
+    expect(doc.units[0]).not.toContain('S20');
+    expect(doc.units[0]).toContain('20/25');
+  });
+
+  it('G11: 항목 머리글은 가장 긴 계열의 항목에서 온다', async () => {
+    const doc = await run(chartDeck(chartXml(ser('짧음', ['Q1'], [1]) + ser('김', ['Q1', 'Q2', 'Q3'], [4, 5, 6]) + ser('중간', ['Q1', 'Q2'], [7, 8]))));
+    expect(doc.units[0]!.split('\n')[0]).toBe('|  | Q1 | Q2 | Q3 |');
   });
 });

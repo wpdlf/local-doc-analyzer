@@ -35,8 +35,9 @@ vi.stubGlobal('localStorage', {
 vi.stubGlobal('window', {});
 
 import { useAppStore } from '../store';
-import { openDocumentData, cancelDocumentParse, EXTRACTOR_ERROR_MESSAGE_KEYS, OPEN_ERROR_CODES } from '../document-open';
+import { openDocumentData, cancelDocumentParse, EXTRACTOR_ERROR_MESSAGE_KEYS, OPEN_ERROR_CODES, getParseProgress } from '../document-open';
 import { t } from '../i18n';
+import { tooManyUnitsParams } from '../pdf-parser';
 import { resolveExtractor } from '../extract/registry';
 import { openZip } from '../extract/zip';
 
@@ -266,13 +267,79 @@ describe('document-open.ts — 추출기 에러의 화면 착지 (QA34)', () => 
       await openDocumentData(makeZipBytes(), 'a.docx', '/x/a.docx');
       const e = useAppStore.getState().error;
       expect(e?.code, code).toBe(code);
-      expect(e?.message, code).toBe(t(key!, params));
+      // QA35: 상한 초과는 경계가 추출기 원시 params({pages,max})를 단위 표시 파라미터로 바꾼다
+      // (docx 추출기 → page). 나머지 코드는 params 를 그대로 쓴다.
+      const expectedParams = code === 'PDF_TOO_MANY_PAGES' ? tooManyUnitsParams(params.pages, params.max, 'page') : params;
+      expect(e?.message, code).toBe(t(key!, expectedParams));
       expect(e?.message, code).not.toMatch(/dev english/);
+      // 미해석 placeholder 가 화면에 남지 않는다 — 파라미터 계약이 키와 어긋나면 여기서 드러난다.
+      expect(e?.message, code).not.toMatch(/\{[a-z]+\}/);
     }
   });
 
   it('OPEN_ERROR_CODES 는 EXTRACTOR_ERROR_MESSAGE_KEYS 의 상위집합이다', () => {
     const missing = Object.keys(EXTRACTOR_ERROR_MESSAGE_KEYS).filter((c) => !OPEN_ERROR_CODES.has(c));
     expect(missing).toEqual([]);
+  });
+});
+
+// QA35: 추출기는 onProgress 를 부르는데 document-open 이 넘기지 않아 큰 PPTX/HWPX 가 스피너뿐이었다.
+describe('document-open.ts — 추출 진행 배선 (QA35)', () => {
+  it('추출기의 onProgress 가 파싱 진행으로 보이고, 끝나면 지워진다', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const seen: Array<{ current: number; total: number } | null> = [];
+    const progressExtractor: Extractor = {
+      id: 'pptx',
+      sniff: () => true,
+      extract: async (_zip, opts: ExtractOptions): Promise<ExtractedDoc> => {
+        opts.onProgress?.(3, 10);
+        seen.push(getParseProgress());
+        await gate;
+        return { units: ['a'], images: [], headings: [], unitKind: 'slide' };
+      },
+    };
+    (resolveExtractor as ReturnType<typeof vi.fn>).mockReturnValue(progressExtractor);
+    const p = openDocumentData(makeZipBytes(), 'deck.pptx', '/x/deck.pptx');
+    await vi.waitFor(() => expect(seen).toHaveLength(1));
+    expect(seen[0]).toEqual({ current: 3, total: 10 });
+    release();
+    await p;
+    expect(getParseProgress(), '끝난 파싱의 진행이 다음 파싱 화면에 남았다').toBeNull();
+  });
+
+  it('추월당한(abort-replace) 파싱의 뒤늦은 진행은 반영되지 않는다', async () => {
+    let lateReport: (() => void) | null = null;
+    let releaseOld: () => void = () => {};
+    const oldGate = new Promise<void>((r) => { releaseOld = r; });
+    const oldExtractor: Extractor = {
+      id: 'pptx', sniff: () => true,
+      extract: async (_z, opts) => {
+        lateReport = () => opts.onProgress?.(9, 9);
+        await oldGate;
+        return { units: ['a'], images: [], headings: [], unitKind: 'slide' };
+      },
+    };
+    let releaseNew: () => void = () => {};
+    const newGate = new Promise<void>((r) => { releaseNew = r; });
+    const newExtractor: Extractor = {
+      id: 'pptx', sniff: () => true,
+      extract: async (_z, opts) => {
+        opts.onProgress?.(1, 5);
+        await newGate;
+        return { units: ['b'], images: [], headings: [], unitKind: 'slide' };
+      },
+    };
+    (resolveExtractor as ReturnType<typeof vi.fn>).mockReturnValueOnce(oldExtractor).mockReturnValueOnce(newExtractor);
+    const p1 = openDocumentData(makeZipBytes(), 'old.pptx', '/x/old.pptx');
+    await vi.waitFor(() => expect(lateReport).not.toBeNull());
+    const p2 = openDocumentData(makeZipBytes(), 'new.pptx', '/x/new.pptx', { skipDiscardConfirm: true });
+    await vi.waitFor(() => expect(getParseProgress()).toEqual({ current: 1, total: 5 }));
+    lateReport!();
+    expect(getParseProgress()).toEqual({ current: 1, total: 5 });
+    releaseOld();
+    releaseNew();
+    await Promise.all([p1, p2]);
+    expect(getParseProgress()).toBeNull();
   });
 });

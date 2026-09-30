@@ -1,6 +1,6 @@
-import { _electron as electron } from '@playwright/test';
+import { _electron as electron, expect } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
-import { writeFileSync, rmSync } from 'node:fs';
+import { writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -66,6 +66,56 @@ export function sendDropPath(app: ElectronApplication, realPath: string, b64: st
       data: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
     });
   }, { realPath, b64 });
+}
+
+export interface ManifestEntry { docHash: string; fileName: string; unitKind?: string }
+
+/** manifest 에서 fileName 항목을 찾되, 그 session.json 까지 디스크에 있을 때만 돌려준다. */
+export function findFlushedSession(userDataDir: string, fileName: string): ManifestEntry | null {
+  const sessionsDir = join(userDataDir, 'sessions');
+  let entries: ManifestEntry[];
+  try {
+    entries = (JSON.parse(readFileSync(join(sessionsDir, 'manifest.json'), 'utf-8')) as { entries: ManifestEntry[] }).entries;
+  } catch {
+    return null; // 아직 없음 / 원자적 교체 도중 — 다음 폴링에서 다시 본다
+  }
+  const entry = entries.find((e) => e.fileName === fileName);
+  return entry && existsSync(join(sessionsDir, entry.docHash, 'session.json')) ? entry : null;
+}
+
+/**
+ * 문서를 열고 → 다른 문서를 드롭해 그 세션을 flush 시키고 → manifest 에 항목이 생길 때까지 기다린다.
+ *
+ * QA35(D5): 종전 스펙들은 `waitForTimeout(2000)`(A 의 세션 복원 settle 대기) + `(500)`(flush 쓰기
+ * 대기)으로 버텼다. 둘 다 추측값이다 — 느린 러너에서는 모자라 "세션이 flush 되지 않았다" 로
+ * 플레이크가 나고, 빠른 머신에서는 매번 2.5초를 버린다. flush 는 복원 대기(sessionRestorePending)
+ * 중이면 **설계상** 건너뛰는데 그 상태가 DOM 에 드러나지 않으므로, 대신 **결과**(manifest 항목 +
+ * session.json)를 폴링하고, 복원 전에 교체돼 flush 가 건너뛰어진 경우에만 열기→교체를 다시 한다.
+ * 끝내 항목이 없으면 실패한다(재시도가 결함을 삼키지 않는다 — 한 번도 저장되지 않으면 빨갛다).
+ */
+export async function openAndFlushSession(
+  r: LaunchResult,
+  opts: { userDataDir: string; fixture: string; header: string; flushPath: string; flushBuf: Buffer },
+): Promise<ManifestEntry> {
+  const name = opts.fixture.split(/[\\/]/).pop()!;
+  const buf = readFileSync(opts.fixture);
+  const ATTEMPTS = 3;
+  for (let attempt = 1; ; attempt++) {
+    await sendDropPath(r.app, opts.fixture, buf.toString('base64'));
+    await expect(r.page.getByText(opts.header)).toBeVisible({ timeout: 60000 });
+    await sendDropPath(r.app, opts.flushPath, opts.flushBuf.toString('base64'));
+    await expect(r.page.getByText('flush.pdf (1p)')).toBeVisible({ timeout: 30000 });
+    try {
+      await expect.poll(() => findFlushedSession(opts.userDataDir, name) !== null, { timeout: 10000 }).toBe(true);
+      return findFlushedSession(opts.userDataDir, name)!;
+    } catch (err) {
+      if (attempt >= ATTEMPTS) {
+        throw new Error(`${name} 세션이 ${ATTEMPTS}회 교체에도 flush 되지 않았다 — manifest 에 항목이 없음`, { cause: err });
+      }
+      // 재시도가 잦아지면 신호다(복원이 느려졌거나 flush 가 간헐 실패) — 로그로 남겨 묻히지 않게 한다.
+      console.warn(`[e2e] ${name}: 교체 ${attempt}회차에 flush 가 안 됐다 — 열기→교체를 다시 한다`);
+    }
+  }
 }
 
 /** 임시 디렉터리 정리(잠긴 파일 재시도 포함). */

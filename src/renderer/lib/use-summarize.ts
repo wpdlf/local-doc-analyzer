@@ -4,7 +4,7 @@ import { t } from './i18n';
 import { PROVIDER_LABELS, isCustomSummaryType } from '../types';
 import { AiClient } from './ai-client';
 import { chunkText, chunkChapters, estimateCharsPerToken } from './chunker';
-import { normalizeCitationPlacement, stripTrailingPartialCitation, CITATION_REGEX, formatPromptPageLabel } from './citation';
+import { normalizeCitationPlacement, stripTrailingPartialCitation, CITATION_REGEX, formatPromptPageLabel, formatUnitRange } from './citation';
 import { enrichDocumentWithImages } from './enrich-doc';
 import { slicePdfDocumentByPageRange, isFullRange } from './page-range';
 import {
@@ -1085,7 +1085,11 @@ export function useSummarize() {
           const markers: string[] = [];
           if (runClient.lastTruncated) markers.push(t('summary.outputLimitMarker'));
           if (isPartialRange && pageRange) {
-            markers.push(t('summary.pageRangeMarker', { range: `${pageRange.start}-${pageRange.end}` }));
+            // QA35: 문서 단위로 쓴다 — 이 줄은 저장본에 남으므로 슬라이드 덱에 "페이지" 가 박히면
+            // 재오픈·교차 요약 모두 번호 체계를 잘못 읽는다(formatUnitRange 는 'p.' 를 쓰지 않는다).
+            markers.push(t('summary.pageRangeMarker', {
+              range: formatUnitRange(pageRange.start, pageRange.end, rawDoc.unitKind ?? 'page'),
+            }));
           }
           // QA33(H5): main 이 보내는 `inputTruncated`(컨텍스트 상한 초과로 프롬프트 앞부분이
           // 잘림)도 같은 표식을 단다. 종전에는 커스텀 템플릿의 문자 예산 초과만 여기 닿았고,

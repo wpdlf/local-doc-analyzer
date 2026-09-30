@@ -41,6 +41,8 @@ export interface ExtractedDoc {
   units: string[];
   images: ExtractedImage[];
   headings: ExtractedHeading[];
+  /** PowerPoint 섹션처럼 포맷이 알려준 상위 구획(있으면 normalize 가 장 경계로 우선 쓴다) */
+  sections?: { title: string; unitIndex: number }[];
   unitKind: UnitKind;
   imageBudgetExceeded?: boolean;
 }

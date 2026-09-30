@@ -152,6 +152,34 @@ describe('DocTextViewerPanel', () => {
     expect(wrapper!.className).toContain('[font-size:inherit]');
   });
 
+  // QA35: section 의 접근성 이름은 **말하기용** 단위여야 한다 — 짧은 라벨 "p.3" 은 스크린리더가
+  // "p 점 3" 으로 읽는다(CitationButton 이 QA34 에서 고친 것의 형제). 슬라이드는 두 형태가 같아
+  // 위 테스트로는 갈리지 않는다.
+  it('PDF 형 단위(page)의 section 이름은 "3 페이지" 로 읽힌다', () => {
+    setDoc(['a', 'b', 'c']);
+    render(<DocTextViewerPanel />);
+    expect(screen.getByRole('region', { name: '3 페이지' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'p.3' })).toBeNull();
+  });
+
+  // QA35: 원문은 신뢰할 수 없는 문서 텍스트다. 요약용 렌더러를 그대로 쓰면 원문에 적힌 `[p.2]` 가
+  // 클릭 가능한 인용 버튼이 되고(문서가 앱 UI 를 만든다), `\(..\)`·`$$..$$` 가 KaTeX 로 바뀌어
+  // 원문 글자가 사라진다. 원문 패널은 인용·수식 변환 없이 GFM(표)만 쓴다.
+  it('원문의 [p.N] 은 인용 버튼이 아니라 글자 그대로, 수식 구분자도 글자 그대로 보인다', async () => {
+    setDoc(['**머리** 원문에 적힌 [p.2] 와 [a.docx p.1] 참조, 식 \\(x^2\\) 과 $$y$$ 끝', '둘째']);
+    const { container } = render(<DocTextViewerPanel />);
+    const body = container.querySelector('[data-testid="doc-text-viewer"]') as HTMLElement;
+    // 지연 청크가 실제로 렌더한 뒤를 본다 — fallback 은 원문 평문이라 항상 초록이 된다.
+    await waitFor(() => expect(body.querySelector('strong')).not.toBeNull(), { timeout: 5000 });
+    expect(body.querySelector('button'), '원문 텍스트가 인용 버튼이 됐다').toBeNull();
+    expect(body.querySelector('[aria-disabled="true"]'), '원문 텍스트가 (비활성) 인용이 됐다').toBeNull();
+    expect(body.querySelector('.katex'), '원문 텍스트가 수식으로 렌더됐다').toBeNull();
+    expect(body.textContent).toContain('[p.2]');
+    expect(body.textContent).toContain('[a.docx p.1]');
+    expect(body.textContent).toContain('\\(x^2\\)');
+    expect(body.textContent).toContain('$$y$$');
+  });
+
   it('이중 물결(~~x~~)은 여전히 취소선이다 (GFM 기능 자체는 유지)', async () => {
     setDoc(['**a** ~~지운 글~~']);
     const { container } = render(<DocTextViewerPanel />);

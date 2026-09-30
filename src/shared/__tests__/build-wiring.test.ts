@@ -54,6 +54,20 @@ describe('postbuild 의 집행부 (판정이 실제로 빌드를 세우는가)',
     expect(chunks).toMatch(/pdfjs/i);
   });
 
+  // QA35(D4): 추출기 체인(fflate·docx/pptx/hwpx)은 document-open 의 동적 import 로만 로드된다.
+  // 파일명 패턴만으로는 못 잡는다 — 정적 import 로 바뀌면 rollup 이 index 청크에 인라인해 zip-*.js
+  // 자체가 사라진다(실측). 그래서 내용 표식을 함께 두고, 표식이 낡아 아무것도 못 가리키게 되면
+  // 빌드를 세우는 자기 점검까지 있어야 게이트다.
+  it('추출기 체인의 eager 유입을 표식으로 막고, 표식이 낡으면 빌드를 세운다', () => {
+    const forbidden = /const EAGER_FORBIDDEN = \[[\s\S]*?\];/.exec(src)?.[0] ?? '';
+    expect(forbidden, 'fflate 표식이 빠졌다').toContain('invalid zip data');
+    expect(forbidden, '추출기 표식이 빠졌다').toContain('word\\/document\\.xml');
+    const chunks = /const EAGER_FORBIDDEN_CHUNKS = \[[\s\S]*?\];/.exec(src)?.[0] ?? '';
+    expect(chunks, '청크 파일명 패턴이 빠졌다').toMatch(/zip\|registry/);
+    expect(src, '낡은 표식(stale marker) 자기 점검이 빠졌다 — 표식 문자열이 바뀌면 가드가 조용히 무력화된다')
+      .toMatch(/stale marker[\s\S]*?process\.exit\(1\)|process\.exit\(1\)[\s\S]*?stale marker/);
+  });
+
   it('위반과 범위축소 판정이 각각 exit 1 로 끝난다', () => {
     expect(src, '위반을 찾고도 경고만 하면 게이트가 아니다')
       .toMatch(/if \(failures\.length > 0\)[\s\S]*?process\.exit\(1\)/);

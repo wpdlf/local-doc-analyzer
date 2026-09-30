@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toGfmTable, placeGridCells } from '../table';
+import { toGfmTable, placeGridCells, MAX_GRID_CELLS, MAX_GRID_CELLS_PER_AXIS } from '../table';
 
 describe('toGfmTable', () => {
   it('첫 행을 머리글로 삼아 GFM 표를 만든다', () => {
@@ -77,8 +77,40 @@ describe('placeGridCells — 좌표로 놓는 격자(HWPX: 가려진 칸이 XML 
       .toEqual([['a', ''], ['', '']]);
   });
 
-  it('비어 있는 칸은 빈 문자열, 행·열 수는 MAX_TABLE_COLUMNS 로 제한', () => {
+  it('비어 있는 칸은 빈 문자열, 열 수는 MAX_GRID_CELLS_PER_AXIS 로 제한', () => {
     expect(placeGridCells([], 1, 3)).toEqual([['', '', '']]);
-    expect(placeGridCells([], 1, 1e9)[0]!.length).toBe(256);
+    expect(placeGridCells([], 1, 1e9)[0]!.length).toBe(MAX_GRID_CELLS_PER_AXIS);
+  });
+
+  // QA35(Important): 열 상한(256)이 행에도 걸려 257행째부터 조용히 잘렸다 — 긴 명단·실적표가 흔하다.
+  it('256 행을 넘는 표도 모든 행을 유지한다', () => {
+    // 2열로 둔다 — 행이 잘려 평문 행으로 밀려나면 ['r299 / v299', ''] 가 되어 구분된다.
+    const cells = Array.from({ length: 300 }, (_, r) => [c(r, 0, `r${r}`), c(r, 1, `v${r}`)]).flat();
+    const grid = placeGridCells(cells, 300, 2);
+    expect(grid).toHaveLength(300);
+    expect(grid[299]).toEqual(['r299', 'v299']);
+  });
+
+  it('열 상한 밖의 칸은 버리지 않고 표 뒤에 평문 행으로 붙인다', () => {
+    const W = MAX_GRID_CELLS_PER_AXIS;
+    const cells = [c(0, 0, 'a'), c(0, W, '넘친1'), c(0, W + 1, '넘친2'), c(1, 0, 'b'), c(1, W + 5, '넘친3')];
+    const grid = placeGridCells(cells, 2, W + 10);
+    expect(grid.slice(0, 2).map((r) => r.length)).toEqual([W, W]);
+    expect(grid.slice(2).map((r) => r[0])).toEqual(['넘친1 / 넘친2', '넘친3']);
+    for (const r of grid) expect(r).toHaveLength(W);
+  });
+
+  it(`칸 총수가 MAX_GRID_CELLS(${MAX_GRID_CELLS}) 를 넘으면 행을 줄이되 잘린 행은 평문으로 붙인다`, () => {
+    const W = 100;
+    const rowsFit = Math.floor(MAX_GRID_CELLS / W);
+    const cells = [c(0, 0, '첫'), c(rowsFit, 0, '넘친 행'), c(rowsFit, 1, '둘째 칸'), c(rowsFit + 1e6, 0, '먼 행')];
+    const grid = placeGridCells(cells, rowsFit + 1e6 + 1, W);
+    expect(grid.length * W).toBeLessThanOrEqual(MAX_GRID_CELLS + 2 * W);
+    expect(grid[0]![0]).toBe('첫');
+    expect(grid.slice(rowsFit).map((r) => r[0])).toEqual(['넘친 행 / 둘째 칸', '먼 행']);
+  });
+
+  it('상한에 걸리지 않으면 덧붙이는 행이 없다', () => {
+    expect(placeGridCells([c(0, 0, 'a')], 1, 1)).toEqual([['a']]);
   });
 });

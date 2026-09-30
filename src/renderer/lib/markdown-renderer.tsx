@@ -1,6 +1,6 @@
 ﻿import ReactMarkdown from 'react-markdown';
 import { GFM_REMARK_PLUGINS } from './gfm-plugins';
-import { safeComponents } from './safe-markdown';
+import { safeComponents, sourceComponents, type MarkdownVariant } from './safe-markdown';
 import { MATH_REMARK_PLUGINS, MATH_REHYPE_PLUGINS } from './math-plugins';
 import { normalizeMathDelimiters } from './math-normalize';
 
@@ -18,7 +18,29 @@ import { normalizeMathDelimiters } from './math-normalize';
 const REMARK_PLUGINS = [...GFM_REMARK_PLUGINS, ...MATH_REMARK_PLUGINS];
 const REHYPE_PLUGINS = MATH_REHYPE_PLUGINS;
 
-export default function MarkdownRenderer({ children }: { children: string }) {
+/**
+ * 원문 패널(variant='source')용 — QA35. 원문은 신뢰할 수 없는 문서 텍스트이므로 인용 변환·수식
+ * 플러그인을 끄고 GFM(추출기가 직렬화한 표)만 쓴다.
+ *
+ * 수식 플러그인을 꺼도 CommonMark 의 역슬래시 이스케이프가 `\(`·`\[` 의 역슬래시를 먹어 원문의
+ * `\(x\)` 가 `(x)` 로 보인다. 수식 구분자 앞 역슬래시만 두 배로 해 글자 그대로 남긴다 — 표 셀은
+ * 추출기(table.ts)가 이미 역슬래시를 두 배로 했지만, 두 배가 된 쌍의 **뒤쪽** 하나만 다시 두 배가
+ * 되므로 렌더 결과는 같다(`\\(` → `\\\(` → 화면 `\(`). 다른 이스케이프(`\|` 등)는 건드리지 않는다.
+ */
+const SOURCE_REMARK_PLUGINS = [...GFM_REMARK_PLUGINS];
+function keepMathDelimitersLiteral(text: string): string {
+  return text.replace(/\\(?=[()[\]])/g, '\\\\');
+}
+
+export default function MarkdownRenderer({ children, variant = 'summary' }: { children: string; variant?: MarkdownVariant }) {
+  if (variant === 'source') {
+    return (
+      <ReactMarkdown
+        remarkPlugins={SOURCE_REMARK_PLUGINS}
+        components={sourceComponents}
+      >{keepMathDelimitersLiteral(children)}</ReactMarkdown>
+    );
+  }
   // 파싱 전에 `\(…\)` → `$$…$$` 정규화. 저장된 세션의 기존 요약도 렌더 시점에 함께 살아난다
   // (본문을 마이그레이션하지 않는다 — 원문은 LLM 출력 그대로 보존).
   return (

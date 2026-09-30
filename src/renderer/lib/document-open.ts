@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react';
 import type { AppError } from '../types';
 import { useAppStore } from './store';
 import { t } from './i18n';
@@ -11,7 +12,8 @@ import { hasPdfMagic, hasZipMagic, hasCfbMagic, SUPPORTED_LABEL } from '../../sh
 // ⚠️ 이 셋을 다시 정적 import 로 되돌리지 말 것 — 타입은 `import type` 만 허용.
 import type { PdfDocument } from '../types';
 import type { Extractor } from './extract/types';
-import { parsePdf, isReReadablePath, MAX_TOTAL_IMAGES } from './pdf-parser';
+import { parsePdf, isReReadablePath, MAX_TOTAL_IMAGES, tooManyUnitsParams } from './pdf-parser';
+import type { UnitKind } from '../types';
 import type { TranslationKey } from './i18n';
 
 /**
@@ -68,6 +70,20 @@ export function isNotMediaPart(name: string): boolean {
   return !/^(?:[^/]+\/media|BinData)\//i.test(name);
 }
 
+/**
+ * 추출기 id → 그 추출기가 내는 단위(QA35). 상한 초과(PDF_TOO_MANY_PAGES)는 PPTX 처럼 **정규화
+ * 이전**에 던져질 수 있어 에러에 unitKind 가 없다 — 이 경계가 "어느 추출기가 던졌는가" 로 단위를
+ * 정해 안내 문구에 싣는다. Record 라 새 추출기 id 가 생기면 타입 검사가 여기서 멈춘다.
+ * 값은 각 추출기의 ExtractedDoc.unitKind 와 같아야 한다(document-open.test 의 PPTX 상한 테스트가
+ * 슬라이드 경로를 고정한다).
+ */
+const EXTRACTOR_UNIT_KIND: Record<Extractor['id'], UnitKind> = {
+  docx: 'page',
+  pptx: 'slide',
+  hwpx: 'page',
+  epub: 'chapter',
+};
+
 /** 추출기 체인 lazy 로드 — import 절 주석 참조. */
 async function loadExtractChain() {
   const [zip, registry, normalize, errors] = await Promise.all([
@@ -114,10 +130,11 @@ function throwIfAborted(signal: AbortSignal): void {
 async function openZipDocument(
   data: ArrayBuffer,
   meta: { fileName: string; filePath: string },
-  opts: { extractImages: boolean; signal: AbortSignal },
+  opts: { extractImages: boolean; signal: AbortSignal; onProgress?: (current: number, total: number) => void },
 ): Promise<PdfDocument> {
   // 청크 로드 실패는 "파일 손상"이 아니다 — 아래 매핑 try 밖에 둬서 종전 PDF_PARSE_FAIL 로 간다.
   const chain = await loadExtractChain();
+  let extractor: Extractor | null = null;
   try {
     await yieldForPaint();
     throwIfAborted(opts.signal);
@@ -125,13 +142,14 @@ async function openZipDocument(
     // 사진 많은 문서에서 해제 시간·메모리를 쓰던 것(QA34).
     const zip = chain.openZip(data, opts.extractImages ? undefined : { filter: isNotMediaPart });
     throwIfAborted(opts.signal);
-    const extractor: Extractor | null = chain.resolveExtractor(zip);
+    extractor = chain.resolveExtractor(zip);
     if (!extractor) {
       return chain.extractFail('DOC_UNSUPPORTED', 'no extractor matched', { list: SUPPORTED_LABEL });
     }
     const extracted = await extractor.extract(zip, {
       extractImages: opts.extractImages,
       signal: opts.signal,
+      onProgress: opts.onProgress,
     });
     return chain.toPdfDocument(extracted, meta);
   } catch (err) {
@@ -140,6 +158,10 @@ async function openZipDocument(
     if (typeof e?.code === 'string' && e.code in EXTRACTOR_ERROR_MESSAGE_KEYS) {
       // 표에 있는 코드는 번역 대상 — params 가 빠진 채 던져졌어도 번역 경로를 타게 한다.
       if (!e.params) e.params = {};
+      // QA35: 상한 초과 안내는 문서 단위로 — 추출기 원시 params({pages,max})를 표시 파라미터로 바꾼다.
+      if (e.code === 'PDF_TOO_MANY_PAGES') {
+        e.params = tooManyUnitsParams(e.params.pages, e.params.max, extractor ? EXTRACTOR_UNIT_KIND[extractor.id] : 'page');
+      }
       throw err;
     }
     const detail = typeof e?.message === 'string' ? e.message : String(err);
@@ -159,6 +181,31 @@ const MAX_FILE_SIZE = MAX_PDF_SIZE_BYTES;
 // 현재 진행 중인 문서 파싱의 AbortController. 사용자 취소 버튼 또는 다른 파일 드롭 시 abort.
 // 동시에 하나의 파싱만 실행되므로 단일 모듈 레벨 참조로 충분.
 let activeParseController: AbortController | null = null;
+
+/**
+ * 비-PDF 추출 진행(QA35) — 추출기는 단위마다 onProgress 를 부르는데 이 경계가 넘기지 않아 큰
+ * PPTX/HWPX 는 스피너뿐이었다. OCR 진행(store.ocrProgress)과 **다른 채널**로 둔다 — 같은 필드를
+ * 쓰면 업로더가 "스캔 PDF 텍스트 인식" 문구를 띄운다. 파싱 한 건의 수명과 같은 일시 상태라 영속
+ * store 대신 이 모듈의 작은 외부 저장소로 두고 useSyncExternalStore 로 구독한다.
+ */
+type ParseProgress = { current: number; total: number } | null;
+let parseProgress: ParseProgress = null;
+const parseProgressListeners = new Set<() => void>();
+function setParseProgress(p: ParseProgress): void {
+  if (parseProgress === p) return;
+  parseProgress = p;
+  for (const l of parseProgressListeners) l();
+}
+function subscribeParseProgress(l: () => void): () => void {
+  parseProgressListeners.add(l);
+  return () => { parseProgressListeners.delete(l); };
+}
+export function getParseProgress(): ParseProgress {
+  return parseProgress;
+}
+export function useParseProgress(): ParseProgress {
+  return useSyncExternalStore(subscribeParseProgress, getParseProgress);
+}
 
 /** 진행 중인 문서 파싱을 취소. 다음 배치/OCR 페이지 진입 직전에 ABORTED 에러로 조기 종료됨. */
 export function cancelDocumentParse(): void {
@@ -268,6 +315,13 @@ export async function openDocumentData(
     if (activeParseController !== controller) return;
     store.setOcrProgress({ current, total });
   };
+  // QA35: 추출 진행도 같은 ownership 규칙 — 추월당한 파싱의 뒤늦은 콜백이 새 파싱 화면을 덮지 않는다.
+  // 시작 시 지운다: 직전 파싱이 추월당해 finally 에서 지우지 못한 값이 남아 있을 수 있다.
+  setParseProgress(null);
+  const ownedParseProgress = (current: number, total: number) => {
+    if (activeParseController !== controller) return;
+    setParseProgress({ current, total });
+  };
   // page-citation-viewer: PdfViewer lazy 마운트를 위해 원본 바이트를 별도 보관.
   // parsePdf 가 내부적으로 pdfjs.getDocument({ data }) 를 호출할 때 ArrayBuffer 가 transfer 될 수
   // 있으므로, 파싱 전에 복사본을 만들어 두어 detached 상태를 피한다.
@@ -294,7 +348,7 @@ export async function openDocumentData(
       ? await openZipDocument(
           data,
           { fileName: name, filePath },
-          { extractImages: extractImagesEnabled, signal: controller.signal },
+          { extractImages: extractImagesEnabled, signal: controller.signal, onProgress: ownedParseProgress },
         )
       : await parsePdf(data, name, filePath, {
           enableOcrFallback: store.settings.enableOcrFallback,
@@ -378,6 +432,7 @@ export async function openDocumentData(
       activeParseController = null;
       store.setIsParsing(false);
       store.setOcrProgress(null);
+      setParseProgress(null);
     }
   }
 }

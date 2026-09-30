@@ -266,6 +266,22 @@ describe('packaged-smoke 를 도는 잡은 어디서든 같은 게이트를 건�
 });
 
 /**
+ * QA35(D1): v1.8.1 의 userData 이전(Local State 를 Chromium 초기화 전에 복사) 순서 계약을 지키는
+ * 유일한 스펙이 ubuntu 에 safeStorage 가 없어 **모든 CI 에서 skip** 되고 있었다. Windows 잡에서
+ * 돌리되 skip 을 실패로 승격하는 플래그가 빠지면 같은 무보호로 돌아간다 — packaged-smoke 와 같은 형태.
+ */
+describe('userdata-migration 스펙을 도는 잡은 skip 을 실패로 승격한다', () => {
+  it.each([[TEST_WF], [RELEASE]])('%s', (path) => {
+    const migrationSteps = steps(wf(path)).filter((s) => /playwright test e2e\/userdata-migration\.spec\.ts/.test(s));
+    expect(migrationSteps.length, `${path}: userdata-migration 스텝이 사라졌다`).toBeGreaterThanOrEqual(1);
+    for (const step of migrationSteps) {
+      expect(step, `${path}: MIGRATION_E2E_REQUIRED 가 빠지면 safeStorage 부재로 skip 되어 초록이 된다`)
+        .toMatch(/MIGRATION_E2E_REQUIRED: '1'/);
+    }
+  });
+});
+
+/**
  * QA33(I5): 자산 업로드 목록은 아무도 보지 않았다. `dist/latest.yml` 한 줄만 빠져도 빌드·검증
  * 스텝은 전부 통과하고 릴리즈도 정상으로 보이지만, 자산이 없어 **전 사용자의 자동 업데이트가
  * 조용히 정지**한다 — 바로 위 검증 스텝(디스크에 파일이 있는가)이 존재하는 이유와 같은 실패다.

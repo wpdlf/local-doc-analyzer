@@ -26,6 +26,13 @@ interface Api {
 }
 type Win = { electronAPI: Api };
 
+// 게이트로서 호출됐는가(=safeStorage 가 반드시 있어야 하는가). release.yml build-windows 와
+// test.yml 야간 package-smoke 잡이 이 값을 세운다.
+const REQUIRED = process.env['MIGRATION_E2E_REQUIRED'] === '1';
+// 부재 경로(skip→실패 승격)를 검증하기 위한 테스트 전용 스위치 — safeStorage 를 실제로 끌 방법이
+// 없으므로 "없다" 고 보고된 것처럼 다룬다. CI 워크플로에서는 절대 세우지 않는다.
+const FORCE_UNAVAILABLE = process.env['MIGRATION_E2E_FORCE_NO_SAFESTORAGE'] === '1';
+
 const SEED = { provider: 'claude', model: 'claude-sonnet-4-5', uiLanguage: 'ko', summaryLanguage: 'ko', theme: 'dark' };
 
 test('옛 userData 의 API 키·설정이 새 userData 로 이전되어 실제로 복호화된다', async () => {
@@ -36,7 +43,14 @@ test('옛 userData 의 API 키·설정이 새 userData 로 이전되어 실제�
     // ── ① v1.7.x 상태 만들기: 실제 safeStorage 로 키 저장 ──
     const r1 = await launchElectron(legacyDir, SEED);
     try {
-      const available = await r1.app.evaluate(({ safeStorage }) => safeStorage.isEncryptionAvailable());
+      const available = !FORCE_UNAVAILABLE
+        && await r1.app.evaluate(({ safeStorage }) => safeStorage.isEncryptionAvailable());
+      // QA35(D1): 게이트로 호출된 경우 skip 은 곧 "한 번도 실행되지 않은 초록" 이다 — ubuntu 러너는
+      // safeStorage 가 없어 이 스펙이 모든 CI 에서 skip 되고 있었다. Windows 잡이 이 값을 세워
+      // 호출하고, 그때 safeStorage 부재는 실패로 승격한다(packaged-smoke 의 PACKAGED_SMOKE_REQUIRED 와 동일).
+      if (REQUIRED && !available) {
+        throw new Error('MIGRATION_E2E_REQUIRED=1 인데 safeStorage 를 쓸 수 없습니다 — 게이트를 Windows 잡에서 실행하세요');
+      }
       test.skip(!available, 'OS 키체인(safeStorage)을 쓸 수 없는 환경 — 암호화 키 이전을 검증할 수 없다');
       const saved = await r1.page.evaluate(() =>
         (window as unknown as Win).electronAPI.apiKey.save('claude', 'sk-e2e-migration-0001'));
