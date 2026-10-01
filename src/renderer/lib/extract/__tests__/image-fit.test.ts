@@ -169,6 +169,54 @@ describe('BMP (P4 — HWPX 본문 그림의 다수)', () => {
   });
 });
 
+/** 최소 GIF 헤더: 'GIF87a'/'GIF89a' + 논리 화면 너비(6)·높이(8) uint16 LE. */
+function gifHeader(width: number, height: number, version: '87a' | '89a' = '89a'): Uint8Array {
+  const b = new Uint8Array(13);
+  b.set([0x47, 0x49, 0x46, ...Array.from(version, (c) => c.charCodeAt(0))]);
+  const v = new DataView(b.buffer);
+  v.setUint16(6, width, true);
+  v.setUint16(8, height, true);
+  return b;
+}
+
+describe('GIF (Vision 분석 대상 — 첫 프레임)', () => {
+  it('GIF87a·GIF89a 헤더에서 크기를 읽는다', () => {
+    expect(probeImage(gifHeader(300, 200))).toEqual({ mimeType: 'image/gif', width: 300, height: 200 });
+    expect(probeImage(gifHeader(640, 480, '87a'))).toEqual({ mimeType: 'image/gif', width: 640, height: 480 });
+  });
+
+  it('GIF 로 시작하지만 버전이 다르거나 헤더가 잘렸으면 null', () => {
+    const bad = gifHeader(300, 200); bad[4] = 0x38; // 'GIF88a'
+    expect(probeImage(bad)).toBeNull();
+    expect(probeImage(gifHeader(300, 200).subarray(0, 9))).toBeNull();
+  });
+
+  it('작아서 줄일 필요가 없어도 **항상** 재인코딩한다 — 애니메이션은 첫 프레임만, 출력은 PNG/JPEG', async () => {
+    const calls: unknown[] = [];
+    const codec = { async reencode(_b: Uint8Array, mime: string, target: unknown) { calls.push([mime, target]); return { bytes: new Uint8Array([1]), mimeType: 'image/jpeg' as const }; } };
+    const out = await createImageFitter(codec)(gifHeader(300, 200));
+    expect(calls).toEqual([['image/gif', { width: 300, height: 200 }]]);
+    expect(out?.mimeType).toBe('image/jpeg');
+  });
+
+  it('50px 미만 GIF(스페이서·아이콘)는 디코드 없이 건너뛴다', async () => {
+    const codec = { reencode: vi.fn() };
+    expect(await createImageFitter(codec)(gifHeader(1, 1))).toBeNull();
+    expect(codec.reencode).not.toHaveBeenCalled();
+  });
+
+  it('기본 canvasCodec 은 GIF 를 target 없이 받으면 원본을 그대로 돌려주지 않는다', async () => {
+    const close = vi.fn();
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 300, height: 200, close })));
+    try {
+      expect(await canvasCodec.reencode(gifHeader(300, 200), 'image/gif', null)).toBeNull();
+      expect(close).toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 // QA35(B05): 그림 바이트는 신뢰할 수 없는 zip 에서 온다. 헤더가 잘린 조각에서 probeImage 가
 // RangeError 를 던지면 그림 하나 때문에 문서 열기 전체가 실패한다.
 describe('probeImage — 잘린 헤더에서도 throw 하지 않는다 (QA35 B05)', () => {
@@ -178,8 +226,8 @@ describe('probeImage — 잘린 헤더에서도 throw 하지 않는다 (QA35 B05
     expect(probeImage(b)).toBeNull();
   });
 
-  it('정상 헤더(PNG·JPEG·BMP)의 모든 접두 조각에서 throw 없이 null 또는 정상 값', () => {
-    for (const full of [pngHeader(300, 200), jpegHeader(640, 480), bmpHeader(300, 200)]) {
+  it('정상 헤더(PNG·JPEG·BMP·GIF)의 모든 접두 조각에서 throw 없이 null 또는 정상 값', () => {
+    for (const full of [pngHeader(300, 200), jpegHeader(640, 480), bmpHeader(300, 200), gifHeader(300, 200)]) {
       for (let n = 0; n < full.length; n++) {
         const probe = probeImage(full.subarray(0, n));
         if (probe) {

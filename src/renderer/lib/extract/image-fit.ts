@@ -21,7 +21,13 @@ export const JPEG_QUALITY = 0.8;
 
 export type FittedMime = 'image/png' | 'image/jpeg';
 /** 디코드는 되지만 Vision 으로 그대로 보낼 수 없는 원본 형식 — 항상 재인코딩한다. */
-export type SourceMime = FittedMime | 'image/bmp';
+export type SourceMime = FittedMime | 'image/bmp' | 'image/gif';
+
+/**
+ * 크기와 무관하게 재인코딩하는 원본 형식. BMP 는 Vision API(Claude·OpenAI)가 받지 않고, GIF 는
+ * 애니메이션이면 프레임이 여럿이라 첫 프레임 한 장으로 고정한다(출력 형식도 PNG/JPEG 로 통일).
+ */
+const ALWAYS_REENCODE: ReadonlySet<SourceMime> = new Set<SourceMime>(['image/bmp', 'image/gif']);
 
 export interface ImageProbe {
   mimeType: SourceMime;
@@ -69,7 +75,7 @@ function isSof(marker: number): boolean {
 }
 
 /**
- * 매직 바이트와 헤더만으로 형식·크기를 읽는다. PNG·JPEG 외(EMF/WMF/TIFF/GIF…)와 헤더가 깨진
+ * 매직 바이트와 헤더만으로 형식·크기를 읽는다. PNG·JPEG·BMP·GIF 외(EMF/WMF/TIFF…)와 헤더가 깨진
  * 것은 null. 확장자는 믿지 않는다 — Vision API 는 선언된 mimeType 과 실제 바이트가 다르면 거절한다.
  */
 export function probeImage(b: Uint8Array): ImageProbe | null {
@@ -108,6 +114,14 @@ export function probeImage(b: Uint8Array): ImageProbe | null {
     if (v.getUint32(14, true) < 40) return null;
     return { mimeType: 'image/bmp', width: Math.abs(v.getInt32(18, true)), height: Math.abs(v.getInt32(22, true)) };
   }
+  // GIF: 'GIF87a'/'GIF89a' + 논리 화면 너비·높이(uint16 LE). TIFF 는 Chromium 이 디코드하지 못해 받지 않는다.
+  if (
+    b.length >= 10 &&
+    b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38 &&
+    (b[4] === 0x37 || b[4] === 0x39) && b[5] === 0x61
+  ) {
+    return { mimeType: 'image/gif', width: b[6]! + (b[7]! << 8), height: b[8]! + (b[9]! << 8) };
+  }
   return null;
 }
 
@@ -143,8 +157,8 @@ export function createImageFitter(codec: ImageCodec): ImageFitter {
     if (width < MIN_IMAGE_SIZE || height < MIN_IMAGE_SIZE) return null;
     // 디코드하면 픽셀×4 바이트가 한 번에 잡힌다(OOM 방지). 헤더 값이라 디코드 전에 거른다.
     if (width * height > MAX_IMAGE_PIXELS) return null;
-    // BMP 는 줄일 필요가 없어도 제 크기로 재인코딩한다 — Vision API(Claude·OpenAI)가 받지 않는다.
-    const target = downscaleTarget(width, height) ?? (mimeType === 'image/bmp' ? { width, height } : null);
+    // BMP·GIF 는 줄일 필요가 없어도 제 크기로 재인코딩한다(ALWAYS_REENCODE 참조).
+    const target = downscaleTarget(width, height) ?? (ALWAYS_REENCODE.has(mimeType) ? { width, height } : null);
     let out: Awaited<ReturnType<ImageCodec['reencode']>>;
     try {
       out = await codec.reencode(bytes, mimeType, target);
@@ -169,7 +183,7 @@ export const canvasCodec: ImageCodec = {
     }
     let canvas: OffscreenCanvas | null = null;
     try {
-      if (!target) return mimeType === 'image/bmp' ? null : { bytes, mimeType };
+      if (!target) return mimeType === 'image/png' || mimeType === 'image/jpeg' ? { bytes, mimeType } : null;
       if (typeof OffscreenCanvas === 'undefined') return null;
       canvas = new OffscreenCanvas(target.width, target.height);
       const ctx = canvas.getContext('2d');
