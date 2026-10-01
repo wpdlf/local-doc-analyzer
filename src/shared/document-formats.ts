@@ -9,7 +9,7 @@
  */
 
 export interface DocumentFormat {
-  id: 'pdf' | 'docx' | 'pptx' | 'hwpx' | 'epub';
+  id: 'pdf' | 'docx' | 'pptx' | 'hwpx';
   /** 소문자, 점 포함 */
   ext: string;
   /** 다이얼로그에 보일 이름 */

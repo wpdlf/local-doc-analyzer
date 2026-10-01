@@ -4,7 +4,7 @@
 
 **A local AI-powered document summarization tool that runs entirely on your PC.**
 
-Most AI summarization services require uploading your documents to an external server — this app runs **the AI inside your own computer**. Currently supports **PDF, Word, PowerPoint, and HWPX (한글)**, with EPUB planned.
+Most AI summarization services require uploading your documents to an external server — this app runs **the AI inside your own computer**. Currently supports **PDF, Word, PowerPoint, and HWPX (한글)**.
 
 - **Fully offline operation** — the Ollama local AI engine runs directly on your PC, so your documents never leave your machine
 - **Unified text + image analysis** — analyzes not only text but also embedded charts, diagrams, and tables with Vision AI

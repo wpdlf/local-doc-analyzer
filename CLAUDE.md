@@ -5,7 +5,7 @@
 로컬 문서 분석기 (Local Doc Analyzer) — 문서 분석 데스크톱 앱 (Electron + React + TypeScript)
 Ollama/Claude/OpenAI/Gemini를 통한 AI 요약, 이미지 Vision 분석 지원
 
-**입력 포맷**: PDF · DOCX(v1.8.0~) · PPTX · 한글(HWPX)(P4~). EPUB 는 P4b 로 예정 — 실물 샘플 확보가 선행
+**입력 포맷**: PDF · DOCX(v1.8.0~) · PPTX · 한글(HWPX)(v1.9.0~). **EPUB 는 지원 제외**(2026-10-01 결정 — 재제안 금지)
 (설계: `docs/02-design/features/multiformat-input.design.md`)
 
 **개명 (2026-09-22, v1.8.0 출시)**: `summary-lecture-material` / `PDF 자료 분석기` → `local-doc-analyzer` /

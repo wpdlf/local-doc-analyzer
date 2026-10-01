@@ -10,6 +10,8 @@ version_project: 1.8.0
 
 # 다중 포맷 문서 입력 (HWPX · DOCX · PPTX · EPUB) Design Document
 
+> **⛔ EPUB 지원 제외 (2026-10-01)**: 사용자 결정으로 EPUB 은 범위에서 뺐다(P4b 취소). 아래 EPUB 서술은 설계 당시 기록으로만 남긴다.
+
 > **Summary**: 입력을 PDF 하나에서 **HWPX · DOCX · PPTX · EPUB** 넷으로 넓힌다. 네 포맷 모두
 > zip + XML 이므로 추출은 `fflate`(unzip) 하나와 렌더러의 내장 `DOMParser` 로 끝난다. 핵심 전략은
 > **"포맷별 추출기 → 중간 표현 `ExtractedDoc` → 정규화 → 기존 `PdfDocument`"** 로, 요약 · Vision ·
@@ -569,5 +571,5 @@ P2 가 가장 위험하다 — 기존 PDF 경로를 건드리는 유일한 구�
 | `remark-gfm` 번들 포함 | ✅ `shippedDevDependencies` 확인 |
 | DOCX 세부 구조 | ✅ 실물 확인 (P1 · QA34 — 실물 DOCX 로 추출 검증) |
 | PPTX 세부 구조 | ✅ 실물 확인 (P4, Task11 — Downloads 실 파일 25개, 단위 수 대 `sldIdLst` 독립 대조 전부 일치, `‹#›` 누출 0) |
-| EPUB 세부 구조 | ❌ 미확인 (A3, P4b 선행조건 — 실물 샘플 확보) |
+| EPUB 세부 구조 | ⛔ 해당 없음 — 지원 제외(2026-10-01) |
 | `fflate` API·크기 | ❌ 미확인 (A4) |

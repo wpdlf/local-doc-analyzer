@@ -4,7 +4,7 @@ import { extractFail } from './errors';
 import type { ZipIndex } from './types';
 
 /**
- * OCF(Open Container Format) 해석 — HWPX 와 EPUB 공용(설계 §3.1).
+ * OCF(Open Container Format) 해석 — HWPX 가 쓴다(설계 §3.1). EPUB 도 같은 컨테이너지만 지원 제외(2026-10-01).
  *
  * `META-INF/container.xml` → rootfile(OPF) → manifest(id → 경로·media-type) + spine(순서).
  */
