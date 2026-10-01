@@ -41,6 +41,26 @@ function tText(t: Element): string {
   return s;
 }
 
+/**
+ * 수식(hp:equation) → `[수식: <스크립트>]`. 스크립트는 LaTeX 가 아니라 한글 수식 문법(`{a} over {b}`)이다.
+ * LaTeX 로 옮기지 않는다 — 문법(행렬·첨자 우선순위·예약어)을 틀리게 옮기면 확신에 찬 오답이 되고,
+ * 원문을 넘기면 요약 모델이 읽을 수 있다. 원문 뷰어도 수식을 렌더하지 않는 것이 정책이다.
+ * 스크립트의 줄바꿈·연속 공백은 한 칸으로 접는다(`#` 이 수식의 줄바꿈이고, 실제 개행은 서식일 뿐이다).
+ */
+function equationText(eq: Element): string {
+  const script = childrenNamed(eq, 'script')[0];
+  const s = (script?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  return s ? `[수식: ${s}]` : '';
+}
+
+/** 깊이 상한 폴백용 — 수식 스크립트(hp:equation 의 자식 hp:script)면 그 표기, 아니면 null. */
+function equationScriptText(el: Element): string | null {
+  const parent = el.parentElement;
+  if (localName(el) !== 'script' || !parent || localName(parent) !== 'equation') return null;
+  const m = equationText(parent);
+  return m ? ` ${m} ` : '';
+}
+
 /** 문단 하나를 읽은 결과 — 런 사이에 표가 끼면 텍스트가 여러 조각으로 갈린다. */
 interface ParaOut {
   /** 순서대로의 블록 텍스트(텍스트 조각 · 표) */
@@ -54,7 +74,15 @@ interface ParaOut {
 function readParagraph(p: Element, depth: number, tableText: (tbl: Element, depth: number) => string): ParaOut {
   const out: ParaOut = { parts: [], boxes: [], pics: [] };
   let buf = '';
-  const flush = () => { if (buf.trim()) out.parts.push(buf); buf = ''; };
+  // 수식 뒤 글자가 공백 없이 붙어 있으면 한 칸 띄운다("[수식: x^2]이다" 가 되지 않게).
+  let padNext = false;
+  const flush = () => { if (buf.trim()) out.parts.push(buf); buf = ''; padNext = false; };
+  const append = (s: string) => {
+    if (!s) return;
+    if (padNext && !/^\s/.test(s)) buf += ' ';
+    padNext = false;
+    buf += s;
+  };
   const skip = (el: Element): boolean => {
     if (el === p) return false;
     const name = localName(el);
@@ -79,10 +107,20 @@ function readParagraph(p: Element, depth: number, tableText: (tbl: Element, dept
       if (ref) out.pics.push({ ref, part: out.parts.length });
       return true;
     }
+    // 수식 — 스크립트만 읽고 서브트리(shapeComment "수식입니다." 포함)는 건너뛴다.
+    if (name === 'equation') {
+      const m = equationText(el);
+      if (m) {
+        if (buf && !/\s$/.test(buf)) buf += ' ';
+        buf += m;
+        padNext = true;
+      }
+      return true;
+    }
     return false;
   };
   for (const el of walk(p, skip)) {
-    if (localName(el) === 't') buf += tText(el);
+    if (localName(el) === 't') append(tText(el));
   }
   flush();
   return out;
@@ -91,7 +129,10 @@ function readParagraph(p: Element, depth: number, tableText: (tbl: Element, dept
 /** 깊이 상한을 넘은 서브트리 — 구조 없이 hp:t 텍스트만 모은다(잃지 않는다, docx.ts plainText 와 같은 규칙). */
 function plainText(el: Element): string {
   let s = '';
-  for (const e of walk(el, (x) => SKIPPED.has(localName(x)))) if (localName(e) === 't') s += tText(e);
+  for (const e of walk(el, (x) => SKIPPED.has(localName(x)))) {
+    if (localName(e) === 't') s += tText(e);
+    else s += equationScriptText(e) ?? '';
+  }
   return s;
 }
 
@@ -103,6 +144,7 @@ function plainTextWithPics(el: Element): { text: string; pics: string[] } {
     const name = localName(e);
     if (name === 't') s += tText(e);
     else if (name === 'img') { const ref = attr(e, 'binaryItemIDRef'); if (ref) pics.push(ref); }
+    else s += equationScriptText(e) ?? '';
   }
   return { text: s, pics };
 }

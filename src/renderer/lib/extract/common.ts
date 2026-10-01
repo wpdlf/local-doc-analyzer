@@ -58,7 +58,7 @@ export async function collectImages(
     const bytes = zip.bytes(path);
     if (!bytes) continue;
     if (images.length >= MAX_TOTAL_IMAGES) { imageBudgetExceeded = true; continue; }
-    // 형식은 확장자가 아니라 바이트로 가린다(EMF/WMF/TIFF 는 건너뛴다). 크기 규칙은 PDF 경로와
+    // 형식은 확장자가 아니라 바이트로 가린다(EMF/WMF/TIFF 는 건너뛰고 BMP·GIF 는 재인코딩). 크기 규칙은 PDF 경로와
     // 같다 — 50px 미만·4M 픽셀 초과는 건너뛰고, 긴 변 1024 초과는 줄인다.
     const fitted = await fit(bytes);
     if (fitted) images.push({ unitIndex, ...fitted });

@@ -147,6 +147,59 @@ describe('hwpx — 문단 텍스트', () => {
   });
 });
 
+/** 실물 OWPML 형태의 수식 개체 — 스크립트 앞에 크기·위치·shapeComment("수식입니다.")가 온다. */
+const eq = (script: string) => `<hp:equation id="1" version="Equation Version 60" baseLine="85" textColor="#000000" baseUnit="1000" lineMode="CHAR" font="HYhwpEQ"><hp:sz width="1000" height="1000"/><hp:pos treatAsChar="1"/><hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:shapeComment>수식입니다.</hp:shapeComment><hp:script>${script}</hp:script></hp:equation>`;
+
+describe('hwpx — 수식(hp:equation)', () => {
+  it('수식 스크립트를 본문 흐름 안에 [수식: …] 으로 남긴다 — shapeComment 는 새지 않는다', async () => {
+    const doc = await extract(hwpx([sec(p(run(t('넓이는 ')) + run(eq('{a} over {b}')) + run(t(' 이다'))))]));
+    expect(doc.units[0]).toBe('넓이는 [수식: {a} over {b}] 이다');
+  });
+
+  it('앞뒤 글자에 공백이 없으면 수식 양옆에 한 칸씩 띄운다', async () => {
+    const doc = await extract(hwpx([sec(p(run(t('값은')) + run(eq('x^2')) + run(t('이다'))))]));
+    expect(doc.units[0]).toBe('값은 [수식: x^2] 이다');
+  });
+
+  it('스크립트의 줄바꿈·연속 공백은 한 칸으로 접는다', async () => {
+    const doc = await extract(hwpx([sec(p(run(eq('matrix{1 &amp; 2 #\n   3 &amp; 4}'))))]));
+    expect(doc.units[0]).toBe('[수식: matrix{1 & 2 # 3 & 4}]');
+  });
+
+  it('빈 스크립트는 아무것도 남기지 않는다', async () => {
+    const doc = await extract(hwpx([sec(p(run(t('본문')) + run(eq('   '))))]));
+    expect(doc.units[0]).toBe('본문');
+  });
+
+  it('수식만 있는 문단도 본문이 된다 — DOC_NO_TEXT 가 아니다', async () => {
+    const doc = await extract(hwpx([sec(p(run(eq('E = mc^2'))))]));
+    expect(doc.units[0]).toBe('[수식: E = mc^2]');
+  });
+
+  it('표 셀 안의 수식도 남는다', async () => {
+    const tbl = `<hp:tbl rowCnt="1" colCnt="1"><hp:tr><hp:tc><hp:subList>${p(run(eq('sqrt {2}')))}</hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/></hp:tc></hp:tr></hp:tbl>`;
+    const doc = await extract(hwpx([sec(p(run(tbl)))]));
+    expect(doc.units[0]).toContain('[수식: sqrt {2}]');
+  });
+
+  it('글상자 안의 수식도 남는다', async () => {
+    const box = run(`<hp:rect><hp:drawText><hp:subList>${p(run(eq('alpha + beta')))}</hp:subList></hp:drawText></hp:rect>`);
+    const doc = await extract(hwpx([sec(p(run(t('호스트')) + box))]));
+    expect(doc.units[0]).toBe('호스트\n\n[수식: alpha + beta]');
+  });
+
+  it('중첩 상한을 넘은 평문 폴백에서도 수식을 잃지 않는다', async () => {
+    let cellContent = p(run(eq('깊은수식')));
+    for (let i = 0; i < 18; i++) {
+      cellContent = p(run(`<hp:tbl rowCnt="1" colCnt="1"><hp:tr><hp:tc><hp:subList>${cellContent}</hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/></hp:tc></hp:tr></hp:tbl>`));
+    }
+    const doc = await extract(hwpx([sec(cellContent)]));
+    const all = doc.units.join('\n');
+    expect(all).toContain('[수식: 깊은수식]');
+    expect(all).not.toContain('수식입니다.');
+  });
+});
+
 describe('hwpx — 제목·실패 계약', () => {
   const header = `<hh:head ${NS}><hh:paraPr id="5"><hh:heading type="OUTLINE" level="0"/></hh:paraPr></hh:head>`;
 
