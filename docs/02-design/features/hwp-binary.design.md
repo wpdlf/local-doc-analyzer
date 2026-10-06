@@ -47,8 +47,19 @@ version_project: 1.12.0
 ### 실물 분석 (2026-10-02, 스크래치에서만)
 다운로드 4 + 업무 폴더 1(개인정보 서식 — **구조 확인만, 픽스처·대조 금지**).
 전부 HWP 5.1.x · 압축(raw deflate) · 암호/배포용 없음 · `BodyText/Section0` 하나 · 표 5~11개(1×1 ~ 31×6) ·
-기술문서 3개에 내장 JPG 1개씩(`gso`) · **수식 0 · 개요 문단 0** · 쪽 나눔 1개(1개 파일) · `PrvText` 는 앞 2KB 뿐.
+기술문서 3개에 내장 JPG 1개씩(`gso`) · **수식 0 · 개요 문단 0** · `PrvText` 는 앞 2KB 뿐.
 → 수식·개요 제목·암호·배포용 경로는 **합성 입력으로만 검증** 된다(§5 에 명시 기록).
+
+### 실물로 확정한 바이트 배치 (2026-10-06 재조사 — 스펙 문서와 다른 곳 포함)
+| 항목 | 실물 | 비고 |
+|---|---|---|
+| `LIST_HEADER`(표 셀) | **8바이트 머리**(문단 수 u16 · 미상 u16 · 속성 u32) 뒤 열 주소 @8 · 행 주소 @10 · 열 병합 @12 · 행 병합 @14 | 공식 스펙 표는 6바이트로 적혀 있어 **틀렸다**(pyhwp 와 일치). 3×5 표의 병합(열 1 colSpan 2)으로 확인 |
+| 셀 문단 | `LIST_HEADER` **뒤의 형제** `PARA_HEADER` 들(같은 level) | 표 `CTRL_HEADER` 의 자식 |
+| `PARA_HEADER` 쪽 나눔 | `breakType` = **@11** 의 bit2(0x04), bit0 = 구역 나눔 | 앞선 분석이 @12 를 봐서 "쪽 나눔 1개" 로 잘못 셌다. 실물 기술문서는 6~7개 |
+| 그림 | `gso` → `SHAPE_COMPONENT('$con')` → `SHAPE_COMPONENT('$pic')` → `SHAPE_COMPONENT_PICTURE` 의 BinItem id @71 | id 는 DocInfo `BIN_DATA` 목록의 1-based 순번 |
+| `BIN_DATA` | 속성 u16(type = 하위 4비트, 1 = 내장) · id u16 @2 · 확장자 길이 u16 @4 · UTF-16 확장자 @6 | 스트림 = `BinData/BIN%04X.<ext>`, 압축(문서 플래그를 따름) — 풀면 JPEG |
+| 본문 확장 컨트롤 문자 | 8 wchar 중 1~2번째 wchar 에 컨트롤 id(바이트 역순, `CTRL_HEADER` 와 같은 표기) | `secd`·`cold`·`tbl `·`gso ` 순서가 `CTRL_HEADER` 순서와 일치 |
+| `PrvText` | UTF-16LE, 표 칸은 `<…>` 로 감쌈 | 대조 시 글자·숫자만 남겨 비교 |
 
 ---
 
@@ -77,6 +88,10 @@ e2e/fixtures/make-hwp.ts   합성 .hwp 생성기(유닛·E2E 공용)
 - 지금은 `hasCfbMagic` 이면 **try 밖에서 즉시** `DOC_ENCRYPTED`. → 선검사는 CFB 를 **통과**시키고,
   `openZipDocument` 를 `openContainerDocument` 로 넓혀 try 안에서 zip/CFB 를 연다.
   CFB 인데 맞는 추출기가 없으면(= 암호 걸린 docx·pptx) **기존과 같은** `DOC_ENCRYPTED` + `doc.encrypted` 문구.
+  CFB 구조 자체가 깨졌으면 `DOC_CORRUPT`(손상 zip 과 같은 취급 — 종전엔 매직만 보고 무조건 암호 안내였다).
+- **HWP 3.x 이하는 CFB 가 아니다** — 파일 맨 앞이 `HWP Document File V3.00` 서명이다. `.hwp` 확장자를 받기 시작하면
+  이 파일들이 "손상" 안내로 떨어지므로 선검사에서 `hasHwp3Magic()` 으로 갈라 `DOC_UNSUPPORTED` 로 안내한다
+  (App DOM 드롭 선검사도 통과시켜 같은 안내에 닿게 한다).
 - 부수효과(의도): CFB 거절도 진행 중 파싱을 abort-replace 한다 — QA34 에서 손상 zip 을 try 안으로 옮긴 것과 같다.
 - 확장자는 믿지 않는다. 진입 게이트 5곳(main 대화상자 필터 · file-gates · App 드롭 · 최근 문서 · 전역검색)은
   `document-formats.ts` 단일 출처에서 파생되므로 등록만으로 따라온다 — 테스트로 확인(§4.3).
@@ -110,7 +125,7 @@ PUA(U+E000–F8FF, U+F0000 이상 — 서로게이트 쌍 포함) 제거.
 참고만 한다: 격자 크기는 HWPX 의 `gridExtent` 규칙(R18)을 그대로 쓴다 — **셀 원점은 선언값을 넘어도 항상 포함,
 span 끝은 선언값 안에서만 믿음**(병리적 rowSpan 하나가 빈 행 수천 개를 만들지 않게). 형제 분기를 막기 위해
 `gridExtent` 를 `hwpx.ts` 에서 `table.ts` 로 옮겨 두 추출기가 공유한다. 행 축 상한은 걸지 않는다(QA35 — `MAX_GRID_CELLS` 만).
-셀 안 표는 재귀(깊이 상한 32, 넘으면 평문 — HWPX `flattenTableText` 와 같은 정책). **1×1 표**는 HWPX 와 같이
+셀 안 표는 재귀(깊이 상한 16 = HWPX `MAX_NEST_DEPTH` 와 같은 값, 넘으면 평문 — HWPX `flattenTableText` 와 같은 정책). **1×1 표**는 HWPX 와 같이
 특별 취급하지 않는다(한 칸 GFM 표). 풀어 쓰기가 필요하면 포맷 공통 변경으로 따로 다룬다.
 
 **그림** — `gso` 의 그림 개체에서 BinData id → 내장 스트림 inflate → Vision 대상. 형식 정책은 기존과 같다
@@ -134,7 +149,8 @@ span 끝은 선언값 안에서만 믿음**(병리적 rowSpan 하나가 빈 행 
 |---|---|---|
 | 암호(bit1) | `DOC_ENCRYPTED` (기존) | 기존 문구 |
 | **배포용(bit2)** | **`DOC_DISTRIBUTION` (신규)** | ko: "배포용 문서는 내용이 암호화돼 있어 열 수 없습니다. 한글에서 일반 문서로 저장한 뒤 다시 시도해주세요." / en: 동등 문구 |
-| 5.x 가 아닌 버전 | `DOC_UNSUPPORTED` (기존) | 지원 형식 안내 |
+| 5.x 가 아닌 버전 · HWP 3.x 이하(자체 서명) | `DOC_UNSUPPORTED` (기존) | 지원 형식 안내 |
+| DRM 보안 문서(bit4) | `DOC_ENCRYPTED` (기존) | 기존 문구 |
 | 구조 깨짐 · inflate 실패 · 레코드 범위 초과 · 본문 구역 손상 | `DOC_CORRUPT` (기존) | 손상 안내 |
 | 상한 초과 | `DOC_TOO_LARGE` (기존) | 크기 초과 안내 |
 | CFB 인데 HWP 아님(암호 OOXML) | `DOC_ENCRYPTED` (기존) | **현행과 동일** |
@@ -152,7 +168,8 @@ span 끝은 선언값 안에서만 믿음**(병리적 rowSpan 하나가 빈 행 
 | 압축 해제 총량 | **300MB 누적**(문서 전체 합계) | `MAX_UNZIPPED_BYTES` |
 | 레코드 크기 | 남은 바이트 초과 = `DOC_CORRUPT` | 길이 위조 |
 | 표 | `MAX_GRID_CELLS_PER_AXIS`(열) · `MAX_GRID_CELLS`(총) — 기존 값 | QA35 |
-| 중첩 표 깊이 | 32 | PPTX 그룹 깊이와 같은 값 |
+| 중첩 표 · 글상자 깊이 | 16 | HWPX `MAX_NEST_DEPTH` 와 같은 값(형제 비대칭 방지) |
+| 도형 그룹 깊이 | 32 | PPTX 그룹 깊이 상한과 같은 값 |
 
 inflate 는 fflate **스트리밍**(`Inflate` 의 `ondata` 에서 누적 계수)으로 하고 상한을 넘는 순간 멈춘다.
 
@@ -179,7 +196,7 @@ CFB(헤더 · FAT · 미니 FAT · DIFAT · 디렉터리) + HWP 레코드를 코
 | `cfb.ts` | 스트림 읽기 · **미니 스트림**(4KB 미만) | **DIFAT**(FAT 섹터 109개 초과) · FAT 순환 · 디렉터리 링크 순환 · 범위 밖 섹터 · 항목 10,000 초과 · 스트림 크기 > 체인 |
 | `hwp-records.ts` | 헤더 분해 | 확장 크기(0xFFF) · 길이 위조 · 8 wchar 건너뛰기 · 서로게이트 PUA · 누적 inflate 상한 |
 | `hwp-docinfo.ts` | 개요 수준 · BinData 목록 | 없는 id 참조 |
-| `hwp-table.ts` | 병합 격자 | 선언 행 수 불일치 · 병리적 rowSpan · **256행 초과** · 중첩 32 · 1×1 |
+| `hwp-table.ts` | 병합 격자 | 선언 행 수 불일치 · 병리적 rowSpan · **256행 초과** · 중첩 16 · 1×1 |
 | `table.ts` | `gridExtent` 이전 후 HWPX 기존 테스트 그대로 초록 | — |
 | `hwp.ts` | 텍스트 · 표 · 그림 · 수식 · 제목 · 쪽 나눔 | 암호 · 배포용 · 비 5.x · 300MB 누적 · 구역 손상 → 전체 거절 · 그림 실패 → 그것만 · 구역별 취소 · 진행률 |
 
@@ -195,7 +212,7 @@ CFB(헤더 · FAT · 미니 FAT · DIFAT · 디렉터리) + HWP 레코드를 코
 
 ### 4.4 실물 검증 (스크래치에서만, 저장소에 넣지 않음)
 - **`PrvText` 를 정답지로**: 한글이 저장한 본문 앞 ~2KB 와 우리 추출 앞부분을 공백·PUA 정규화 후 대조 — 실물 4개.
-- 표 수 · 그림 수 · 쪽 나눔 1개를 사전 분석값과 대조.
+- 표 수 · 그림 수 · 쪽 나눔 수를 사전 분석값과 대조.
 - 개인정보 서식은 구조 확인만.
 - 수식 `.hwp` 는 사용자가 만들어 주면 실물 검증, 없으면 "합성 입력으로만 검증" 으로 기록.
 - dev 앱에서 실물 `.hwp` 를 열어 화면 확인.
