@@ -39,12 +39,12 @@ export const EXTRACTOR_ERROR_MESSAGE_KEYS: Partial<Record<string, TranslationKey
   DOC_TOO_LARGE: 'doc.tooLarge',
   PDF_TOO_MANY_PAGES: 'uploader.tooManyPages',
   // QA34: DOC_UNSUPPORTED 는 이 파일이 비-PDF 분기에서 직접 던진다(extractFail 경유, params 동봉).
-  // DOC_ENCRYPTED 는 지금은 컨테이너 매직(CFB) 선검사가 try 밖에서 바로 배너를 올려 catch 에
-  // 닿지 않지만, HWPX(META-INF/manifest.xml encryption-data)처럼 **zip 을 연 뒤에야** 암호를 알 수
-  // 있는 포맷의 추출기가 던질 자리다 — 표에 두면 그때 번역·통과 코드(OPEN_ERROR_CODES)가 자동으로
-  // 따라온다. 종전 validCodes 에만 있던 DOC_ENCRYPTED 는 번역 키가 없어 영어 원문을 노출했을 것이다.
   DOC_UNSUPPORTED: 'doc.unsupported',
+  // DOC_ENCRYPTED 는 컨테이너를 연 뒤에야 알 수 있는 자리들이 던진다 — HWPX(META-INF/manifest.xml
+  // encryption-data) · HWP(FileHeader 암호·DRM 플래그) · HWP 가 아닌 CFB(암호 걸린 OOXML, openContainerDocument).
   DOC_ENCRYPTED: 'doc.encrypted',
+  // 배포용 HWP — 공공 자료에 흔하다. "손상"·"암호" 로 안내하면 원인을 알 수 없다(설계 H3).
+  DOC_DISTRIBUTION: 'doc.distribution',
 };
 
 /**
@@ -81,6 +81,7 @@ const EXTRACTOR_UNIT_KIND: Record<Extractor['id'], UnitKind> = {
   docx: 'page',
   pptx: 'slide',
   hwpx: 'page',
+  hwp: 'page',
 };
 
 /** 추출기 체인 lazy 로드 — import 절 주석 참조. */
