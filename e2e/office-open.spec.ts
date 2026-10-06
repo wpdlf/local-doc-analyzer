@@ -6,6 +6,7 @@ import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { launchElectron, sendDropPath, cleanupDir, openAndFlushSession, findFlushedSession, type ManifestEntry } from './helpers';
 import { writeSamplePptx } from './fixtures/make-pptx';
 import { writeSampleHwpx } from './fixtures/make-hwpx';
+import { writeSampleHwp, writeDistributionHwp } from './fixtures/make-hwp';
 
 /**
  * E2E — PPTX·HWPX 열기 → 인용 점프 → 단위 라벨(P4).
@@ -134,6 +135,47 @@ test('HWPX — 쪽나눔·좌표 격자 표·글상자, shapeComment·미리보�
       const row = r2.page.locator('#unit-2 table tbody tr').first().locator('td');
       await expect(row).toHaveText(['분류', '기능 개발', '100%']);
       await expect(viewer).not.toContainText('사각형입니다');
+
+      expect(r2.pageErrors.map((e) => e.message), '2차 렌더러 에러').toEqual([]);
+    } finally {
+      await r2.app.close().catch(() => { /* 이미 종료 */ });
+    }
+  } finally {
+    cleanupDir(userDataDir);
+    cleanupDir(docsDir);
+  }
+});
+
+test('HWP — 바이너리 쪽나눔·좌표 격자 표·글상자, 배포용 안내', async () => {
+  test.setTimeout(180000);
+  const userDataDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-hwp-'));
+  const docsDir = mkdtempSync(join(tmpdir(), 'doc-analyzer-hwp-docs-'));
+  try {
+    const fixture = join(docsDir, 'sample.hwp');
+    writeSampleHwp(fixture);
+    const entry = await seedSessionWithCitation(userDataDir, docsDir, fixture, 'sample.hwp (2p)');
+    expect(entry.unitKind, 'manifest 가 unitKind 를 싣는다').toBe('page');
+
+    const r2 = await launchElectron(userDataDir, SEED);
+    try {
+      await expect(r2.page.getByText('문서를 여기에 드래그하거나')).toBeVisible({ timeout: 15000 });
+
+      // 배포용 문서 — 문서가 열리기 전에 떨궈 discard 확인 없이 배너만 본다.
+      const dist = join(docsDir, 'dist.hwp');
+      writeDistributionHwp(dist);
+      await sendDropPath(r2.app, dist, readFileSync(dist).toString('base64'));
+      await expect(r2.page.getByText('배포용 문서는 내용이 암호화돼 있어 열 수 없습니다', { exact: false })).toBeVisible({ timeout: 30000 });
+
+      await sendDropPath(r2.app, fixture, readFileSync(fixture).toString('base64'));
+      await expect(r2.page.getByText('sample.hwp (2p)')).toBeVisible({ timeout: 60000 });
+
+      const viewer = await openCitation(r2.page, /2 페이지 원문 열기$/);
+      await expect(r2.page.locator('#unit-2')).toContainText('상자 안 제목');
+      const row = r2.page.locator('#unit-2 table tbody tr').first().locator('td');
+      await expect(row).toHaveText(['분류', '기능 개발', '100%']);
+      // 1쪽 본문은 1쪽에만 있다(미리보기 PrvText 는 추출 대상이 아니다 — 본문과 겹치는 문자열이라 단위로 확인).
+      await expect(r2.page.locator('#unit-2')).not.toContainText('첫 쪽의 내용입니다');
+      await expect(viewer).toContainText('첫 쪽의 내용입니다');
 
       expect(r2.pageErrors.map((e) => e.message), '2차 렌더러 에러').toEqual([]);
     } finally {
