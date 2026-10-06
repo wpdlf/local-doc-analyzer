@@ -79,6 +79,14 @@ describe('openCfb — 손상 · 공격 입력', () => {
     expect(codeOf(() => openCfb(toArrayBuffer(layout.bytes)).bytes('small'))).toBe('DOC_CORRUPT');
   });
 
+  it('디렉터리 섹터 체인 순환(크기 없이 끝까지 따라가는 체인)도 DOC_CORRUPT', () => {
+    // 스트림(takeChain)이 아니라 디렉터리·미니 FAT 를 읽는 walkChain 쪽 — 위 두 순환 테스트는 이 길을 지나지 않는다.
+    const layout = buildCfb({ a: fill(10, 1) });
+    const dirStart = new DataView(layout.bytes.buffer, layout.bytes.byteOffset).getUint32(48, true);
+    poke32(layout.bytes, layout.fatEntryOffset(dirStart), dirStart);
+    expect(codeOf(() => openCfb(toArrayBuffer(layout.bytes)))).toBe('DOC_CORRUPT');
+  });
+
   it('디렉터리 형제 링크 순환은 DOC_CORRUPT', () => {
     const layout = buildCfb({ a: fill(10, 1), b: fill(10, 2) });
     poke32(layout.bytes, layout.entryOffset('b') + 72, layout.entryIndex('b'));
