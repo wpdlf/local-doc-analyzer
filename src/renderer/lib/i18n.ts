@@ -188,6 +188,10 @@ export const _translations = {
     en: 'The file may be corrupted or in a different format. Please try a different file.',
   },
   'doc.encrypted': { ko: '암호로 보호된 문서입니다. 암호를 해제한 후 다시 시도해주세요.', en: 'This document is password-protected. Please remove the password and try again.' },
+  'doc.distribution': {
+    ko: '배포용 문서는 내용이 암호화돼 있어 열 수 없습니다. 한글에서 일반 문서로 저장한 뒤 다시 시도해주세요.',
+    en: 'Distribution-only HWP documents are encrypted and cannot be opened. Save it as a regular document in Hancom Office and try again.',
+  },
   'doc.tooLarge': { ko: '압축을 해제하면 너무 커지는 파일입니다. 더 작은 파일로 다시 시도해주세요.', en: 'This file expands to an excessive size when decompressed. Please try a smaller file.' },
   // Task10 fix round1(Important 3): docx.ts 의 DOC_NO_TEXT(문서에 추출할 텍스트가 없음)를
   // 사용자에게 안내하는 문구. 추출기 내부 throw 는 개발자용 영어('no text in document')라

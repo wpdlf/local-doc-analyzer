@@ -281,7 +281,9 @@ export type AppErrorCode =
   | 'DOC_CORRUPT'
   | 'DOC_ENCRYPTED'
   | 'DOC_TOO_LARGE'
-  | 'DOC_NO_TEXT';
+  | 'DOC_NO_TEXT'
+  // 한글 배포용 문서(.hwp) — 본문이 ViewText/ 에 암호화돼 있어 읽을 수 없다. 암호 문서와 사용자 조치가 다르다.
+  | 'DOC_DISTRIBUTION';
 
 export interface AppError {
   code: AppErrorCode;

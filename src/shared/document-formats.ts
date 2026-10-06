@@ -9,13 +9,13 @@
  */
 
 export interface DocumentFormat {
-  id: 'pdf' | 'docx' | 'pptx' | 'hwpx';
+  id: 'pdf' | 'docx' | 'pptx' | 'hwpx' | 'hwp';
   /** 소문자, 점 포함 */
   ext: string;
   /** 다이얼로그에 보일 이름 */
   label: string;
-  /** zip 컨테이너 기반 포맷인가 (아니면 PDF 처럼 고유 매직) */
-  container: 'zip' | 'pdf';
+  /** 컨테이너 — zip(OOXML·HWPX) · cfb(HWP 5.x) · 고유 매직(PDF) */
+  container: 'zip' | 'pdf' | 'cfb';
 }
 
 export const SUPPORTED_FORMATS: readonly DocumentFormat[] = [
@@ -23,6 +23,7 @@ export const SUPPORTED_FORMATS: readonly DocumentFormat[] = [
   { id: 'docx', ext: '.docx', label: 'Word', container: 'zip' },
   { id: 'pptx', ext: '.pptx', label: 'PowerPoint', container: 'zip' },
   { id: 'hwpx', ext: '.hwpx', label: 'HWPX', container: 'zip' },
+  { id: 'hwp', ext: '.hwp', label: 'HWP', container: 'cfb' },
 ] as const;
 
 export const SUPPORTED_EXTENSIONS: readonly string[] = SUPPORTED_FORMATS.map((f) => f.ext);
@@ -45,6 +46,9 @@ export const PPTX_FORMAT_ID = 'pptx' as const satisfies DocumentFormat['id'];
 
 /** hwpx 추출기(`extract/hwpx.ts`)의 판별 값. 위 DOCX_FORMAT_ID 주석 참조 — 리터럴은 이 한 곳뿐. */
 export const HWPX_FORMAT_ID = 'hwpx' as const satisfies DocumentFormat['id'];
+
+/** hwp(바이너리) 추출기(`extract/hwp.ts`)의 판별 값. 위 DOCX_FORMAT_ID 주석 참조 — 리터럴은 이 한 곳뿐. */
+export const HWP_FORMAT_ID = 'hwp' as const satisfies DocumentFormat['id'];
 
 /**
  * pdf 를 제외한 나머지 포맷 id. pdf 는 pdf-parser.ts 전용 파이프라인이 처리하고, zip 기반
@@ -137,11 +141,24 @@ export function hasPdfMagic(head: Uint8Array): boolean {
 
 /**
  * OLE CFB(Compound File Binary) 컨테이너 매직 `D0 CF 11 E0 A1 B1 1A E1`(오프셋 0 고정 — zip 과
- * 달리 앞에 관용적 접두가 붙지 않는다). 암호가 걸린 OOXML(Word/Excel/PowerPoint 를 MS-OFFCRYPTO
- * 로 암호화하면 zip 이 아니라 이 컨테이너가 된다)이 이 시그니처를 쓴다 — document-open.ts 가
- * DOC_ENCRYPTED 판별에 사용한다.
+ * 달리 앞에 관용적 접두가 붙지 않는다). HWP 5.x(.hwp)와 암호가 걸린 OOXML(Word/Excel/PowerPoint 를
+ * MS-OFFCRYPTO 로 암호화하면 zip 이 아니라 이 컨테이너가 된다)이 이 시그니처를 같이 쓴다 — document-open.ts
+ * 는 이것으로 **CFB 경로로 보낼지만** 가른다. 둘 중 무엇인지는 CFB 를 연 뒤 FileHeader 서명으로 판별한다
+ * (서명이 없으면 DOC_ENCRYPTED).
  */
 export function hasCfbMagic(head: Uint8Array): boolean {
   const sig = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
   return head.length >= sig.length && sig.every((b, i) => head[i] === b);
+}
+
+/**
+ * HWP 3.x 이하(.hwp) 서명 `HWP Document File V…` — 파일 맨 앞의 평문이다. HWP 5.x 는 CFB 컨테이너라
+ * 이 서명이 컨테이너 안 FileHeader 스트림에 있고(뒤에 " V" 가 없다) 여기 걸리지 않는다. `.hwp` 를 받기 시작하면
+ * 옛 파일이 "손상" 안내로 떨어지므로 선검사가 이것으로 미지원 안내를 가른다.
+ */
+export function hasHwp3Magic(head: Uint8Array): boolean {
+  const sig = 'HWP Document File V';
+  if (head.length < sig.length) return false;
+  for (let i = 0; i < sig.length; i++) if (head[i] !== sig.charCodeAt(i)) return false;
+  return true;
 }
