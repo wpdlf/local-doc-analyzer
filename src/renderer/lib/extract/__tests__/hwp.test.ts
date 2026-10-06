@@ -211,6 +211,35 @@ describe('거절 · 손상 · 상한', () => {
     expect(await failCode(small().extract(indexOf({ sections: [[para(big)], [para(big)]] }), { extractImages: false }))).toBe('DOC_TOO_LARGE');
     await expect(small().extract(indexOf({ sections: [[para(big)]] }), { extractImages: false })).resolves.toBeDefined();
   });
+
+  it('무압축 문서도 읽은 바이트를 같은 예산으로 센다 — 상한은 "읽거나 푼 바이트" 합계다', async () => {
+    const big = 'ㄱ'.repeat(30_000);
+    const small = () => createHwpExtractor({ fitImage: FIT, maxInflateBytes: 100_000 });
+    expect(await failCode(small().extract(indexOf({ flags: 0, sections: [[para(big)], [para(big)]] }), { extractImages: false }))).toBe('DOC_TOO_LARGE');
+    await expect(small().extract(indexOf({ flags: 0, sections: [[para(big)]] }), { extractImages: false })).resolves.toBeDefined();
+  });
+
+  it('무압축 구역 항목들이 한 섹터 체인을 나눠 가져도 읽을 때마다 센다(읽기 증폭)', async () => {
+    const big = 'ㄱ'.repeat(30_000);
+    const layout = buildHwp({ flags: 0, sections: [[para(big)], [para('x')]] });
+    // Section1 항목의 시작 섹터·크기를 Section0 것으로 바꾼다 — 같은 체인을 두 번 읽는다.
+    const dv = new DataView(layout.bytes.buffer, layout.bytes.byteOffset);
+    const s0 = layout.entryOffset('BodyText/Section0');
+    const s1 = layout.entryOffset('BodyText/Section1');
+    dv.setUint32(s1 + 116, dv.getUint32(s0 + 116, true), true);
+    dv.setUint32(s1 + 120, dv.getUint32(s0 + 120, true), true);
+    const small = createHwpExtractor({ fitImage: FIT, maxInflateBytes: 100_000 });
+    expect(await failCode(small.extract(openCfb(toArrayBuffer(layout.bytes)), { extractImages: false }))).toBe('DOC_TOO_LARGE');
+  });
+
+  it('무압축 그림도 같은 예산으로 센다', async () => {
+    const pic = new Uint8Array(80_000).fill(7);
+    const spec: HwpSpec = { flags: 0, bins: [{ id: 1, ext: 'jpg', bytes: pic }], sections: [[para(['본문', picture(1)])]] };
+    const small = createHwpExtractor({ fitImage: FIT, maxInflateBytes: 50_000 });
+    expect(await failCode(small.extract(indexOf(spec), { extractImages: true }))).toBe('DOC_TOO_LARGE');
+    // 그림을 싣지 않으면 읽지 않으므로 같은 상한 안이다
+    await expect(small.extract(indexOf(spec), { extractImages: false })).resolves.toBeDefined();
+  });
 });
 
 describe('취소 · 진행률', () => {

@@ -165,13 +165,13 @@ span 끝은 선언값 안에서만 믿음**(병리적 rowSpan 하나가 빈 행 
 | CFB 섹터 체인(FAT·미니 FAT·DIFAT) | **방문 집합으로 순환 감지** + 길이 ≤ 파일 섹터 수 · 범위 밖 섹터 번호 = 손상 | 순환 FAT 무한 루프 |
 | 디렉터리 항목 수 | 10,000 | `MAX_ZIP_ENTRIES` |
 | 디렉터리 트리 순회 | 순환 감지 + 깊이 상한 | 형제/자식 링크 순환 |
-| 압축 해제 총량 | **300MB 누적**(문서 전체 합계) | `MAX_UNZIPPED_BYTES` |
+| 읽거나 푼 바이트 총량 | **300MB 누적**(문서 전체 합계 — 압축 스트림은 푼 바이트, 무압축 스트림·그림은 읽은 바이트) | `MAX_UNZIPPED_BYTES` · zip.ts 가 항목마다 originalSize 를 세는 것과 같다. 여러 항목이 한 섹터 체인을 나눠 가지는 읽기 증폭도 여기서 막힌다 |
 | 레코드 크기 | 남은 바이트 초과 = `DOC_CORRUPT` | 길이 위조 |
 | 표 | `MAX_GRID_CELLS_PER_AXIS`(열) · `MAX_GRID_CELLS`(총) — 기존 값 | QA35 |
 | 중첩 표 · 글상자 깊이 | 16 | HWPX `MAX_NEST_DEPTH` 와 같은 값(형제 비대칭 방지) |
 | 도형 그룹 깊이 | 32 | PPTX 그룹 깊이 상한과 같은 값 |
 
-inflate 는 fflate **스트리밍**(`Inflate` 의 `ondata` 에서 누적 계수)으로 하고 상한을 넘는 순간 멈춘다.
+inflate 는 fflate **스트리밍**(`Inflate` 의 `ondata` 에서 누적 계수)으로 하고 상한을 넘는 순간 멈춘다. deflate 스트림이 끝나면 남은 꼬리 바이트는 넣지 않고 버린다(끝난 뒤 push 는 fflate 가 버퍼를 매번 복사해 O(n²) 이고 출력이 없어 상한에도 걸리지 않는다).
 
 ### 3.3 취소 · 진행률
 - 구역마다 + 일정 레코드 수마다 `signal.aborted` 확인(QA35 HWPX 취소 형제 비대칭 재발 방지).
