@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toGfmTable, placeGridCells, MAX_GRID_CELLS, MAX_GRID_CELLS_PER_AXIS } from '../table';
+import { toGfmTable, placeGridCells, gridExtent, MAX_GRID_CELLS, MAX_GRID_CELLS_PER_AXIS } from '../table';
 
 describe('toGfmTable', () => {
   it('첫 행을 머리글로 삼아 GFM 표를 만든다', () => {
@@ -112,5 +112,18 @@ describe('placeGridCells — 좌표로 놓는 격자(HWPX: 가려진 칸이 XML 
 
   it('상한에 걸리지 않으면 덧붙이는 행이 없다', () => {
     expect(placeGridCells([c(0, 0, 'a')], 1, 1)).toEqual([['a']]);
+  });
+});
+
+describe('gridExtent — 격자 한 축의 크기 (R18, hwpx·hwp 공유)', () => {
+  const at = (row: number, rowSpan = 1) => ({ row, col: 0, rowSpan, colSpan: 1, text: '' });
+  it('셀 원점은 선언값을 넘어도 포함한다 (선언값이 모자란 손상 파일에서 셀을 버리지 않게)', () => {
+    expect(gridExtent([at(0), at(2)], 'row', 1)).toBe(3);
+  });
+  it('스팬 끝은 선언값 안에서만 믿는다 (병리적 rowSpan 이 빈 행을 만들지 않게)', () => {
+    expect(gridExtent([at(0, 60000)], 'row', 2)).toBe(2);
+  });
+  it('선언값이 커도 셀이 차지하지 않으면 늘리지 않는다', () => {
+    expect(gridExtent([at(0)], 'row', 100000)).toBe(1);
   });
 });

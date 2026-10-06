@@ -10,9 +10,14 @@ import type { NonPdfFormatId } from '../../../shared/document-formats';
 /** 단위의 성격. 표시 라벨만 갈리고 내부 표현(정수 N)은 동일하다. */
 export type UnitKind = 'page' | 'slide' | 'chapter';
 
-/** zip 아카이브의 읽기 전용 색인. 디스크에 풀지 않는다. */
-export interface ZipIndex {
-  /** 아카이브에 든 엔트리 이름 전부 */
+/**
+ * 컨테이너(zip · CFB)의 읽기 전용 색인. 디스크에 풀지 않는다.
+ *
+ * CFB(.hwp)는 스트림 경로를 `/` 로 잇고(`BodyText/Section0`), bytes 는 **저장된 그대로**(압축된 채)다 —
+ * 압축 해제는 추출기가 문서 전체 예산으로 한다(hwp-records.ts inflateBudgeted).
+ */
+export interface ContainerIndex {
+  /** 컨테이너에 든 엔트리(스트림) 이름 전부 */
   names(): string[];
   has(name: string): boolean;
   /** UTF-8 로 디코드한 텍스트. 없으면 null */
@@ -20,6 +25,9 @@ export interface ZipIndex {
   /** 원본 바이트. 없으면 null */
   bytes(name: string): Uint8Array | null;
 }
+
+/** zip 추출기들이 쓰던 이름 — 호환 별칭(시그니처를 깨지 않는다). */
+export type ZipIndex = ContainerIndex;
 
 export interface ExtractedImage {
   /** units 배열의 0-based 인덱스 */
@@ -60,7 +68,7 @@ export interface Extractor {
    * document-formats.ts 의 NonPdfFormatId 를 derive 한다.
    */
   id: NonPdfFormatId;
-  /** zip 내부 엔트리로 판별한다. 확장자를 믿지 않는다. */
-  sniff(zip: ZipIndex): boolean;
-  extract(zip: ZipIndex, opts: ExtractOptions): Promise<ExtractedDoc>;
+  /** 컨테이너 내부 엔트리로 판별한다. 확장자를 믿지 않는다. */
+  sniff(index: ContainerIndex): boolean;
+  extract(index: ContainerIndex, opts: ExtractOptions): Promise<ExtractedDoc>;
 }
