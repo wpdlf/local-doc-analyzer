@@ -58,6 +58,10 @@ import { MAX_PDF_SIZE_BYTES } from '../../../shared/constants';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { stripJsComments } from '../../../shared/__tests__/helpers/source-scan';
+import { t } from '../i18n';
+import { SUPPORTED_LABEL } from '../../../shared/document-formats';
+import { buildHwp, para as hwpPara, toArrayBuffer } from '../../../../test/fixtures/hwp-builder';
+import { buildCfb } from '../../../../test/fixtures/cfb-builder';
 
 const GOOD_ITEMS = [{ str: 'A'.repeat(60), transform: [12, 0, 0, 12, 0, 700], width: 100 }];
 const SHORT_ITEMS = [{ str: 'ab', transform: [12, 0, 0, 12, 0, 700], width: 10 }];
@@ -488,10 +492,45 @@ describe('openDocumentData — 포맷 dispatch (Task10 리뷰 라운드1)', () =
     expect(s.error?.message).toMatch(/PDF/); // SUPPORTED_LABEL 이 실려 있다
   });
 
-  it('CFB 컨테이너(암호화된 OOXML)는 DOC_ENCRYPTED 다', async () => {
+  it('CFB 인데 HWP 가 아니면(암호 걸린 OOXML) 종전대로 DOC_ENCRYPTED + 암호 안내다', async () => {
+    const cfb = buildCfb({ EncryptionInfo: new Uint8Array(200), EncryptedPackage: new Uint8Array(5000) }).bytes;
+    await openDocumentData(toArrayBuffer(cfb), 'locked.docx', '/d/locked.docx');
+    const s = useAppStore.getState();
+    expect(s.error?.code).toBe('DOC_ENCRYPTED');
+    expect(s.error?.message).toBe(t('doc.encrypted'));
+  });
+
+  it('CFB 매직만 있고 구조가 깨졌으면 DOC_CORRUPT 다 (손상 zip 과 같은 취급)', async () => {
     const cfb = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0]);
     await openDocumentData(cfb.buffer, 'locked.docx', '/d/locked.docx');
-    expect(useAppStore.getState().error?.code).toBe('DOC_ENCRYPTED');
+    expect(useAppStore.getState().error?.code).toBe('DOC_CORRUPT');
+  });
+
+  it('HWP 성공 경로 — CFB 를 열어 추출 → toPdfDocument, unitKind page, pdfBytes 비상주', async () => {
+    const hwp = buildHwp({ sections: [[hwpPara('첫째 쪽'), hwpPara('둘째 쪽', { breakType: 0x04 })]] }).bytes;
+    await openDocumentData(toArrayBuffer(hwp), '보고서.hwp', '보고서.hwp');
+    const s = useAppStore.getState();
+    expect(s.error).toBeNull();
+    expect(s.document?.unitKind).toBe('page');
+    expect(s.document?.pageTexts).toEqual(['첫째 쪽', '둘째 쪽']);
+    expect(s.pdfBytes).toBeNull();
+    expect(P.getDocument).not.toHaveBeenCalled();
+  });
+
+  it('배포용 HWP 는 DOC_DISTRIBUTION + 전용 안내다', async () => {
+    const hwp = buildHwp({ flags: 0x05, sections: [[hwpPara('비밀')]] }).bytes;
+    await openDocumentData(toArrayBuffer(hwp), '공문.hwp', '/d/공문.hwp');
+    const s = useAppStore.getState();
+    expect(s.error?.code).toBe('DOC_DISTRIBUTION');
+    expect(s.error?.message).toBe(t('doc.distribution'));
+  });
+
+  it('HWP 3.x(자체 서명)는 손상이 아니라 미지원 안내다', async () => {
+    const old = new TextEncoder().encode(`HWP Document File V3.00 ${' '.repeat(200)}`);
+    await openDocumentData(toArrayBuffer(old), 'old.hwp', '/d/old.hwp');
+    const s = useAppStore.getState();
+    expect(s.error?.code).toBe('DOC_UNSUPPORTED');
+    expect(s.error?.message).toBe(t('doc.unsupported', { list: SUPPORTED_LABEL }));
   });
 
   it('zip 매직은 맞지만 해제가 안 되는 손상 파일은 DOC_CORRUPT 다 — openZip 매핑이 document-open 을 거쳐도 살아있다', async () => {

@@ -113,6 +113,15 @@ describe('App — 창 DOM 드롭 게이트 (QA34)', () => {
     expect(openDocumentData).toHaveBeenCalledTimes(1);
   });
 
+  // v1.12.0: HWP 3.x 이하는 CFB 가 아니라 자체 서명이다. 선검사가 쓰레기로 거부하면 document-open 의
+  // DOC_UNSUPPORTED("지원하지 않는 형식") 안내에 닿지 못한다.
+  it('HWP 3.x 서명(.hwp)은 선검사를 통과해 document-open 의 미지원 안내로 간다', async () => {
+    await drop(fileWith('old.hwp', [...new TextEncoder().encode('HWP Document File V3.00')]));
+    await settle();
+    expect(useAppStore.getState().error).toBeNull();
+    expect(openDocumentData).toHaveBeenCalledTimes(1);
+  });
+
   it('지원 확장자인데 내용이 쓰레기면 materialize 전에 거부한다', async () => {
     await drop(fileWith('fake.docx', [1, 2, 3, 4, 5, 6, 7, 8]));
     await settle();

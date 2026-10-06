@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { zipSync, strToU8 } from 'fflate';
 import { openZip } from '../zip';
-import { resolveExtractor, ZIP_EXTRACTORS } from '../registry';
+import { openCfb } from '../cfb';
+import { resolveExtractor, ZIP_EXTRACTORS, CFB_EXTRACTORS } from '../registry';
 import { docxExtractor } from '../docx';
 import { pptxExtractor } from '../pptx';
 import { hwpxExtractor } from '../hwpx';
-import { PPTX_FORMAT_ID, HWPX_FORMAT_ID } from '../../../../shared/document-formats';
+import { hwpExtractor } from '../hwp';
+import { buildHwp, para, toArrayBuffer } from '../../../../../test/fixtures/hwp-builder';
+import { buildCfb } from '../../../../../test/fixtures/cfb-builder';
+import { PPTX_FORMAT_ID, HWPX_FORMAT_ID, HWP_FORMAT_ID } from '../../../../shared/document-formats';
 import type { ZipIndex } from '../types';
 
 // Task10 리뷰 라운드1(Critical 2 / mutation 킬): resolveExtractor 자체는 어떤 테스트도 실행하지
@@ -47,5 +51,20 @@ describe('resolveExtractor', () => {
 
   it('ZIP_EXTRACTORS 에는 docxExtractor · pptxExtractor · hwpxExtractor 가 등록돼 있다', () => {
     expect(ZIP_EXTRACTORS).toEqual([docxExtractor, pptxExtractor, hwpxExtractor]);
+  });
+
+  it('CFB 에서는 CFB 추출기(hwp)만 고른다 — zip 추출기는 후보가 아니고, 반대도 같다', () => {
+    const idx = openCfb(toArrayBuffer(buildHwp({ sections: [[para('a')]] }).bytes));
+    expect(resolveExtractor(idx, 'cfb')?.id).toBe(HWP_FORMAT_ID);
+    expect(resolveExtractor(idx, 'zip')).toBeNull();
+  });
+
+  it('HWP 서명이 없는 CFB 는 null — 호출자가 암호 OOXML 안내로 간다', () => {
+    const idx = openCfb(toArrayBuffer(buildCfb({ EncryptionInfo: new Uint8Array(200), EncryptedPackage: new Uint8Array(5000) }).bytes));
+    expect(resolveExtractor(idx, 'cfb')).toBeNull();
+  });
+
+  it('CFB_EXTRACTORS 에는 hwpExtractor 가 등록돼 있다', () => {
+    expect(CFB_EXTRACTORS).toContain(hwpExtractor);
   });
 });

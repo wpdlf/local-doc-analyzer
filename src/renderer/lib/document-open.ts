@@ -5,8 +5,8 @@ import { t } from './i18n';
 import { restoreSessionForDocument, persistCurrentSession } from './use-session';
 import { confirmDiscardIfNotPersisted } from './discard-policy';
 import { MAX_PDF_SIZE_BYTES } from '../../shared/constants';
-import { hasPdfMagic, hasZipMagic, hasCfbMagic, SUPPORTED_LABEL } from '../../shared/document-formats';
-// QA34(bundle): 추출기 체인(extract/zip = fflate, extract/registry = docx…, extract/normalize)은
+import { hasPdfMagic, hasZipMagic, hasCfbMagic, hasHwp3Magic, SUPPORTED_LABEL } from '../../shared/document-formats';
+// QA34(bundle): 추출기 체인(extract/zip = fflate, extract/cfb, extract/registry = docx…, extract/normalize)은
 // 비-PDF 분기에서만 동적 import 한다(loadExtractChain). App.tsx 가 이 모듈을 정적으로 import
 // 하므로, 여기서 정적으로 끌면 PDF 만 여는 사용자도 fflate·추출기를 eager 진입 청크로 받는다.
 // ⚠️ 이 셋을 다시 정적 import 로 되돌리지 말 것 — 타입은 `import type` 만 허용.
@@ -86,14 +86,16 @@ const EXTRACTOR_UNIT_KIND: Record<Extractor['id'], UnitKind> = {
 
 /** 추출기 체인 lazy 로드 — import 절 주석 참조. */
 async function loadExtractChain() {
-  const [zip, registry, normalize, errors] = await Promise.all([
+  const [zip, cfb, registry, normalize, errors] = await Promise.all([
     import('./extract/zip'),
+    import('./extract/cfb'),
     import('./extract/registry'),
     import('./extract/normalize'),
     import('./extract/errors'),
   ]);
   return {
     openZip: zip.openZip,
+    openCfb: cfb.openCfb,
     resolveExtractor: registry.resolveExtractor,
     toPdfDocument: normalize.toPdfDocument,
     extractFail: errors.extractFail,
@@ -120,14 +122,14 @@ function throwIfAborted(signal: AbortSignal): void {
 }
 
 /**
- * 비-PDF(zip 컨테이너) 문서 열기: 해제 → 포맷 판별 → 추출 → PdfDocument 정규화.
+ * 비-PDF(zip · CFB 컨테이너) 문서 열기: 컨테이너 열기 → 포맷 판별 → 추출 → PdfDocument 정규화.
  *
  * QA34(Low 8): 이 구간의 예외 중 **코드 없는 것**(btoa/spread 의 RangeError, DOMParser 의
  * TypeError, fflate 내부 오류…)은 바깥 catch 에서 PDF_PARSE_FAIL + 영어 원문 그대로 노출됐다.
  * 여기서 DOC_CORRUPT(params 동봉 → 경계에서 t('doc.corrupt'))로 바꾸고 원문은 details 로 남긴다.
  * 표에 있는 코드와 ABORTED 는 그대로 통과시킨다.
  */
-async function openZipDocument(
+async function openContainerDocument(
   data: ArrayBuffer,
   meta: { fileName: string; filePath: string },
   opts: { extractImages: boolean; signal: AbortSignal; onProgress?: (current: number, total: number) => void },
@@ -138,15 +140,21 @@ async function openZipDocument(
   try {
     await yieldForPaint();
     throwIfAborted(opts.signal);
-    // 이미지 분석 OFF 면 그림 파트는 풀지 않는다 — 추출기가 어차피 버리는 바이트를 해제하느라
-    // 사진 많은 문서에서 해제 시간·메모리를 쓰던 것(QA34).
-    const zip = chain.openZip(data, opts.extractImages ? undefined : { filter: isNotMediaPart });
+    // 이미지 분석이 꺼져 있으면 zip 의 그림 파트는 풀지 않는다(QA34). CFB 는 bytes() 를 부를 때만 읽으므로
+    // 거를 것이 없다 — 추출기가 extractImages=false 면 그림 스트림을 아예 읽지 않는다.
+    const isCfb = hasCfbMagic(new Uint8Array(data, 0, Math.min(data.byteLength, 8)));
+    const index = isCfb
+      ? chain.openCfb(data)
+      : chain.openZip(data, opts.extractImages ? undefined : { filter: isNotMediaPart });
     throwIfAborted(opts.signal);
-    extractor = chain.resolveExtractor(zip);
+    extractor = chain.resolveExtractor(index, isCfb ? 'cfb' : 'zip');
     if (!extractor) {
-      return chain.extractFail('DOC_UNSUPPORTED', 'no extractor matched', { list: SUPPORTED_LABEL });
+      // HWP 가 아닌 CFB 는 암호 걸린 OOXML 이다(MS-OFFCRYPTO 는 zip 을 CFB 로 감싼다) — v1.11.0 까지와 같은 안내.
+      return isCfb
+        ? chain.extractFail('DOC_ENCRYPTED', 'compound file without hwp header')
+        : chain.extractFail('DOC_UNSUPPORTED', 'no extractor matched', { list: SUPPORTED_LABEL });
     }
-    const extracted = await extractor.extract(zip, {
+    const extracted = await extractor.extract(index, {
       extractImages: opts.extractImages,
       signal: opts.signal,
       onProgress: opts.onProgress,
@@ -279,15 +287,17 @@ export async function openDocumentData(
   const isPdf = hasPdfMagic(head);
 
   if (!isPdf) {
-    // 암호가 걸린 OOXML 은 zip 이 아니라 CFB 컨테이너다 — 여기서 전용 안내로 갈라낸다.
-    // Task10 fix round1(Important 4): 인라인 바이트 배열 대신 document-formats.ts 의 단일 출처
-    // 함수를 쓴다 — hasPdfMagic/hasZipMagic 과 같은 파일에 두지 않으면 source-scan 가드가
-    // 놓치는 사각(형제 누락)이 재현된다.
-    if (hasCfbMagic(head)) {
-      store.setError({ code: 'DOC_ENCRYPTED', message: t('doc.encrypted') } as AppError);
+    // HWP 3.x 이하는 CFB 가 아니라 자체 서명이다 — 손상으로 안내하면 원인을 모른다(설계 §1.2).
+    if (hasHwp3Magic(head)) {
+      store.setError({ code: 'DOC_UNSUPPORTED', message: t('doc.unsupported', { list: SUPPORTED_LABEL }) } as AppError);
       return;
     }
-    if (!hasZipMagic(head)) {
+    // .hwp(HWP 5.x)와 암호 걸린 OOXML 은 둘 다 CFB 컨테이너다 — 어느 쪽인지는 컨테이너를 열어야 알 수 있어
+    // try 안의 openContainerDocument 가 가른다(v1.11.0 까지는 여기서 곧장 DOC_ENCRYPTED 였다).
+    // 부수효과: CFB 거절도 진행 중 파싱을 abort-replace 한다 — 손상 zip 과 같다(QA34).
+    // Task10 fix round1(Important 4): 매직 판정은 인라인 바이트 배열 대신 document-formats.ts 의 단일 출처
+    // 함수를 쓴다 — 같은 파일에 두지 않으면 source-scan 가드가 놓치는 사각(형제 누락)이 재현된다.
+    if (!hasZipMagic(head) && !hasCfbMagic(head)) {
       // 여기 도달했다는 것은 **확장자는 지원 포맷인데 내용이 아니라는** 뜻이다 — 진입 게이트
       // 5곳이 확장자를 앞에서 거르므로 이 지점의 확장자는 항상 지원 목록 안이다.
       // 그러므로 "지원하지 않는 형식"이 아니라 손상/불일치로 안내해야 정확하다.
@@ -295,7 +305,7 @@ export async function openDocumentData(
       store.setError({ code: 'DOC_CORRUPT', message: t('doc.corrupt') } as AppError);
       return;
     }
-    // QA34(Low): zip 해제·포맷 판별은 여기(isParsing 이전)가 아니라 try 안의 openZipDocument 로
+    // QA34(Low): 컨테이너 열기·포맷 판별은 여기(isParsing 이전)가 아니라 try 안의 openContainerDocument 로
     // 옮겼다. 종전엔 최대 300MB 동기 해제가 스피너도 없이 UI 를 얼리고 취소도 불가능했다.
     // 부수효과: 손상 zip 드롭도 이제 진행 중 파싱을 abort-replace 한다 — 손상 PDF 드롭과 같다.
   }
@@ -345,7 +355,7 @@ export async function openDocumentData(
     // use-summarize 가 이 마커로 "재오픈 필요" 안내를 띄운다.
     const extractImagesEnabled = store.settings.enableImageAnalysis;
     const doc = !isPdf
-      ? await openZipDocument(
+      ? await openContainerDocument(
           data,
           { fileName: name, filePath },
           { extractImages: extractImagesEnabled, signal: controller.signal, onProgress: ownedParseProgress },

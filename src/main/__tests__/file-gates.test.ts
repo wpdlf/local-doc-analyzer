@@ -34,8 +34,13 @@ describe('진입 게이트가 받아들이는 것 / 막는 것 (순수 함수)',
     expect(isSupportedExtension('C:/x/보고서.hwpx')).toBe(true);
   });
 
+  // v1.12.0: HWP 5.x 바이너리가 열린다(hwpExtractor 등록).
+  it('HWP 가 통과한다', () => {
+    expect(isSupportedExtension('C:/x/공문.hwp')).toBe(true);
+  });
+
   it('지원하지 않는 포맷은 막는다 (EPUB 은 지원 제외 — 2026-10-01)', () => {
-    for (const p of ['a.epub', 'a.hwp']) {
+    for (const p of ['a.epub']) {
       expect(isSupportedExtension(p), p).toBe(false);
     }
   });

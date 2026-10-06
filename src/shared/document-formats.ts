@@ -23,6 +23,7 @@ export const SUPPORTED_FORMATS: readonly DocumentFormat[] = [
   { id: 'docx', ext: '.docx', label: 'Word', container: 'zip' },
   { id: 'pptx', ext: '.pptx', label: 'PowerPoint', container: 'zip' },
   { id: 'hwpx', ext: '.hwpx', label: 'HWPX', container: 'zip' },
+  { id: 'hwp', ext: '.hwp', label: 'HWP', container: 'cfb' },
 ] as const;
 
 export const SUPPORTED_EXTENSIONS: readonly string[] = SUPPORTED_FORMATS.map((f) => f.ext);
@@ -147,4 +148,16 @@ export function hasPdfMagic(head: Uint8Array): boolean {
 export function hasCfbMagic(head: Uint8Array): boolean {
   const sig = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
   return head.length >= sig.length && sig.every((b, i) => head[i] === b);
+}
+
+/**
+ * HWP 3.x 이하(.hwp) 서명 `HWP Document File V…` — 파일 맨 앞의 평문이다. HWP 5.x 는 CFB 컨테이너라
+ * 이 서명이 컨테이너 안 FileHeader 스트림에 있고(뒤에 " V" 가 없다) 여기 걸리지 않는다. `.hwp` 를 받기 시작하면
+ * 옛 파일이 "손상" 안내로 떨어지므로 선검사가 이것으로 미지원 안내를 가른다.
+ */
+export function hasHwp3Magic(head: Uint8Array): boolean {
+  const sig = 'HWP Document File V';
+  if (head.length < sig.length) return false;
+  for (let i = 0; i < sig.length; i++) if (head[i] !== sig.charCodeAt(i)) return false;
+  return true;
 }
