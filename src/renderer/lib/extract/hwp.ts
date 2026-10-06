@@ -267,9 +267,13 @@ export function createHwpExtractor(deps: HwpExtractorDeps = {}): Extractor {
 
       const compressed = (flags & FLAG_COMPRESSED) !== 0;
       // 문서 하나의 모든 스트림(DocInfo·구역·그림)이 한 예산을 나눠 쓴다 — 스트림별 상한이 아니다(설계 §3.2).
-      // 무압축 스트림은 읽은 바이트를 센다 — 항목들이 한 섹터 체인을 나눠 가지는 읽기 증폭도 여기서 막힌다.
+      // 읽은 바이트(압축 여부와 무관)와 푼 바이트를 함께 센다 — 항목들이 한 섹터 체인을 나눠 가지는 읽기 증폭은 압축
+      // 스트림에서도 생긴다(작은 deflate 뒤의 큰 꼬리는 풀지 않으므로 푼 바이트로는 잡히지 않는다).
       const budget: InflateBudget = { remaining: deps.maxInflateBytes ?? MAX_UNZIPPED_BYTES };
-      const decode = (raw: Uint8Array): Uint8Array => (compressed ? inflateBudgeted(raw, budget) : chargeRead(raw, budget));
+      const decode = (raw: Uint8Array): Uint8Array => {
+        chargeRead(raw, budget);
+        return compressed ? inflateBudgeted(raw, budget) : raw;
+      };
 
       const docInfoRaw = index.bytes('DocInfo') ?? extractFail('DOC_CORRUPT', 'DocInfo missing');
       const docInfo = readDocInfo(parseRecords(decode(docInfoRaw)));
@@ -360,8 +364,9 @@ export function createHwpExtractor(deps: HwpExtractorDeps = {}): Extractor {
         bytes: (name) => {
           const raw = index.bytes(name);
           if (!raw) return raw;
-          // 무압축 그림도 같은 예산이다 — DOC_TOO_LARGE 는 그림 하나 건너뛰기가 아니라 문서 전체 거절이다.
-          if (!inflateOf.get(name)) return chargeRead(raw, budget);
+          // 그림도 같은 예산이다(읽은 바이트 + 푼 바이트) — DOC_TOO_LARGE 는 그림 하나 건너뛰기가 아니라 문서 전체 거절이다.
+          chargeRead(raw, budget);
+          if (!inflateOf.get(name)) return raw;
           try {
             return inflateBudgeted(raw, budget);
           } catch (err) {

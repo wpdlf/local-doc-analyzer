@@ -79,14 +79,15 @@ export function buildTree(flat: HwpRecord[]): HwpRecord[] {
 
 /**
  * 문서 하나의 "읽거나 푼 바이트" 누적 예산 — 문서 하나에 객체 하나를 만들어 모든 스트림이 나눠 쓴다(스트림별 상한이
- * 아니다). 압축 스트림은 푼 바이트를, 무압축 스트림은 읽은 바이트를 센다(zip.ts 가 항목마다 originalSize 를 세는 것과 같다).
+ * 아니다). 모든 스트림의 읽은 바이트에 압축 스트림의 푼 바이트를 더해 센다(zip.ts 가 항목마다 originalSize 를 세는 것과
+ * 같은 취지 — 읽기 증폭은 압축 스트림에서도 생기므로 읽은 바이트도 뺀다).
  */
 export interface InflateBudget {
   remaining: number;
 }
 
 /**
- * 무압축 스트림을 읽은 만큼 예산에서 뺀다. CFB 는 여러 디렉터리 항목이 한 섹터 체인을 가리킬 수 있어(체인 순환 검사는
+ * 스트림을 읽은 만큼 예산에서 뺀다. CFB 는 여러 디렉터리 항목이 한 섹터 체인을 가리킬 수 있어(체인 순환 검사는
  * 항목 하나 안에서만 본다) 같은 바이트를 몇천 번 읽는 증폭이 가능하다 — 읽을 때마다 센다.
  */
 export function chargeRead(raw: Uint8Array, budget: InflateBudget): Uint8Array {

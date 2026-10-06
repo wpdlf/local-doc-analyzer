@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi } from 'vitest';
+import { deflateSync } from 'fflate';
 import { openCfb } from '../cfb';
 import { createHwpExtractor, hwpExtractor } from '../hwp';
 import type { ExtractOptions } from '../types';
 import { buildCfb } from '../../../../../test/fixtures/cfb-builder';
 import {
-  buildHwp, para, table, cell, textBox, picture, groupedPicture, equation, ctrl, toArrayBuffer, T, type HwpSpec,
+  buildHwp, para, table, cell, textBox, picture, groupedPicture, equation, ctrl, serialize, toArrayBuffer, T, type HwpSpec,
 } from '../../../../../test/fixtures/hwp-builder';
 
 const FIT = vi.fn(async (b: Uint8Array) => ({ base64: `b${b[0]}`, width: 100, height: 100, mimeType: 'image/jpeg' as const }));
@@ -239,6 +240,24 @@ describe('거절 · 손상 · 상한', () => {
     const small = createHwpExtractor({ fitImage: FIT, maxInflateBytes: 100_000 });
     await expect(small.extract(indexOf(spec), { extractImages: false })).resolves.toBeDefined();
     expect(await failCode(small.extract(indexOf(spec), { extractImages: true }))).toBe('DOC_TOO_LARGE');
+  });
+
+  it('압축 구역도 읽은 바이트를 센다 — 작은 deflate 뒤에 큰 꼬리를 단 체인을 여러 항목이 나눠 가지는 증폭', async () => {
+    // 압축 스트림은 꼬리를 풀지 않으므로 푼 바이트로는 거의 세지 않는다. 읽은 바이트를 세지 않으면
+    // 항목 수(최대 1만) × 체인 크기만큼 읽기·메모리가 늘어난다.
+    const padded = new Uint8Array(200_000);
+    padded.set(deflateSync(serialize([para('x')])), 0);
+    const layout = buildHwp({ sections: [[para('x')], [para('x')]], override: { 'BodyText/Section0': padded } });
+    const dv = new DataView(layout.bytes.buffer, layout.bytes.byteOffset);
+    const s0 = layout.entryOffset('BodyText/Section0');
+    const s1 = layout.entryOffset('BodyText/Section1');
+    dv.setUint32(s1 + 116, dv.getUint32(s0 + 116, true), true);
+    dv.setUint32(s1 + 120, dv.getUint32(s0 + 120, true), true);
+    const small = createHwpExtractor({ fitImage: FIT, maxInflateBytes: 300_000 });
+    expect(await failCode(small.extract(openCfb(toArrayBuffer(layout.bytes)), { extractImages: false }))).toBe('DOC_TOO_LARGE');
+    // 구역 하나(읽기 200KB)는 상한 안이다 — 꼬리는 버리고 본문을 낸다
+    const one = buildHwp({ sections: [[para('x')]], override: { 'BodyText/Section0': padded } });
+    await expect(small.extract(openCfb(toArrayBuffer(one.bytes)), { extractImages: false })).resolves.toBeDefined();
   });
 
   it('무압축 그림도 같은 예산으로 센다', async () => {
