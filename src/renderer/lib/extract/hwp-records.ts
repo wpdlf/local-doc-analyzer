@@ -88,6 +88,28 @@ export interface InflateBudget {
  */
 const INFLATE_CHUNK = 16 * 1024;
 
+/**
+ * fflate 0.8 Inflate 의 내부 상태 — `s.f` 는 마지막 블록(BFINAL) 표시, `s.l` 은 진행 중인 허프만 블록의 표.
+ * 마지막 블록을 다 읽으면 `f` 는 참·`l` 은 비어 있다(esm/browser.js inflt 끝의 `st.l = lm, st.f = final`).
+ */
+interface InflateState { s?: { f?: number; l?: unknown } }
+
+/** deflate 스트림이 끝났는지. 내부 상태를 못 읽으면(fflate 구조 변경) false — 그때는 끝까지 넣는 옛 동작으로 돌아간다. */
+function streamEnded(inflate: Inflate): boolean {
+  const st = (inflate as unknown as InflateState).s;
+  return !!st && !!st.f && !st.l;
+}
+
+/**
+ * 스트림 끝 뒤의 꼬리 바이트는 **버리고 푼 내용을 낸다** — 실제 작성기가 섹터 경계까지 채우는 일이 있고, 끝난 스트림
+ * 뒤의 바이트는 본문에 아무것도 더하지 않는다(DOC_CORRUPT 로 문서 전체를 버릴 이유가 아니다).
+ *
+ * 꼬리를 계속 push 하면 안 된다: Inflate 는 끝난 뒤의 입력을 소비하지 않고 내부 버퍼에 이어 붙여 push 마다 통째로
+ * 복사한다(O(n²)). 출력이 없어 예산도 걸리지 않으므로 100MB 꼬리면 렌더러 메인 스레드가 ~100초 멈춘다.
+ * 끝을 "출력 0 인 push" 로 가리면 틀린다 — 저장(무압축) 블록은 블록 전체(최대 64KB)가 모일 때까지 16KB push 에
+ * 출력이 0 이다. 그래서 fflate 내부 상태를 타입 캐스트로 읽는다. fflate 를 올려 구조가 바뀌면 hwp-records.test 의
+ * push 횟수 단언이 깨져 알려 준다.
+ */
 export function inflateBudgeted(raw: Uint8Array, budget: InflateBudget): Uint8Array {
   const parts: Uint8Array[] = [];
   let total = 0;
@@ -99,7 +121,7 @@ export function inflateBudgeted(raw: Uint8Array, budget: InflateBudget): Uint8Ar
   });
   try {
     if (raw.length === 0) inflate.push(raw, true);
-    for (let i = 0; i < raw.length; i += INFLATE_CHUNK) {
+    for (let i = 0; i < raw.length && !streamEnded(inflate); i += INFLATE_CHUNK) {
       inflate.push(raw.subarray(i, i + INFLATE_CHUNK), i + INFLATE_CHUNK >= raw.length);
     }
   } catch (err) {

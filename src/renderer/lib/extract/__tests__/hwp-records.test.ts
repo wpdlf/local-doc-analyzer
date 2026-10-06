@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { deflateSync } from 'fflate';
+import { describe, it, expect, vi } from 'vitest';
+import { deflateSync, Inflate } from 'fflate';
 import { TAG, parseRecords, buildTree, inflateBudgeted, readParaText, ctrlIdAt, stripPua } from '../hwp-records';
 import { T, serialize, para, table, cell } from '../../../../../test/fixtures/hwp-builder';
 
@@ -80,6 +80,48 @@ describe('inflateBudgeted — 문서 전체 누적 예산', () => {
     const budget = { remaining: 1_000_000 };
     expect(codeOf(() => inflateBudgeted(bomb, budget))).toBe('DOC_TOO_LARGE');
     expect(budget.remaining).toBeGreaterThan(-20_000_000); // 50MB 를 다 푼 뒤가 아니다
+  });
+
+  it('스트림 끝 뒤의 꼬리 바이트는 버리고 푼 내용을 낸다 — 꼬리를 계속 밀어 넣지 않는다(O(n²) 방지)', () => {
+    // fflate Inflate 는 스트림이 끝난 뒤 push 된 바이트를 소비하지 않고 내부 버퍼에 이어 붙여 매번 복사한다.
+    // 꼬리가 크면 push 횟수 × 버퍼 크기 = O(n²) 이고, 출력이 없어 예산도 걸리지 않는다.
+    const src = noise(1_000);
+    const z = deflateSync(src);
+    const padded = new Uint8Array(z.length + 8 * 1024 * 1024);
+    padded.set(z, 0);
+    const push = vi.spyOn(Inflate.prototype, 'push');
+    try {
+      const t0 = performance.now();
+      expect(inflateBudgeted(padded, { remaining: 1_000_000 })).toEqual(src);
+      // 8MB 꼬리를 16KB 씩 다 넣으면 512회다. 스트림이 첫 청크에서 끝나므로 한 번이면 된다.
+      expect(push.mock.calls.length).toBeLessThanOrEqual(2);
+      expect(performance.now() - t0).toBeLessThan(2_000);
+    } finally {
+      push.mockRestore();
+    }
+  });
+
+  it('여러 청크에 걸친 스트림 뒤의 꼬리도 버린다 — 끝난 뒤로는 push 하지 않는다', () => {
+    const src = noise(100_000);
+    const z = deflateSync(src);
+    const padded = new Uint8Array(z.length + 4 * 1024 * 1024);
+    padded.set(z, 0);
+    const push = vi.spyOn(Inflate.prototype, 'push');
+    try {
+      expect(inflateBudgeted(padded, { remaining: 1_000_000 })).toEqual(src);
+      expect(push.mock.calls.length).toBeLessThanOrEqual(Math.ceil(z.length / (16 * 1024)) + 1);
+    } finally {
+      push.mockRestore();
+    }
+  });
+
+  it('저장(무압축) 블록은 16KB push 에 출력이 0 일 수 있다 — 그것을 스트림 끝으로 오인하지 않는다', () => {
+    const src = noise(200_000);
+    const z = deflateSync(src, { level: 0 });
+    const padded = new Uint8Array(z.length + 100_000);
+    padded.set(z, 0);
+    expect(inflateBudgeted(z, { remaining: 1_000_000 })).toEqual(src);
+    expect(inflateBudgeted(padded, { remaining: 1_000_000 })).toEqual(src);
   });
 
   it('deflate 가 아니면 DOC_CORRUPT', () => {
