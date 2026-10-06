@@ -116,6 +116,14 @@ function readParagraph(para: HwpRecord, depth: number, tableText: TableText): Pa
   };
   const ctrls = para.children.filter((c) => c.tag === TAG.CTRL_HEADER);
   const used = new Set<HwpRecord>();
+  // id 별 대기열 — 세그먼트마다 ctrls 전체를 훑으면 O(세그먼트 × 컨트롤)이라 컨트롤 수만 개짜리 문단이 수 초 걸린다.
+  const byId = new Map<string, HwpRecord[]>();
+  for (const c of ctrls) {
+    const id = ctrlIdAt(c.data, 0);
+    const q = byId.get(id);
+    if (q) q.push(c); else byId.set(id, [c]);
+  }
+  const cursor = new Map<string, number>();
   const handle = (ctrl: HwpRecord) => {
     used.add(ctrl);
     switch (ctrlIdAt(ctrl.data, 0)) {
@@ -148,9 +156,12 @@ function readParagraph(para: HwpRecord, depth: number, tableText: TableText): Pa
   const text = para.children.find((c) => c.tag === TAG.PARA_TEXT);
   for (const seg of text ? readParaText(text.data) : []) {
     if (seg.kind === 'text') { append(seg.text); continue; }
-    // 확장 컨트롤 문자와 CTRL_HEADER 는 순서대로 짝을 이룬다(실물 확인). id 로 다음 미사용 것을 고른다.
-    const ctrl = ctrls.find((c) => !used.has(c) && ctrlIdAt(c.data, 0) === seg.id);
-    if (ctrl) handle(ctrl);
+    // 확장 컨트롤 문자와 CTRL_HEADER 는 순서대로 짝을 이룬다(실물 확인). id 로 다음 미사용 것을 고른다
+    // (같은 id 끼리는 문서 순서 — 짝을 맞춘 것만 used 에 들어가므로 id 별 커서가 곧 "첫 미사용"이다).
+    const q = byId.get(seg.id);
+    const at = cursor.get(seg.id) ?? 0;
+    const ctrl = q?.[at];
+    if (ctrl) { cursor.set(seg.id, at + 1); handle(ctrl); }
   }
   // 본문에 자리표시가 없던 컨트롤(비표준 작성기)도 잃지 않는다 — 문단 끝에서 처리한다.
   for (const ctrl of ctrls) if (!used.has(ctrl)) handle(ctrl);

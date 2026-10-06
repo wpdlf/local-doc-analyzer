@@ -232,6 +232,15 @@ describe('거절 · 손상 · 상한', () => {
     expect(await failCode(small.extract(openCfb(toArrayBuffer(layout.bytes)), { extractImages: false }))).toBe('DOC_TOO_LARGE');
   });
 
+  it('압축 그림은 구역과 같은 예산을 나눠 쓴다 — 구역만은 상한 안이어도 그림까지 합치면 DOC_TOO_LARGE', async () => {
+    const big = 'ㄱ'.repeat(30_000); // 구역 ~60KB
+    // 그림 하나(60KB)만으로는 상한(100KB) 안이다 — 새 예산을 쓰거나 DOC_TOO_LARGE 를 삼키면 통과해 버린다.
+    const spec: HwpSpec = { bins: [{ id: 1, ext: 'jpg', bytes: new Uint8Array(60_000).fill(7) }], sections: [[para([big, picture(1)])]] };
+    const small = createHwpExtractor({ fitImage: FIT, maxInflateBytes: 100_000 });
+    await expect(small.extract(indexOf(spec), { extractImages: false })).resolves.toBeDefined();
+    expect(await failCode(small.extract(indexOf(spec), { extractImages: true }))).toBe('DOC_TOO_LARGE');
+  });
+
   it('무압축 그림도 같은 예산으로 센다', async () => {
     const pic = new Uint8Array(80_000).fill(7);
     const spec: HwpSpec = { flags: 0, bins: [{ id: 1, ext: 'jpg', bytes: pic }], sections: [[para(['본문', picture(1)])]] };
@@ -239,6 +248,21 @@ describe('거절 · 손상 · 상한', () => {
     expect(await failCode(small.extract(indexOf(spec), { extractImages: true }))).toBe('DOC_TOO_LARGE');
     // 그림을 싣지 않으면 읽지 않으므로 같은 상한 안이다
     await expect(small.extract(indexOf(spec), { extractImages: false })).resolves.toBeDefined();
+  });
+});
+
+describe('컨트롤 짝 맞추기 규모', () => {
+  it('문단 하나의 컨트롤이 수만 개여도 선형으로 짝을 맞춘다 — 세그먼트마다 컨트롤 전체를 훑지 않는다', async () => {
+    const n = 40_000;
+    const items: (string | ReturnType<typeof ctrl>)[] = ['앞'];
+    for (let i = 0; i < n; i++) items.push(ctrl('atno'));
+    items.push(equation('x'), '뒤');
+    const index = indexOf({ sections: [[para(items)]] });
+    const t0 = performance.now();
+    const doc = await x.extract(index, { extractImages: false });
+    const ms = performance.now() - t0;
+    expect(doc.units[0]).toContain('앞 [수식: x] 뒤');
+    expect(ms).toBeLessThan(1_500);
   });
 });
 
