@@ -28,7 +28,7 @@ const FLAG_DISTRIBUTION = 0x04;
 const FLAG_DRM = 0x10;
 /** PARA_HEADER @11 나눔 종류 — bit0 구역 나눔 · bit2 쪽 나눔(실물 확인, 설계 §0). bit1 다단 · bit3 단은 쪽이 아니다. */
 const BREAK_BEFORE_MASK = 0x01 | 0x04;
-const SECTION_STREAM = /^BodyText\/Section(\d+)$/;
+const SECTION_STREAM = /^BodyText\/Section(\d+)$/i;
 /** 표·글상자 중첩 상한 — hwpx.ts MAX_NEST_DEPTH 와 같은 값(형제 비대칭 방지) */
 const MAX_NEST_DEPTH = 16;
 /** 도형 그룹 중첩 상한 — pptx 그룹 깊이 상한과 같은 값 */
@@ -64,6 +64,8 @@ function picturesIn(node: HwpRecord): number[] {
   const out: number[] = [];
   const visit = (n: HwpRecord) => {
     for (const c of n.children) {
+      // 머리말·각주·숨은 설명은 텍스트가 빠지므로 그림도 싣지 않는다(plainTextWithPics 와 같은 규칙).
+      if (c.tag === TAG.CTRL_HEADER && !CONTENT_CTRLS.has(ctrlIdAt(c.data, 0))) continue;
       if (c.tag === TAG.SHAPE_COMPONENT_PICTURE) {
         const id = pictureBinId(c);
         if (id) out.push(id);
@@ -84,6 +86,8 @@ function scanShape(node: HwpRecord, depth: number, out: { pics: number[]; boxes:
       const id = pictureBinId(k);
       if (id) out.pics.push(id);
     } else if (k.tag === TAG.LIST_HEADER) {
+      // gso CTRL_HEADER 바로 아래(depth 0)의 LIST_HEADER 는 캡션이다 — 글상자는 SHAPE_COMPONENT 아래에 있다.
+      if (depth === 0) continue;
       out.boxes.push(followingParagraphs(kids, i + 1));
     } else if (k.tag !== TAG.PARA_HEADER && depth < MAX_SHAPE_DEPTH) {
       scanShape(k, depth + 1, out);
@@ -261,7 +265,7 @@ export function createHwpExtractor(deps: HwpExtractorDeps = {}): Extractor {
       const sections = sectionStreams(index);
       if (sections.length === 0) {
         // 배포용 문서는 본문을 ViewText/ 에 암호화해 둔다 — 플래그가 빠진 파일도 같은 안내로 간다.
-        if (index.names().some((n) => n.startsWith('ViewText/'))) extractFail('DOC_DISTRIBUTION', 'viewtext only');
+        if (index.names().some((n) => n.toLowerCase().startsWith('viewtext/'))) extractFail('DOC_DISTRIBUTION', 'viewtext only');
         extractFail('DOC_CORRUPT', 'no body section');
       }
 

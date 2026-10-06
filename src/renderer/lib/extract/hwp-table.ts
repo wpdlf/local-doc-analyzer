@@ -28,7 +28,10 @@ export function readTable(ctrl: HwpRecord): { rows: number; cols: number; cells:
   const table = kids.find((k) => k.tag === TAG.TABLE);
   if (!table || table.data.length < 8) extractFail('DOC_CORRUPT', 'table record missing');
   const cells: HwpCell[] = [];
-  for (let i = 0; i < kids.length; i++) {
+  // 개체 캡션은 CTRL_HEADER 바로 아래, TABLE 레코드 **앞**의 LIST_HEADER 다 — 셀이 아니다. hwpx 는 tr/tc 만
+  // 읽어 캡션을 버리므로 같게 맞춘다(셀로 읽으면 엉뚱한 좌표가 되거나 짧은 머리가 DOC_CORRUPT 가 된다).
+  const tableAt = kids.indexOf(table);
+  for (let i = tableAt + 1; i < kids.length; i++) {
     const k = kids[i]!;
     if (k.tag !== TAG.LIST_HEADER) continue;
     if (k.data.length < 16) extractFail('DOC_CORRUPT', 'table cell header too short');

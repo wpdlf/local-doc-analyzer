@@ -99,6 +99,38 @@ describe('표', () => {
   });
 });
 
+describe('캡션 · 비본문 컨트롤', () => {
+  const captioned = (t: ReturnType<typeof table>) => {
+    const kids = [...t.children!];
+    kids.splice(kids.findIndex((k) => k.tag === T.TABLE), 0, { tag: T.LIST_HEADER, data: new Uint8Array(47) }, para('표 1. 캡션'));
+    return { ...t, children: kids };
+  };
+  it('표 캡션은 셀도 본문도 아니다 (hwpx 와 같다)', async () => {
+    const doc = await extract({ sections: [[para(captioned(table(1, 2, [cell(0, 0, 'a'), cell(0, 1, 'b')])))]] });
+    expect(doc.units[0]).toBe('| a | b |\n| --- | --- |');
+  });
+
+  it('그림 캡션은 글상자 블록이 되지 않고 그림은 그대로 모은다', async () => {
+    const pic = picture(1);
+    pic.children!.unshift({ tag: T.LIST_HEADER, data: new Uint8Array(34) }, para('그림 1. 캡션'));
+    const doc = await extract({
+      bins: [{ id: 1, ext: 'jpg', bytes: new Uint8Array(64).fill(1) }],
+      sections: [[para(['본문', pic])]],
+    }, { extractImages: true });
+    expect(doc.units).toEqual(['본문']);
+    expect(doc.images.map((i) => i.base64)).toEqual(['b1']);
+  });
+
+  it('표 셀 안 각주의 그림은 Vision 대상이 아니다 (텍스트가 빠지는 것과 같은 규칙)', async () => {
+    const bins = [1, 2].map((id) => ({ id, ext: 'jpg', bytes: new Uint8Array(64).fill(id) }));
+    const inCell = para(['칸', picture(1), ctrl('fn  ', [LIST, para(['각주', picture(2)])])]);
+    const doc = await extract({
+      bins, sections: [[para(table(1, 1, [{ row: 0, col: 0, paras: [inCell] }]))]],
+    }, { extractImages: true });
+    expect(doc.images.map((i) => i.base64)).toEqual(['b1']);
+  });
+});
+
 describe('글상자 · 수식 · 제목', () => {
   it('글상자 텍스트는 호스트 문단 뒤 블록이 된다', async () => {
     const doc = await extract({ sections: [[para(['본문', textBox([para('상자 안 제목')])]), para('다음 문단')]] });

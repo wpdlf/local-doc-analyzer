@@ -24,6 +24,17 @@ describe('readTable', () => {
     expect(t.cells.map((c) => c.paras.length)).toEqual([2, 1]);
   });
 
+  it('표 캡션(TABLE 앞 LIST_HEADER)은 셀이 아니다 — 짧은 머리여도 DOC_CORRUPT 가 되지 않는다', () => {
+    const t = table(1, 2, [cell(0, 0, 'a'), cell(0, 1, 'b')]);
+    const at = t.children!.findIndex((k) => k.tag === T.TABLE);
+    for (const len of [47, 6]) {
+      const kids = [...t.children!];
+      kids.splice(at, 0, { tag: T.LIST_HEADER, data: new Uint8Array(len) }, para('표 1. 캡션'));
+      const r = readTable(node({ ...t, children: kids }));
+      expect(r.cells.map((c) => [c.row, c.col])).toEqual([[0, 0], [0, 1]]);
+    }
+  });
+
   it('TABLE 레코드가 없거나 셀 머리가 16바이트보다 짧으면 DOC_CORRUPT', () => {
     expect(codeOf(() => readTable(node(ctrl('tbl ', [{ tag: T.LIST_HEADER, data: new Uint8Array(20) }]))))).toBe('DOC_CORRUPT');
     const short = ctrl('tbl ', [{ tag: T.TABLE, data: new Uint8Array(20) }, { tag: T.LIST_HEADER, data: new Uint8Array(8) }]);
