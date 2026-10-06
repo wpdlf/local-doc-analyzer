@@ -143,8 +143,8 @@ describe('readParaText', () => {
   });
 
   it('사용자 정의 영역(PUA) 문자는 BMP·보충 평면 모두 지운다', () => {
-    expect(readParaText(para('가나󰊱다').children![0]!.data)).toEqual([{ kind: 'text', text: '가나다' }]);
-    expect(stripPua(' a 􏿿')).toBe(' a ');
+    expect(readParaText(para('가\uE000나\u{F02B1}다').children![0]!.data)).toEqual([{ kind: 'text', text: '가나다' }]);
+    expect(stripPua('\uF8FF a \u{10FFFF}')).toBe(' a ');
   });
 
   it('컨트롤이 문단 끝에서 잘리면 DOC_CORRUPT', () => {

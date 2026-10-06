@@ -526,7 +526,7 @@ describe('openDocumentData — 포맷 dispatch (Task10 리뷰 라운드1)', () =
   });
 
   it('HWP 3.x(자체 서명)는 손상이 아니라 미지원 안내다', async () => {
-    const old = new TextEncoder().encode(`HWP Document File V3.00 ${' '.repeat(200)}`);
+    const old = new TextEncoder().encode(`HWP Document File V3.00 \x1a\x01\x02\x03\x04\x05${' '.repeat(200)}`);
     await openDocumentData(toArrayBuffer(old), 'old.hwp', '/d/old.hwp');
     const s = useAppStore.getState();
     expect(s.error?.code).toBe('DOC_UNSUPPORTED');

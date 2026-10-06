@@ -155,7 +155,7 @@ const WIDE_CONTROLS = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 14, 15, 16, 17
 const EXTENDED_CONTROLS = new Set([1, 2, 3, 11, 12, 14, 15, 16, 17, 18, 21, 22, 23]);
 
 /** 사용자 정의 영역 — 한글 전용 글머리 기호 글리프. AI 입력에 깨진 글자로 들어간다(설계 H5). */
-const PUA = /[-]|[\uDB80-\uDBFF][\uDC00-\uDFFF]/g;
+const PUA = /[\uE000-\uF8FF]|[\uDB80-\uDBFF][\uDC00-\uDFFF]/g;
 
 export function stripPua(s: string): string {
   return s.replace(PUA, '');

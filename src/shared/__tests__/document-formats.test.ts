@@ -9,7 +9,7 @@ describe('document-formats — 지원 포맷 단일 출처', () => {
   // .hwp 를 받기 시작하면 HWP 3.x 이하(CFB 가 아니라 자체 서명) 파일이 "손상" 안내로 떨어진다 — 미지원으로 가른다.
   it('HWP 3.x 서명은 파일 맨 앞 "HWP Document File V" 다 (5.x 는 CFB 안의 FileHeader 라 여기 걸리지 않는다)', () => {
     const enc = new TextEncoder();
-    expect(hasHwp3Magic(enc.encode('HWP Document File V3.00 '))).toBe(true);
+    expect(hasHwp3Magic(enc.encode('HWP Document File V3.00 \x1a\x01\x02\x03\x04\x05'))).toBe(true);
     expect(hasHwp3Magic(enc.encode('HWP Document File\0\0\0'))).toBe(false);
     expect(hasHwp3Magic(new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]))).toBe(false);
     expect(hasHwp3Magic(enc.encode('HWP Doc'))).toBe(false);
