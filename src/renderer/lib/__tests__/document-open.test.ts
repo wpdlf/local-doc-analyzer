@@ -500,6 +500,12 @@ describe('openDocumentData — 포맷 dispatch (Task10 리뷰 라운드1)', () =
     expect(s.error?.message).toBe(t('doc.encrypted'));
   });
 
+  it('v4(4096 바이트 섹터) CFB 의 암호 걸린 OOXML 도 DOC_CORRUPT 로 빠지지 않고 DOC_ENCRYPTED 다', async () => {
+    const cfb = buildCfb({ EncryptionInfo: new Uint8Array(200), EncryptedPackage: new Uint8Array(5000) }, { sectorSize: 4096 }).bytes;
+    await openDocumentData(toArrayBuffer(cfb), 'locked.xlsx', '/d/locked.xlsx');
+    expect(useAppStore.getState().error?.code).toBe('DOC_ENCRYPTED');
+  });
+
   it('CFB 매직만 있고 구조가 깨졌으면 DOC_CORRUPT 다 (손상 zip 과 같은 취급)', async () => {
     const cfb = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0]);
     await openDocumentData(cfb.buffer, 'locked.docx', '/d/locked.docx');

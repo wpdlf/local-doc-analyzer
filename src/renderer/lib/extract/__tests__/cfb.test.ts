@@ -45,6 +45,30 @@ describe('openCfb — 정상 경로', () => {
     expect(out.subarray(-1000)).toEqual(big.subarray(-1000));
   });
 
+  it('v4(4096 바이트 섹터) — 헤더가 한 섹터를 차지하고, 일반·미니 스트림·중첩 저장소를 그대로 읽는다', () => {
+    const big = fill(20_000, 4);
+    const small = fill(300, 5);
+    const layout = buildCfb({ EncryptionInfo: small, EncryptedPackage: big, 'a/b': fill(64, 6) }, { sectorSize: 4096 });
+    const dv = new DataView(layout.bytes.buffer, layout.bytes.byteOffset);
+    expect(dv.getUint16(26, true)).toBe(4); // major version
+    expect(dv.getUint16(30, true)).toBe(12); // sector shift
+    expect(layout.bytes.length % 4096).toBe(0);
+    const idx = openCfb(toArrayBuffer(layout.bytes));
+    expect(idx.names().sort()).toEqual(['EncryptedPackage', 'EncryptionInfo', 'a/b']);
+    expect(idx.bytes('EncryptedPackage')).toEqual(big);
+    expect(idx.bytes('EncryptionInfo')).toEqual(small);
+    expect(idx.bytes('a/b')).toEqual(fill(64, 6));
+  });
+
+  it('v4 에서 FAT 섹터가 둘 이상이어도 읽는다 (5MB)', () => {
+    // v4 FAT 섹터 하나가 1024 섹터(4MB)를 덮는다 — 5MB 면 FAT 섹터 둘. DIFAT 까지는 ~446MB 가 필요해 보지 않는다.
+    const big = fill(5_000_000, 7);
+    const layout = buildCfb({ big }, { sectorSize: 4096 });
+    const out = openCfb(toArrayBuffer(layout.bytes)).bytes('big')!;
+    expect(out.length).toBe(big.length);
+    expect(out.subarray(-1000)).toEqual(big.subarray(-1000));
+  });
+
   it(`디렉터리 항목이 정확히 ${MAX_CFB_ENTRIES}개면 연다 (경계)`, () => {
     const streams: Record<string, Uint8Array> = {};
     for (let i = 0; i < MAX_CFB_ENTRIES - 1; i++) streams[`s${i}`] = new Uint8Array(0); // + 루트 = MAX

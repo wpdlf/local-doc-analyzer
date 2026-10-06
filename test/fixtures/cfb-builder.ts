@@ -1,9 +1,8 @@
 /**
- * 테스트용 CFB(v3, 512바이트 섹터) 작성기 — cfb.ts 리더의 독립 오라클이 되도록 MS-CFB 규약을 여기서
- * 따로 구현한다(리더 상수를 import 하지 않는다). 4096 미만 스트림은 미니 스트림에 넣고, FAT 섹터가
- * 109개를 넘으면 DIFAT 섹터를 만든다. 공격 입력은 반환된 layout 의 오프셋으로 바이트를 고쳐 만든다.
+ * 테스트용 CFB 작성기(기본 v3 512바이트 섹터, 선택 v4 4096바이트 섹터) — cfb.ts 리더의 독립 오라클이 되도록
+ * MS-CFB 규약을 여기서 따로 구현한다(리더 상수를 import 하지 않는다). 4096 미만 스트림은 미니 스트림에 넣고, FAT
+ * 섹터가 109개를 넘으면 DIFAT 섹터를 만든다. 공격 입력은 반환된 layout 의 오프셋으로 바이트를 고쳐 만든다.
  */
-const SEC = 512;
 const MINI = 64;
 const CUTOFF = 4096;
 const END = 0xfffffffe;
@@ -54,7 +53,17 @@ function concat(parts: Uint8Array[]): Uint8Array {
   return out;
 }
 
-export function buildCfb(streams: Record<string, Uint8Array>): CfbLayout {
+export interface CfbOptions {
+  /** 512 = v3(기본) · 4096 = v4. v4 는 헤더(앞 512 바이트 필드)가 섹터 하나(4096)를 통째로 차지한다. */
+  sectorSize?: 512 | 4096;
+}
+
+export function buildCfb(streams: Record<string, Uint8Array>, opts: CfbOptions = {}): CfbLayout {
+  const SEC = opts.sectorSize ?? 512;
+  const v4 = SEC === 4096;
+  /** FAT 섹터 하나의 항목 수 · DIFAT 섹터 하나의 FAT 섹터 번호 수(마지막 칸은 다음 DIFAT) */
+  const perFat = SEC / 4;
+  const perDifat = perFat - 1;
   const mk = (name: string, type: 1 | 2 | 5, data: Uint8Array = new Uint8Array(0)): Node =>
     ({ name, type, data, children: [], index: -1, start: END, size: type === 2 ? data.length : 0, right: NOSTREAM, child: NOSTREAM });
   const root = mk('Root Entry', 5);
@@ -146,8 +155,8 @@ export function buildCfb(streams: Record<string, Uint8Array>): CfbLayout {
   let nFat = 1;
   let nDifat = 0;
   for (;;) {
-    const needFat = Math.ceil((data + nFat + nDifat) / 128);
-    const needDifat = needFat > 109 ? Math.ceil((needFat - 109) / 127) : 0;
+    const needFat = Math.ceil((data + nFat + nDifat) / perFat);
+    const needDifat = needFat > 109 ? Math.ceil((needFat - 109) / perDifat) : 0;
     if (needFat === nFat && needDifat === nDifat) break;
     nFat = needFat;
     nDifat = needDifat;
@@ -156,13 +165,13 @@ export function buildCfb(streams: Record<string, Uint8Array>): CfbLayout {
   const difatIds = Array.from({ length: nDifat }, (_, i) => data + nFat + i);
   for (let i = 0; i < nFat; i++) fat.push(FATSECT);
   for (let i = 0; i < nDifat; i++) fat.push(DIFSECT);
-  while (fat.length < nFat * 128) fat.push(FREE);
+  while (fat.length < nFat * perFat) fat.push(FREE);
   const fatBytes = u32s(fat);
   for (let i = 0; i < nFat; i++) sectors.push(fatBytes.slice(i * SEC, (i + 1) * SEC));
   const rest = fatIds.slice(109);
   for (let i = 0; i < nDifat; i++) {
-    const chunk = rest.slice(i * 127, (i + 1) * 127);
-    while (chunk.length < 127) chunk.push(FREE);
+    const chunk = rest.slice(i * perDifat, (i + 1) * perDifat);
+    while (chunk.length < perDifat) chunk.push(FREE);
     chunk.push(i < nDifat - 1 ? difatIds[i + 1]! : END);
     sectors.push(u32s(chunk));
   }
@@ -171,10 +180,12 @@ export function buildCfb(streams: Record<string, Uint8Array>): CfbLayout {
   const hv = new DataView(header.buffer);
   header.set(MAGIC, 0);
   hv.setUint16(24, 0x3e, true);
-  hv.setUint16(26, 3, true);
+  hv.setUint16(26, v4 ? 4 : 3, true);
   hv.setUint16(28, 0xfffe, true);
-  hv.setUint16(30, 9, true);
+  hv.setUint16(30, v4 ? 12 : 9, true);
   hv.setUint16(32, 6, true);
+  // 디렉터리 섹터 수 — v3 는 0 이어야 하고 v4 만 센다(MS-CFB 2.2).
+  hv.setUint32(40, v4 ? Math.ceil(dir.length / SEC) : 0, true);
   hv.setUint32(44, nFat, true);
   hv.setUint32(48, dirStart, true);
   hv.setUint32(56, CUTOFF, true);
@@ -194,7 +205,7 @@ export function buildCfb(streams: Record<string, Uint8Array>): CfbLayout {
     bytes,
     entryIndex: (path) => node(path).index,
     entryOffset: (path) => (dirStart + 1) * SEC + node(path).index * 128,
-    fatEntryOffset: (n) => (fatIds[Math.floor(n / 128)]! + 1) * SEC + (n % 128) * 4,
+    fatEntryOffset: (n) => (fatIds[Math.floor(n / perFat)]! + 1) * SEC + (n % perFat) * 4,
     miniFatEntryOffset: (n) => (miniFatStart + 1) * SEC + n * 4,
     startSector: (path) => node(path).start,
     difatSectorCount: nDifat,
